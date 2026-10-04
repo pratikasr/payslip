@@ -1,0 +1,38 @@
+import type { NextConfig } from "next";
+
+/*
+  wagmi's connector bundle imports every wallet SDK, including Coinbase's
+  CDP SDK, which statically imports its optional @x402 peer packages. Payslip
+  uses only injected, MetaMask, Rainbow and WalletConnect wallets, so these
+  optional modules are never executed; aliasing them to empty modules lets the
+  lazily loaded wallet chunk build without installing them. Same for the
+  optional pretty printer of the WalletConnect logger and React Native storage
+  of the MetaMask SDK.
+*/
+const OPTIONAL_UNUSED_MODULES = [
+  "@x402/core",
+  "@x402/evm",
+  "@x402/svm",
+  "@x402/extensions",
+  "pino-pretty",
+  "@react-native-async-storage/async-storage",
+];
+
+const nextConfig: NextConfig = {
+  reactStrictMode: true,
+  poweredByHeader: false,
+  experimental: {
+    // Import only the Radix primitives used, not the whole radix-ui barrel.
+    optimizePackageImports: ["radix-ui"],
+  },
+  webpack: (config) => {
+    config.resolve = config.resolve ?? {};
+    config.resolve.alias = {
+      ...(config.resolve.alias ?? {}),
+      ...Object.fromEntries(OPTIONAL_UNUSED_MODULES.map((m) => [m, false])),
+    };
+    return config;
+  },
+};
+
+export default nextConfig;

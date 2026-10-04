@@ -1,0 +1,8 @@
+# Dependencies allowed to run install scripts. Each of these has a pure
+# JavaScript fallback or ships prebuilt binaries, so none of the native build
+# steps are needed for this app.
+allowBuilds:
+  bufferutil: false
+  keccak: false
+  unrs-resolver: false
+  utf-8-validate: false

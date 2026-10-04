@@ -1,0 +1,258 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  Payslip tokens. Hex values and contrast ratios are documented in
+  docs/DESIGN.md. One accent (Zcash gold) is used for primary actions and
+  focus; status colors are semantic, never decorative.
+*/
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-primary-edge: var(--primary-edge);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-link: var(--link);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-danger: var(--destructive);
+  --color-danger-bg: var(--danger-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+  --color-redact: var(--redact);
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-3xl: calc(var(--radius) * 2.5);
+  --radius-4xl: calc(var(--radius) * 3);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: #f6f7f9;
+  --foreground: #14171c;
+  --card: #ffffff;
+  --card-foreground: #14171c;
+  --popover: #ffffff;
+  --popover-foreground: #14171c;
+  --primary: #f4b728;
+  --primary-edge: #b3820e;
+  --primary-foreground: #1c1503;
+  --secondary: #edeff2;
+  --secondary-foreground: #14171c;
+  --muted: #edeff2;
+  --muted-foreground: #575f6d;
+  --accent: #edeff2;
+  --accent-foreground: #14171c;
+  --destructive: #b42318;
+  --danger-bg: #fceae8;
+  --success: #12703a;
+  --success-bg: #e6f4eb;
+  --warning: #8a5a00;
+  --warning-bg: #fdf3d7;
+  --info: #2f4a7a;
+  --info-bg: #e8eef8;
+  --link: #8a5a00;
+  --border: #dee1e6;
+  --input: #8c94a2;
+  --ring: #9a6400;
+  --redact: #2a2f38;
+}
+
+.dark {
+  --background: #0e1116;
+  --foreground: #e8ebf0;
+  --card: #151920;
+  --card-foreground: #e8ebf0;
+  --popover: #151920;
+  --popover-foreground: #e8ebf0;
+  --primary: #f4b728;
+  --primary-edge: #f4b728;
+  --primary-foreground: #1c1503;
+  --secondary: #1d222b;
+  --secondary-foreground: #e8ebf0;
+  --muted: #1d222b;
+  --muted-foreground: #9ba3b1;
+  --accent: #1d222b;
+  --accent-foreground: #e8ebf0;
+  --destructive: #ff8a80;
+  --danger-bg: #33171a;
+  --success: #5ccb8a;
+  --success-bg: #12291c;
+  --warning: #f6c453;
+  --warning-bg: #2e2512;
+  --info: #9db7e8;
+  --info-bg: #17223a;
+  --link: #f6c453;
+  --border: #2a303a;
+  --input: #5f6876;
+  --ring: #f4b728;
+  --redact: #c9ced6;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+  }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01" 0;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 3px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Numbers in tables and totals line up digit for digit. */
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+}
+
+/*
+  Print: a clean statement on A4 or Letter. Navigation, buttons and anything
+  marked data-print="hide" disappear; colors fall back to black on white.
+*/
+@media print {
+  @page {
+    size: auto;
+    margin: 14mm 12mm;
+  }
+  :root,
+  .dark {
+    --background: #ffffff;
+    --foreground: #000000;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --muted: #ffffff;
+    --muted-foreground: #333333;
+    --border: #999999;
+    --success: #000000;
+    --success-bg: #ffffff;
+    --warning: #000000;
+    --warning-bg: #ffffff;
+    --destructive: #000000;
+    --danger-bg: #ffffff;
+    --info: #000000;
+    --info-bg: #ffffff;
+    --link: #000000;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 10.5pt;
+  }
+  [data-print="hide"],
+  header[role="banner"],
+  nav,
+  button,
+  [role="tablist"],
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+  [data-print="only"] {
+    display: block !important;
+  }
+  [data-print="plain"] {
+    border: 0 !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+  main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  th,
+  td {
+    border-bottom: 0.5pt solid #999999 !important;
+    white-space: normal !important;
+    height: auto !important;
+    padding: 4pt 5pt !important;
+    font-size: 8pt;
+    vertical-align: top !important;
+  }
+  td:first-child,
+  th:first-child {
+    white-space: nowrap !important;
+  }
+  td [data-print="only"] {
+    display: block !important;
+    max-width: 17ch;
+    word-break: break-all;
+    font-size: 7pt;
+  }
+  [data-print-scroll] {
+    overflow: visible !important;
+  }
+  a[href^="http"]::after {
+    content: "";
+  }
+}
+
+[data-print="only"] {
+  display: none;
+}
