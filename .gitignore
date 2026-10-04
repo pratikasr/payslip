@@ -1,0 +1,26 @@
+# secrets
+.env
+.env.*
+!.env.example
+*.seed
+*.key
+wallet.db*
+payslip.db*
+
+# rust
+service/target/
+**/*.rs.bk
+
+# node
+node_modules/
+web/.next/
+web/out/
+*.tsbuildinfo
+.pnpm-store/
+
+# tooling
+.DS_Store
+*.log
+coverage/
+test-results/
+playwright-report/
