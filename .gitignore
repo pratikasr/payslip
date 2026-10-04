@@ -24,3 +24,8 @@ web/out/
 coverage/
 test-results/
 playwright-report/
+
+# payslip runtime data (seeds, wallets, viewer databases)
+*.age
+service/data/
+data/

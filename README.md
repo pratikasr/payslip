@@ -69,7 +69,7 @@ Full design: [docs/SPEC.md](docs/SPEC.md). Stack and reasoning: [docs/TECH-DECIS
 
 | Milestone | State |
 | --- | --- |
-| M0 Verify external facts | not started |
+| M0 Verify external facts | done |
 | M1 Scaffold service and web | not started |
 | M2 Wallet core (accounts, FVK export, sync, send with memo) | not started |
 | M3 Runs (API, swap venue, executor) | not started |

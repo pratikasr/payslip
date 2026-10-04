@@ -154,11 +154,13 @@ OUSD on Solana rail: optional, not in the pitch unless verified. Token-2022 conf
 
 Resolve each item, record the answer with date and source in `docs/TECH-DECISIONS.md` under "Verified facts", then tick it here.
 
-- [ ] VERIFY NEAR Intents 1Click quotes USDC to native ZEC with shielded delivery, and Maya's current ZEC route status.
-- [ ] VERIFY `zcash_client_backend` supports Ironwood note commitment scanning in the released crate version (0.24.0 stable, 0.25.0-pre.0 pre-release as of 5 Oct); Zebra 7.0.0-rc.0 changed DB formats on 2 Oct.
-- [ ] VERIFY lightwalletd public endpoints that serve Ironwood (Zodl's and Zcash Foundation's), mainnet and testnet.
-- [ ] VERIFY whether exporting a per-account FVK from a multi-account wallet is supported by the library without exporting the wallet-level key.
-- [ ] VERIFY the OUSD mint extensions as above, only if the Solana rail is kept.
+- [x] VERIFY NEAR Intents 1Click quotes USDC to native ZEC with shielded delivery, and Maya's current ZEC route status.
+- [x] VERIFY `zcash_client_backend` supports Ironwood note commitment scanning in the released crate version (0.24.0 stable, 0.25.0-pre.0 pre-release as of 5 Oct); Zebra 7.0.0-rc.0 changed DB formats on 2 Oct.
+- [x] VERIFY lightwalletd public endpoints that serve Ironwood (Zodl's and Zcash Foundation's), mainnet and testnet.
+- [x] VERIFY whether exporting a per-account FVK from a multi-account wallet is supported by the library without exporting the wallet-level key.
+- [x] VERIFY the OUSD mint extensions as above, only if the Solana rail is kept.
+
+All five resolved on 5 Oct 2026; answers and sources are under Verified facts in `docs/TECH-DECISIONS.md`, decisions in ADR-013 to ADR-019.
 
 ## Sources
 
