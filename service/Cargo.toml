@@ -1,0 +1,73 @@
+[package]
+name = "payslip-service"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+license = "MIT"
+description = "Payslip: private payroll on Zcash. Wallet core, run executor, statement engine, HTTP API."
+publish = false
+
+[lib]
+name = "payslip"
+path = "src/lib.rs"
+
+[[bin]]
+name = "payslip-service"
+path = "src/main.rs"
+
+[dependencies]
+# Zcash wallet stack (ADR-002, pin per ADR-013)
+zcash_client_backend = { version = "=0.25.0-pre.0", features = ["lightwalletd-tonic-tls-webpki-roots", "orchard", "sync", "transparent-inputs"] }
+zcash_client_sqlite = { version = "=0.23.0-pre.0", features = ["orchard", "transparent-inputs"] }
+zcash_keys = { version = "=0.17.0-pre.0", features = ["orchard", "sapling", "transparent-inputs"] }
+zcash_primitives = { version = "=0.31.0-pre.0", features = ["transparent-inputs"] }
+zcash_proofs = { version = "=0.31.0-pre.0", features = ["bundled-prover"] }
+zcash_protocol = "=0.11.0-pre.0"
+zcash_address = "=0.14.0-pre.0"
+zip321 = "=0.10.0-pre.0"
+zip32 = "0.3"
+tonic = { version = "0.14", features = ["tls-webpki-roots", "transport"] }
+rand = "0.10"
+rand_core = "0.10"
+async-trait = "0.1"
+prost = "0.14"
+
+# HTTP API and runtime
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures-util = "0.3"
+tower-http = { version = "0.7", features = ["cors", "trace"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "query"] }
+
+# App tables (ADR-004)
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
+rusqlite = "0.37"
+
+# Keys at rest (ADR-006)
+bip0039 = "0.14"
+age = { version = "0.12", features = ["armor"] }
+secrecy = "0.10"
+secrecy08 = { package = "secrecy", version = "0.8" }
+
+# Plumbing
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+thiserror = "2"
+sha2 = "0.11"
+hex = "0.4"
+csv = "1.4"
+dotenvy = "0.15"
+clap = { version = "4", features = ["derive", "env"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.dev.package."*"]
+# The proving and scanning crates are unusably slow without optimisation.
+opt-level = 3
