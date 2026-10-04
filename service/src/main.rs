@@ -53,6 +53,11 @@ enum Command {
         #[arg(long, default_value_t = 6)]
         count: u32,
     },
+    /// Testnet only: sweep the dev contractor wallets back to the treasury for reuse.
+    DevSweep {
+        #[arg(long, default_value_t = 6)]
+        count: u32,
+    },
 }
 
 #[tokio::main]
@@ -149,6 +154,27 @@ async fn main() -> anyhow::Result<()> {
                     o.is_change,
                     payslip::memo::decode_bytes(o.memo.as_deref())
                 );
+            }
+            Ok(())
+        }
+        Command::DevSweep { count } => {
+            let passphrase = cfg
+                .seed_passphrase
+                .clone()
+                .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE first"))?;
+            let payer = Payer::open(&cfg).await?;
+            let info = payer.wallet_info().await?;
+            drop(payer);
+            for (i, txid) in payslip::devseed::sweep_to_treasury(
+                &cfg,
+                &passphrase,
+                count,
+                &info.treasury.unified_address,
+                info.birthday_height,
+            )
+            .await?
+            {
+                println!("dev account {i} swept: {txid}");
             }
             Ok(())
         }

@@ -407,6 +407,66 @@ impl WalletCore {
         Ok(*txids.first())
     }
 
+    /// Sends the whole spendable balance of HD account `from_index` (minus the fee) to `to`.
+    pub fn sweep(&mut self, from_index: u32, to: ZcashAddress, memo: Option<MemoBytes>) -> Result<TxId, SpendError> {
+        use zcash_client_backend::data_api::{
+            wallet::{input_selection::LockedInputPolicy, propose_send_max_transfer},
+            MaxSpendMode,
+        };
+        let other = |e: &dyn std::fmt::Display| SpendError::Other(e.to_string());
+        let accounts = self.hd_accounts().map_err(|e| other(&e))?;
+        let from = *accounts
+            .get(&from_index)
+            .ok_or_else(|| SpendError::Other(format!("account {from_index} does not exist")))?;
+        let seed = self
+            .seed
+            .as_ref()
+            .ok_or_else(|| SpendError::Other("this wallet has no seed".into()))?;
+        let idx =
+            zip32::AccountId::try_from(from_index).map_err(|_| SpendError::Other("invalid account index".into()))?;
+        let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), idx)
+            .map_err(|e| other(&format!("{e:?}")))?;
+        let proposal = propose_send_max_transfer::<_, _, _, std::convert::Infallible>(
+            &mut self.db,
+            &self.params,
+            from,
+            &[ShieldedPool::Ironwood, ShieldedPool::Orchard, ShieldedPool::Sapling],
+            &StandardFeeRule::Zip317,
+            to,
+            memo,
+            MaxSpendMode::MaxSpendable,
+            self.conf,
+            &LockedInputPolicy::Exclude,
+            None,
+        )
+        .map_err(|e| match e {
+            zcash_client_backend::data_api::error::Error::InsufficientFunds { available, required } => {
+                SpendError::InsufficientFunds {
+                    available: available.into(),
+                    required: required.into(),
+                }
+            }
+            e => SpendError::Other(format!("could not propose the sweep: {e}")),
+        })?;
+        let params = self.params;
+        let prover = self.prover.take().unwrap_or_else(LocalTxProver::bundled);
+        let result = create_proposed_transactions::<_, _, std::convert::Infallible, _, std::convert::Infallible, _>(
+            &mut self.db,
+            &params,
+            &SystemClock,
+            &mut UnwrapErr(SysRng),
+            &prover,
+            &prover,
+            &SpendingKeys::from_unified_spending_key(usk),
+            OvkPolicy::Sender,
+            &proposal,
+            None,
+        );
+        self.prover = Some(prover);
+        let txids = result.map_err(|e| SpendError::Other(format!("could not build the sweep: {e}")))?;
+        Ok(*txids.first())
+    }
+
     /// Serialized bytes of a transaction the wallet created.
     pub fn raw_tx(&self, txid: TxId) -> anyhow::Result<Vec<u8>> {
         let tx = self

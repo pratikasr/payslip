@@ -111,6 +111,28 @@ impl FakeChain {
         }
     }
 
+    /// Removes the last `n` blocks: their transactions return to the mempool (still broadcast)
+    /// and their credits are undone.
+    fn reorg(&self, n: u32) {
+        let mut s = self.s.lock().unwrap();
+        let cut = s.tip - n;
+        let ids: Vec<String> = s.order.clone();
+        for id in ids {
+            let tx = s.txs.get(&id).unwrap().clone();
+            if tx.mined_at.is_some_and(|h| h > cut) {
+                s.txs.get_mut(&id).unwrap().mined_at = None;
+                for p in &tx.pays {
+                    if let Some(i) = p.to.strip_prefix("acct:") {
+                        *s.spendable.get_mut(&i.parse::<u32>().unwrap()).unwrap() -= p.zat;
+                    } else {
+                        *s.external.get_mut(&p.to).unwrap() -= p.zat;
+                    }
+                }
+            }
+        }
+        s.tip = cut;
+    }
+
     fn external(&self, addr: &str) -> u64 {
         self.s.lock().unwrap().external.get(addr).copied().unwrap_or(0)
     }
@@ -294,12 +316,17 @@ async fn seed_run(pool: &Pool) -> String {
 }
 
 fn executor(pool: &Pool, chain: &FakeChain, venue: Arc<dyn SwapVenue>) -> Executor {
+    executor_depth(pool, chain, venue, 1)
+}
+
+fn executor_depth(pool: &Pool, chain: &FakeChain, venue: Arc<dyn SwapVenue>, depth: u32) -> Executor {
     Executor::with_chain(
         ZcashNetwork::Testnet,
         pool.clone(),
         Arc::new(chain.clone()),
         venue,
         Duration::from_millis(5),
+        depth,
     )
 }
 
@@ -597,4 +624,51 @@ async fn venue_partial_fill_fails_with_a_fix() {
     let (status, code) = venue_outcome(vec![Ok("deposit_seen"), Ok("incomplete")]).await;
     assert_eq!(status, "failed");
     assert_eq!(code.as_deref(), Some("deposit_incomplete"));
+}
+
+#[tokio::test]
+async fn reorg_after_a_payment_is_mined_is_detected_and_reconfirmed() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor_depth(&pool, &chain, testnet_venue(), 2);
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    // Mine until every payment is mined once, then reorg the block that carried them.
+    let mut reorged = false;
+    for _ in 0..4000 {
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        let lines = db::lines(&pool, &run_id).await.unwrap();
+        let all_mined = !reorged && lines.iter().all(|l| l.txid.is_some()) && futures_all_mined(&chain, &lines).await;
+        if all_mined {
+            chain.reorg(1);
+            reorged = true;
+        } else {
+            chain.mine();
+        }
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        if r.status == "paid" && !exec.is_running(&run_id) {
+            break;
+        }
+    }
+    assert!(reorged, "the test reorged the chain");
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
+    for l in db::lines(&pool, &run_id).await.unwrap() {
+        let h = chain.mined_height(l.txid.as_deref().unwrap()).await.unwrap();
+        assert_eq!(
+            h.map(|h| h as i64),
+            l.confirmed_height,
+            "recorded height matches the chain after the reorg"
+        );
+    }
+}
+
+async fn futures_all_mined(chain: &FakeChain, lines: &[db::LineRow]) -> bool {
+    for l in lines {
+        if chain.mined_height(l.txid.as_deref().unwrap()).await.unwrap().is_none() {
+            return false;
+        }
+    }
+    true
 }

@@ -131,18 +131,44 @@ struct Health {
     venue: &'static str,
     version: &'static str,
     lightwalletd_error: Option<String>,
+    /// Server clock minus the tip block's timestamp. Blocks lag real time by up to a few
+    /// block intervals, so only a large value means the server clock is wrong.
+    clock_skew_seconds: Option<i64>,
+    warnings: Vec<String>,
+}
+
+/// Skew beyond which the server clock is reported as wrong (block times lag by minutes).
+const MAX_CLOCK_SKEW_SECONDS: i64 = 15 * 60;
+
+pub fn clock_warning(skew: i64) -> Option<String> {
+    (skew.abs() > MAX_CLOCK_SKEW_SECONDS).then(|| {
+        format!(
+            "The server clock is {} minutes {} the chain. Statements use block times and are unaffected, but venue deadlines are checked against this clock. Sync the server clock with NTP.",
+            skew.abs() / 60,
+            if skew > 0 { "ahead of" } else { "behind" }
+        )
+    })
 }
 
 async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
     let info = s.payer.wallet_info().await?;
-    let tip = tokio::time::timeout(Duration::from_secs(10), s.payer.chain_tip()).await;
-    let (chain_tip, err) = match tip {
-        Ok(Ok(t)) => (Some(t), None),
-        Ok(Err(e)) => (None, Some(format!("{e:#}"))),
-        Err(_) => (None, Some("lightwalletd did not answer within 10 seconds".into())),
+    let tip = tokio::time::timeout(Duration::from_secs(10), s.payer.tip_time()).await;
+    let (chain_tip, skew, err) = match tip {
+        Ok(Ok((t, time))) => (
+            Some(t),
+            Some(time::OffsetDateTime::now_utc().unix_timestamp() - time),
+            None,
+        ),
+        Ok(Err(e)) => (None, None, Some(format!("{e:#}"))),
+        Err(_) => (None, None, Some("lightwalletd did not answer within 10 seconds".into())),
     };
+    let warnings: Vec<String> = skew.and_then(clock_warning).into_iter().collect();
     Ok(Json(Health {
-        status: if err.is_none() { "ok" } else { "degraded" },
+        status: if err.is_none() && warnings.is_empty() {
+            "ok"
+        } else {
+            "degraded"
+        },
         network: s.cfg.network.as_str(),
         lightwalletd: s.cfg.lightwalletd_url.clone(),
         chain_tip,
@@ -151,6 +177,8 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         venue: s.venue.kind().as_str(),
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,
+        clock_skew_seconds: skew,
+        warnings,
     }))
 }
 
@@ -161,4 +189,17 @@ async fn wallet(State(s): State<AppStateRef>) -> ApiResult<Json<WalletInfo>> {
 async fn wallet_sync(State(s): State<AppStateRef>) -> ApiResult<Json<WalletInfo>> {
     s.payer.sync().await?;
     Ok(Json(s.payer.wallet_info().await?))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clock_warning;
+
+    #[test]
+    fn clock_skew_is_flagged_only_beyond_normal_block_lag() {
+        assert!(clock_warning(300).is_none());
+        assert!(clock_warning(-600).is_none());
+        assert!(clock_warning(3_600).unwrap().contains("60 minutes ahead"));
+        assert!(clock_warning(-7_200).unwrap().contains("120 minutes behind"));
+    }
 }

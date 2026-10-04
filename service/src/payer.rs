@@ -138,6 +138,11 @@ impl Payer {
         Ok(u32::from(self.wallet.run(|w| Box::pin(w.chain_tip())).await??))
     }
 
+    /// Height and Unix time of the chain tip, from lightwalletd.
+    pub async fn tip_time(&self) -> anyhow::Result<(u32, i64)> {
+        self.wallet.run(|w| Box::pin(wallet::lwd::tip_time(w.client()))).await?
+    }
+
     pub async fn wallet_info(&self) -> anyhow::Result<WalletInfo> {
         let network = self.network.as_str();
         self.wallet

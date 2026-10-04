@@ -306,6 +306,8 @@ struct Inner {
     running: Mutex<HashSet<String>>,
     changes: broadcast::Sender<String>,
     poll: Duration,
+    /// Blocks a payment must be buried under (counting its own) before its line is confirmed.
+    confirm_depth: u32,
 }
 
 #[derive(Clone)]
@@ -337,6 +339,7 @@ impl Executor {
             Arc::new(PayerChain(payer)),
             venue,
             Duration::from_secs(10),
+            cfg.min_confirmations,
         )
     }
 
@@ -346,6 +349,7 @@ impl Executor {
         chain: Arc<dyn ChainOps>,
         venue: Arc<dyn SwapVenue>,
         poll: Duration,
+        confirm_depth: u32,
     ) -> Self {
         let (changes, _) = broadcast::channel(256);
         Executor {
@@ -357,6 +361,7 @@ impl Executor {
                 running: Mutex::new(HashSet::new()),
                 changes,
                 poll,
+                confirm_depth: confirm_depth.max(1),
             }),
         }
     }
@@ -980,6 +985,27 @@ impl Executor {
         let mut pending = 0;
         for l in &lines {
             if l.status == "confirmed" {
+                // Re-check until the run is closed: a reorg can take a payment out of the chain.
+                let still = match &l.txid {
+                    Some(t) => chain.mined_height(t).await?,
+                    None => None,
+                };
+                if still.is_some() && still.map(|h| h as i64) == l.confirmed_height {
+                    continue;
+                }
+                db::unconfirm_line(db, &l.id).await?;
+                self.log(
+                    &run.id,
+                    format!(
+                        "Payment to {} left the chain in a reorg; waiting for it to be mined again",
+                        l.contractor_name
+                    ),
+                )
+                .await;
+                pending += 1;
+                if let Some(t) = &l.txid {
+                    let _ = chain.broadcast(t).await;
+                }
                 continue;
             }
             pending += 1;
@@ -1034,10 +1060,20 @@ impl Executor {
                 }
                 Some(txid) => match chain.mined_height(txid).await? {
                     Some(h) => {
-                        db::confirm_line(db, &l.id, h).await?;
-                        pending -= 1;
-                        self.log(&run.id, format!("{} confirmed at height {h}", l.contractor_name))
-                            .await;
+                        let t = match tip {
+                            Some(t) => t,
+                            None => {
+                                let t = chain.tip().await?;
+                                tip = Some(t);
+                                t
+                            }
+                        };
+                        if t + 1 >= h + self.inner.confirm_depth {
+                            db::confirm_line(db, &l.id, h).await?;
+                            pending -= 1;
+                            self.log(&run.id, format!("{} confirmed at height {h}", l.contractor_name))
+                                .await;
+                        }
                     }
                     None => {
                         let t = match tip {

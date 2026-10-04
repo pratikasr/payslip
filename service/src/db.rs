@@ -493,6 +493,14 @@ pub async fn confirm_line(pool: &Pool, line_id: &str, height: u32) -> anyhow::Re
     Ok(())
 }
 
+pub async fn unconfirm_line(pool: &Pool, line_id: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE pay_lines SET status = 'broadcast', confirmed_height = NULL WHERE id = ?")
+        .bind(line_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn fail_line(pool: &Pool, line_id: &str, code: &str, message: &str, hint: &str) -> anyhow::Result<()> {
     sqlx::query("UPDATE pay_lines SET error_code = ?, error_message = ?, error_hint = ? WHERE id = ?")
         .bind(code)
