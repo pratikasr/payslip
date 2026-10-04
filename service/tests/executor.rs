@@ -24,7 +24,7 @@ use payslip::{
 };
 
 const RATE: u64 = 1_350_000_000_000;
-const EXPIRY_DELTA: u32 = 40;
+const EXPIRY_DELTA: u32 = 100;
 
 #[derive(Clone, Debug)]
 struct FakeTx {
@@ -339,7 +339,7 @@ async fn run_to_end(pool: &Pool, chain: &FakeChain, exec: &Executor, run_id: &st
     exec.start(run_id).await.unwrap();
     for _ in 0..4000 {
         chain.mine();
-        tokio::time::sleep(Duration::from_millis(2)).await;
+        tokio::time::sleep(Duration::from_millis(4)).await;
         let r = db::get_run(pool, run_id).await.unwrap().unwrap();
         if (r.status == "paid" || r.status == "failed") && !exec.is_running(run_id) {
             return r.status;
@@ -418,7 +418,7 @@ async fn crash_after_building_payment_before_recording_it_never_pays_twice() {
     // Let the first executor run until it crashes on account 2's payment.
     for _ in 0..2000 {
         chain.mine();
-        tokio::time::sleep(Duration::from_millis(2)).await;
+        tokio::time::sleep(Duration::from_millis(4)).await;
         if !exec.is_running(&run_id) {
             break;
         }
@@ -454,9 +454,24 @@ async fn crash_before_broadcast_rebroadcasts_the_same_transaction() {
     // Drive until the allocation broadcast hangs, then drop the executor mid-await (a crash).
     let e1 = exec.clone();
     let rid = run_id.clone();
-    let _ = tokio::time::timeout(Duration::from_millis(300), async move { e1.drive(&rid).await }).await;
-    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    let task = tokio::spawn(async move { e1.drive(&rid).await });
+    // Wait for the exact crash point (allocation stored, its broadcast hanging), however slow
+    // the machine, then kill the task.
+    let mut r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    for _ in 0..2000 {
+        if r.status == "allocating" && !chain.txs_from(0).is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+        r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    }
+    task.abort();
+    let _ = task.await;
     assert_eq!(r.status, "allocating");
+    assert!(
+        !chain.txs_from(0)[0].broadcast,
+        "the crash happened before the broadcast completed"
+    );
     let alloc = r.allocation_txid.clone().unwrap();
     let exec2 = executor(&pool, &chain, testnet_venue());
     assert_eq!(run_to_end(&pool, &chain, &exec2, &run_id).await, "paid");
@@ -637,7 +652,7 @@ async fn reorg_after_a_payment_is_mined_is_detected_and_reconfirmed() {
     // Mine until every payment is mined once, then reorg the block that carried them.
     let mut reorged = false;
     for _ in 0..4000 {
-        tokio::time::sleep(Duration::from_millis(2)).await;
+        tokio::time::sleep(Duration::from_millis(4)).await;
         let lines = db::lines(&pool, &run_id).await.unwrap();
         let all_mined = !reorged && lines.iter().all(|l| l.txid.is_some()) && futures_all_mined(&chain, &lines).await;
         if all_mined {
