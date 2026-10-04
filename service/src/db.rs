@@ -354,6 +354,32 @@ pub async fn insert_run(
     Ok(Some(id))
 }
 
+/// Deletes a run that never left `draft`. Returns false if it is not a draft.
+pub async fn delete_draft_run(pool: &Pool, id: &str) -> anyhow::Result<bool> {
+    let mut tx = pool.begin().await?;
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if status.as_deref() != Some("draft") {
+        return Ok(false);
+    }
+    sqlx::query("DELETE FROM run_events WHERE run_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM pay_lines WHERE run_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM runs WHERE id = ? AND status = 'draft'")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
 /// Compare-and-set on run status. Returns false if the run was not in `from`.
 pub async fn transition(pool: &Pool, id: &str, from: &[&str], to: &str) -> anyhow::Result<bool> {
     let placeholders = from.iter().map(|_| "?").collect::<Vec<_>>().join(",");

@@ -94,6 +94,7 @@ PayLine = {
 - `GET /api/runs` returns `{"runs": [Run]}` newest first.
 - `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid"}` returns `201` and the Run in `draft`. Repeating the same `idempotency_key` returns `200` and the existing Run. Errors: `invalid_amount` (zero or negative), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long`.
 - `GET /api/runs/{id}` returns the Run.
+- `DELETE /api/runs/{id}` discards a run that is still a `draft` and returns `204`; any other status returns `409 run_not_draft`.
 - `POST /api/runs/{id}/fund` with `{"origin_chain": "base", "refund_address": "0x..."}` asks the venue for a quote and deposit address and returns the Run in `awaiting_funds`. On testnet with the testnet venue no deposit is needed: the run moves to `funded` at once if the treasury holds enough, otherwise `409 treasury_insufficient` with the treasury address in the hint.
 - `POST /api/runs/{id}/funding/deposit-tx` with `{"tx_hash": "0x..."}` tells the venue which transaction carried the deposit. Optional; it speeds up detection.
 - `GET /api/runs/{id}/funding` polls the venue and returns the Run (status moves to `funded` when the venue reports success and the ZEC is in the treasury).

@@ -25,7 +25,7 @@ use crate::{
 pub fn routes() -> Router<AppStateRef> {
     Router::new()
         .route("/api/runs", get(list).post(create))
-        .route("/api/runs/{id}", get(get_one))
+        .route("/api/runs/{id}", get(get_one).delete(discard))
         .route("/api/runs/{id}/fund", post(fund))
         .route("/api/runs/{id}/funding", get(funding))
         .route("/api/runs/{id}/funding/deposit-tx", post(deposit_tx))
@@ -72,6 +72,19 @@ async fn list(State(s): State<AppStateRef>) -> ApiResult<Json<Value>> {
 
 async fn get_one(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     Ok(Json(view(&s, &id).await?))
+}
+
+async fn discard(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    view(&s, &id).await?;
+    if db::delete_draft_run(&s.db, &id).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::conflict(
+            "run_not_draft",
+            "Only a draft run can be discarded; this one has been funded.",
+            "Funded runs stay on record. Open the run to follow or resume it.",
+        ))
+    }
 }
 
 async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> ApiResult<(StatusCode, Json<Value>)> {
