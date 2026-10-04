@@ -780,13 +780,19 @@ impl Executor {
             }
             (f.funded_usd_cents.unwrap_or(f.requested_usd_cents), got)
         };
-        let rate = money::fill_rate_e6(funded_cents, acquired).ok_or_else(|| {
+        let fill = money::fill_rate_e6(funded_cents, acquired).ok_or_else(|| {
             permanent(
                 "invalid_fill",
                 "The venue reported an empty fill.",
                 "Check the venue status, then fund again.",
             )
         })?;
+        // The testnet venue's contract is a fixed rate: record it exactly, not the rounded ratio.
+        let rate = if testnet {
+            f.rate_usd_per_zec_e6.unwrap_or(fill)
+        } else {
+            fill
+        };
         db::set_fill(db, &run.id, funded_cents, acquired, rate).await?;
         let lines = db::lines(db, &run.id).await?;
         let period = Period::parse(&period_label(&run.period_start))

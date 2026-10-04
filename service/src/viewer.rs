@@ -306,6 +306,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_mainnet_key_on_testnet_names_the_mismatch() {
+        let params = Network::MainNetwork;
+        let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[0u8; 32], zip32::AccountId::ZERO).unwrap();
+        let mainnet = usk.to_unified_full_viewing_key().encode(&params);
+        let err = ViewingKey::parse(&ZcashNetwork::Testnet, &mainnet).unwrap_err();
+        assert_eq!(err.body.code, "wrong_network");
+        assert!(ViewingKey::parse(&ZcashNetwork::Mainnet, &mainnet).is_ok());
+    }
+
+    #[test]
     fn rejects_secrets_and_junk_with_actionable_codes() {
         let net = ZcashNetwork::Testnet;
         let cases = [

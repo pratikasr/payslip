@@ -70,10 +70,10 @@ Full design: [docs/SPEC.md](docs/SPEC.md). Stack and reasoning: [docs/TECH-DECIS
 | Milestone | State |
 | --- | --- |
 | M0 Verify external facts | done |
-| M1 Scaffold service and web | not started |
-| M2 Wallet core (accounts, FVK export, sync, send with memo) | not started |
-| M3 Runs (API, swap venue, executor) | not started |
-| M4 Statement engine | not started |
+| M1 Scaffold service and web | service and CI done, web in progress |
+| M2 Wallet core (accounts, FVK export, sync, send with memo) | done, verified on testnet |
+| M3 Runs (API, swap venue, executor) | done, verified on testnet |
+| M4 Statement engine | done, verified on testnet |
 | M5 Web dashboards | not started |
 | M6 Mainnet demo run | not started |
 | M7 Submission | not started |

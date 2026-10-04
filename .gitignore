@@ -29,3 +29,8 @@ playwright-report/
 *.age
 service/data/
 data/
+
+# demo configs with real addresses
+scripts/demo/mainnet.env
+scripts/demo/contractors.mainnet.json
+scripts/demo/out/

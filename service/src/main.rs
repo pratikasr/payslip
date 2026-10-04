@@ -53,6 +53,13 @@ enum Command {
         #[arg(long, default_value_t = 6)]
         count: u32,
     },
+    /// Print the payer-side unified address of ZIP-32 account N.
+    AccountAddress {
+        #[arg(long)]
+        account: u32,
+    },
+    /// Testing helper: print a mainnet UFVK derived from an all-zero test seed (no funds).
+    DevMainnetUfvk,
     /// Testnet only: sweep the dev contractor wallets back to the treasury for reuse.
     DevSweep {
         #[arg(long, default_value_t = 6)]
@@ -155,6 +162,18 @@ async fn main() -> anyhow::Result<()> {
                     payslip::memo::decode_bytes(o.memo.as_deref())
                 );
             }
+            Ok(())
+        }
+        Command::AccountAddress { account } => {
+            let payer = Payer::open(&cfg).await?;
+            println!("{}", payer.address(account).await?);
+            Ok(())
+        }
+        Command::DevMainnetUfvk => {
+            let params = zcash_protocol::consensus::Network::MainNetwork;
+            let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[0u8; 32], zip32::AccountId::ZERO)
+                .map_err(|e| anyhow!("{e:?}"))?;
+            println!("{}", usk.to_unified_full_viewing_key().encode(&params));
             Ok(())
         }
         Command::DevSweep { count } => {
