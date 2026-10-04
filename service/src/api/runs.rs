@@ -71,6 +71,7 @@ async fn list(State(s): State<AppStateRef>) -> ApiResult<Json<Value>> {
 }
 
 async fn get_one(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    let _ = s.executor.refresh_conversions(&id).await;
     Ok(Json(view(&s, &id).await?))
 }
 

@@ -258,11 +258,14 @@ pub struct LineRow {
     pub error_code: Option<String>,
     pub error_message: Option<String>,
     pub error_hint: Option<String>,
+    pub settlement_state: Option<String>,
     // joined
     pub contractor_name: String,
     pub account_index: i64,
     pub unified_address: String,
     pub settlement_choice: String,
+    pub payout_chain: Option<String>,
+    pub payout_address: Option<String>,
 }
 
 pub struct NewLine {
@@ -294,7 +297,7 @@ pub async fn list_runs(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
 pub async fn lines(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<LineRow>> {
     Ok(sqlx::query_as(
         "SELECT l.*, c.name AS contractor_name, c.zip32_account_index AS account_index, c.unified_address,
-                c.settlement_choice
+                c.settlement_choice, c.payout_chain, c.payout_address
          FROM pay_lines l JOIN contractors c ON c.id = l.contractor_id
          WHERE l.run_id = ? ORDER BY l.position",
     )
@@ -513,6 +516,15 @@ pub async fn set_line_tx(
 pub async fn confirm_line(pool: &Pool, line_id: &str, height: u32) -> anyhow::Result<()> {
     sqlx::query("UPDATE pay_lines SET status = 'confirmed', confirmed_height = ? WHERE id = ?")
         .bind(height as i64)
+        .bind(line_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn set_settlement(pool: &Pool, line_id: &str, state: &serde_json::Value) -> anyhow::Result<()> {
+    sqlx::query("UPDATE pay_lines SET settlement_state = ? WHERE id = ?")
+        .bind(state.to_string())
         .bind(line_id)
         .execute(pool)
         .await?;

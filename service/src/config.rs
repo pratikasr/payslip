@@ -128,7 +128,8 @@ impl Config {
                 .unwrap_or_else(|| "127.0.0.1:8080".into())
                 .parse()
                 .context("PAYSLIP_BIND must be host:port")?,
-            web_origin: var("PAYSLIP_WEB_ORIGIN").unwrap_or_else(|| "http://localhost:3000".into()),
+            web_origin: var("PAYSLIP_WEB_ORIGIN")
+                .unwrap_or_else(|| "http://localhost:3000,http://127.0.0.1:3000".into()),
             seed_passphrase: var("PAYSLIP_SEED_PASSPHRASE"),
             venue,
             testnet_rate_e6,

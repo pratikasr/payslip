@@ -67,13 +67,14 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
 }
 
 pub fn router(state: AppStateRef) -> Router {
-    let origin = state
+    let origins: Vec<HeaderValue> = state
         .cfg
         .web_origin
-        .parse::<HeaderValue>()
-        .unwrap_or_else(|_| HeaderValue::from_static("http://localhost:3000"));
+        .split(',')
+        .filter_map(|o| o.trim().parse::<HeaderValue>().ok())
+        .collect();
     let cors = CorsLayer::new()
-        .allow_origin(origin)
+        .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([axum::http::header::CONTENT_TYPE]);
     Router::new()

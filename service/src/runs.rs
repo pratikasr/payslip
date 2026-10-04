@@ -38,6 +38,30 @@ use crate::{
 pub const LINE_FEE_ZAT: u64 = 10_000;
 /// ZIP-317 marginal fee per logical action.
 pub const MARGINAL_FEE_ZAT: u64 = 5_000;
+/// Fee of a converting pay line: one transparent output to the venue plus a padded shielded
+/// bundle for the change that carries the memo (three logical actions).
+pub const CONVERT_FEE_ZAT: u64 = 15_000;
+/// Value left as change on a converting line so a shielded output exists to carry the PS1 memo
+/// (the venue's transparent deposit address cannot). It stays in the contractor account.
+pub const CHANGE_CARRY_ZAT: u64 = 10_000;
+
+/// True when a line settles by converting to USDC (ADR-018).
+pub fn converts(l: &LineRow) -> bool {
+    l.settlement_choice == "convert_usdc" && l.payout_address.is_some() && l.payout_chain.is_some()
+}
+
+/// Allocation overhead for a line on top of its amount.
+pub fn line_overhead_zat(l: &LineRow) -> u64 {
+    if converts(l) {
+        CONVERT_FEE_ZAT + CHANGE_CARRY_ZAT
+    } else {
+        LINE_FEE_ZAT
+    }
+}
+
+fn conversion_of(l: &LineRow) -> Option<crate::venue::Conversion> {
+    l.settlement_state.as_deref().and_then(|s| serde_json::from_str(s).ok())
+}
 
 /// Upper estimate of all network fees for a run with `n` lines: n pay line transactions and one
 /// allocation transaction with n + 1 outputs and up to two extra inputs.
@@ -81,6 +105,7 @@ pub trait ChainOps: Send + Sync {
     async fn spendable(&self, account: u32) -> anyhow::Result<u64>;
     async fn total(&self, account: u32) -> anyhow::Result<u64>;
     async fn account_address(&self, account: u32) -> anyhow::Result<String>;
+    async fn transparent_address(&self, account: u32) -> anyhow::Result<String>;
     async fn create_transfer(
         &self,
         from: u32,
@@ -125,6 +150,9 @@ impl ChainOps for PayerChain {
     async fn account_address(&self, account: u32) -> anyhow::Result<String> {
         self.0.address(account).await
     }
+    async fn transparent_address(&self, account: u32) -> anyhow::Result<String> {
+        self.0.transparent_address(account).await
+    }
     async fn create_transfer(
         &self,
         from: u32,
@@ -135,7 +163,7 @@ impl ChainOps for PayerChain {
         let mut specs = vec![];
         for p in pays {
             specs.push(crate::wallet::PaymentSpec {
-                to: crate::wallet::parse_shielded_address(&params, &p.to)?,
+                to: crate::wallet::parse_recipient(&params, &p.to, p.memo.is_none())?,
                 amount: zcash_protocol::value::Zatoshis::from_u64(p.zat)
                     .map_err(|_| anyhow::anyhow!("invalid amount {}", p.zat))?,
                 memo: p
@@ -196,6 +224,8 @@ pub fn line_json(network: ZcashNetwork, l: &LineRow) -> Value {
         "explorer_url": l.txid.as_ref().map(|t| network.explorer_tx_url(t)),
         "memo": l.memo,
         "settlement_choice": l.settlement_choice,
+        "payout_chain": l.payout_chain,
+        "settlement": conversion_of(l),
         "error": error,
     })
 }
@@ -558,6 +588,30 @@ impl Executor {
         Ok(())
     }
 
+    /// Polls the venue for converting lines whose payment confirmed. At most every 15 seconds
+    /// per line; called when a run is viewed, so conversions finish after the run is paid.
+    pub async fn refresh_conversions(&self, run_id: &str) -> Result<(), ApiError> {
+        let db = &self.inner.db;
+        let now = OffsetDateTime::now_utc().unix_timestamp();
+        for l in db::lines(db, run_id).await? {
+            let Some(c) = conversion_of(&l) else { continue };
+            if l.status != "confirmed" || c.status != "processing" || c.checked_at.is_some_and(|t| now - t < 15) {
+                continue;
+            }
+            let mut next = match self.inner.venue.conversion_status(&c).await {
+                Ok(n) => n,
+                Err(_) => c.clone(),
+            };
+            next.checked_at = Some(now);
+            db::set_settlement(db, &l.id, &serde_json::to_value(&next).map_err(anyhow::Error::from)?).await?;
+            if next.status != c.status {
+                self.log(run_id, format!("Conversion for {}: {}", l.contractor_name, next.status))
+                    .await;
+            }
+        }
+        Ok(())
+    }
+
     /// Starts (or resumes) the executor for a run. A second call while it runs is a no-op.
     pub async fn start(&self, run_id: &str) -> Result<(), ApiError> {
         let db = &self.inner.db;
@@ -817,8 +871,9 @@ impl Executor {
                     "Shorten the invoice reference and create the run again.",
                 )
             })?;
-            db::set_line_amount(db, &l.id, zat, LINE_FEE_ZAT, &memo, &memo_hash(&memo)).await?;
-            need += zat + LINE_FEE_ZAT;
+            let overhead = line_overhead_zat(l);
+            db::set_line_amount(db, &l.id, zat, overhead, &memo, &memo_hash(&memo)).await?;
+            need += zat + overhead;
         }
         let total = chain.total(TREASURY_INDEX).await?;
         if total < need {
@@ -1021,15 +1076,76 @@ impl Executor {
                         .memo
                         .clone()
                         .ok_or_else(|| permanent("missing_memo", "A line has no memo.", "Execute the run again."))?;
-                    let pay = Pay {
-                        to: l.unified_address.clone(),
-                        zat: l.amount_zec.unwrap_or(0) as u64,
-                        memo: Some(memo),
+                    let amount = l.amount_zec.unwrap_or(0) as u64;
+                    // A converting line pays the venue's deposit address (transparent, so no
+                    // memo there) and carries the PS1 memo on the account's change output.
+                    let mut conversion = None;
+                    let (pay, change_memo) = if converts(l) {
+                        let conv = match conversion_of(l) {
+                            Some(c) => c,
+                            None => {
+                                let sink = if self.inner.venue.kind() == crate::config::VenueKind::TestnetFixedRate {
+                                    Some(chain.transparent_address(TREASURY_INDEX).await?)
+                                } else {
+                                    None
+                                };
+                                let req = crate::venue::ConversionRequest {
+                                    amount_zat: amount,
+                                    payout_chain: l.payout_chain.clone().unwrap_or_default(),
+                                    payout_address: l.payout_address.clone().unwrap_or_default(),
+                                    refund_to: l.unified_address.clone(),
+                                    testnet_sink: sink,
+                                };
+                                let c = match self.inner.venue.quote_conversion(&req).await {
+                                    Ok(c) => c,
+                                    Err(VenueError::Unavailable(m)) => return Err(StepError::Transient(m)),
+                                    Err(VenueError::Rejected { code, message, hint }) => {
+                                        db::fail_line(db, &l.id, code, &message, &hint).await?;
+                                        return Err(permanent(code, format!("{}: {message}", l.contractor_name), hint));
+                                    }
+                                };
+                                db::set_settlement(db, &l.id, &serde_json::to_value(&c).map_err(anyhow::Error::from)?)
+                                    .await?;
+                                self.log(
+                                    &run.id,
+                                    format!(
+                                        "Conversion quote for {}: {} USDC on {}",
+                                        l.contractor_name, c.quoted_out, c.payout_chain
+                                    ),
+                                )
+                                .await;
+                                c
+                            }
+                        };
+                        let pay = Pay {
+                            to: conv.deposit_address.clone(),
+                            zat: amount,
+                            memo: None,
+                        };
+                        conversion = Some(conv);
+                        (pay, Some(memo))
+                    } else {
+                        (
+                            Pay {
+                                to: l.unified_address.clone(),
+                                zat: amount,
+                                memo: Some(memo),
+                            },
+                            None,
+                        )
                     };
-                    match chain.create_transfer(l.account_index as u32, vec![pay], None).await? {
+                    match chain
+                        .create_transfer(l.account_index as u32, vec![pay], change_memo)
+                        .await?
+                    {
                         Ok(txid) => {
                             let exp = chain.expiry_height(&txid).await?;
                             db::set_line_tx(db, &l.id, Some(&txid), exp, "broadcast").await?;
+                            if let Some(mut c) = conversion {
+                                c.status = "processing".into();
+                                db::set_settlement(db, &l.id, &serde_json::to_value(&c).map_err(anyhow::Error::from)?)
+                                    .await?;
+                            }
                             if let Some(fee) = chain.tx_fee(&txid).await? {
                                 db::add_fees(db, &run.id, fee).await?;
                             }
@@ -1094,6 +1210,10 @@ impl Executor {
                         if exp.is_some_and(|e| t > e) {
                             chain.sync().await?;
                             db::set_line_tx(db, &l.id, None, None, "allocated").await?;
+                            if conversion_of(l).is_some() {
+                                // The venue quote may have lapsed too; quote again on rebuild.
+                                db::set_settlement(db, &l.id, &Value::Null).await?;
+                            }
                             self.log(
                                 &run.id,
                                 format!("Payment to {} expired unmined; rebuilding", l.contractor_name),

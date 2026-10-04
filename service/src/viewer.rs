@@ -69,7 +69,9 @@ impl ViewingKey {
                 "Never share a spending key. Paste the viewing key (uview..., uvf...) instead.",
             ));
         }
-        if lower.starts_with("uivk") {
+        // ZIP 316 incoming viewing keys: Revision 0 `uivk`/`uivktest`, Revision 2 `uvi`/`uvitest`
+        // (matched with their separator, since `uview` also begins with `uvi`).
+        if lower.starts_with("uivk") || lower.starts_with("uvi1") || lower.starts_with("uvitest1") {
             return Err(ApiError::bad_request(
                 "incoming_viewing_key",
                 "That is an incoming viewing key. It cannot see payments the account sent, so it cannot produce a statement.",
@@ -326,6 +328,8 @@ mod tests {
             ),
             ("secret-extended-key-test1qqqqqqqq", "spending_key_rejected"),
             ("uivktest1abcdef", "incoming_viewing_key"),
+            ("uvitest1qqqqqqqqqqqqqq", "incoming_viewing_key"),
+            ("uvi1qqqqqqqqqqqqqq", "incoming_viewing_key"),
             ("uviewtest1 not a key", "invalid_viewing_key"),
             ("uviewtest1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", "invalid_viewing_key"),
         ];

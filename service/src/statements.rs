@@ -41,6 +41,10 @@ pub struct Line {
     pub account: String,
     pub account_index: Option<u32>,
     pub label: Option<String>,
+    /// held: ZEC to the contractor's shielded address; converted: ZEC to a swap venue's
+    /// deposit address for conversion to USDC (ADR-018), memo on the change output.
+    pub settlement: &'static str,
+    pub to_address: Option<String>,
     #[serde(skip)]
     pub fee_zat: Option<u64>,
     #[serde(skip)]
@@ -131,6 +135,19 @@ pub fn classify(
     let label = |fp: &str| by_fp.get(fp).and_then(|k| k.label.clone());
     let index = |fp: &str| by_fp.get(fp).and_then(|k| k.account_index);
     let mut c = Classified::default();
+    // Converting pay lines carry their PS1 memo on the funding account's change output, because
+    // the venue deposit address is transparent. Index them by (txid, account).
+    let mut converted: HashMap<(String, String), memo::PayLineMemo> = HashMap::new();
+    for o in outputs {
+        if o.is_change {
+            if let (Some(acct), Decoded::Payslip(PayslipMemo::PayLine(m))) = (
+                o.to_account.as_ref().or(o.from_account.as_ref()),
+                memo::decode_bytes(o.memo.as_deref()),
+            ) {
+                converted.insert((o.txid.clone(), acct.clone()), m);
+            }
+        }
+    }
     for o in outputs {
         let expired = o.mined_height.is_none() && o.expiry_height.is_some_and(|e| e != 0 && tip > e);
         if expired {
@@ -142,7 +159,26 @@ pub fn classify(
             (Some((from, to)), Some(d)) => d >= from && d <= to,
             (Some(_), None) => o.mined_height.is_none(),
         };
-        let decoded = memo::decode_bytes(o.memo.as_deref());
+        let mut decoded = memo::decode_bytes(o.memo.as_deref());
+        let mut settlement = "held";
+        if o.is_change && matches!(decoded, Decoded::Payslip(PayslipMemo::PayLine(_))) {
+            continue;
+        }
+        if let (
+            false,
+            Some(from),
+            None,
+            Decoded::Unlabelled {
+                reason: memo::UnlabelledReason::NoMemo,
+                ..
+            },
+        ) = (o.is_change, &o.from_account, &o.to_account, &decoded)
+        {
+            if let Some(m) = converted.get(&(o.txid.clone(), from.clone())) {
+                decoded = Decoded::Payslip(PayslipMemo::PayLine(m.clone()));
+                settlement = "converted";
+            }
+        }
         let explorer_url = network.explorer_tx_url(&o.txid);
         let direction: &'static str = if o.from_account.is_some() { "out" } else { "in" };
         let account = o
@@ -193,6 +229,8 @@ pub fn classify(
                     label: label(&account),
                     account_index: index(&account),
                     account,
+                    settlement,
+                    to_address: o.to_address.clone(),
                     fee_zat: o.fee_zat,
                     sort_key: (
                         o.mined_height.unwrap_or(u32::MAX),
@@ -852,6 +890,37 @@ pub(crate) mod tests {
         ));
         let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None));
         assert_eq!(r[0].status, "variance_unexplained");
+    }
+
+    #[test]
+    fn converted_line_pairs_the_venue_deposit_with_the_memo_on_change() {
+        // Account a1 pays 0.002 ZEC to a transparent venue deposit; its change carries the memo.
+        let mut deposit = out("cv", Some(120), T0, Some("a1"), None, 200_000, false, None);
+        deposit.pool = 0;
+        deposit.to_address = Some("t1JjCEbkvYSfZvQLM1P8C6eXtQLawVox9PR".into());
+        let change = out(
+            "cv",
+            Some(120),
+            T0,
+            Some("a1"),
+            Some("a1"),
+            10_000,
+            true,
+            memo_bytes(pay(270, "CONV-1")),
+        );
+        // An unrelated transparent payment with no memo stays unlabelled.
+        let mut stray = out("zz", Some(121), T0, Some("a1"), None, 5_000, false, None);
+        stray.pool = 0;
+        let c = classify(ZcashNetwork::Testnet, &[deposit, change, stray], &keys(), 200, None);
+        assert_eq!(c.lines.len(), 1, "{c:?}");
+        let l = &c.lines[0];
+        assert_eq!(
+            (l.settlement, l.amount_zat, l.invoice_ref.as_str()),
+            ("converted", 200_000, "CONV-1")
+        );
+        assert_eq!(l.to_address.as_deref(), Some("t1JjCEbkvYSfZvQLM1P8C6eXtQLawVox9PR"));
+        assert_eq!(c.unlabelled.len(), 1);
+        assert_eq!(c.unlabelled[0].txid, "zz");
     }
 
     #[test]

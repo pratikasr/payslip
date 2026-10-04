@@ -30,6 +30,7 @@ const EXPIRY_DELTA: u32 = 100;
 struct FakeTx {
     from: u32,
     pays: Vec<Pay>,
+    change_memo: Option<String>,
     fee: u64,
     expiry: u32,
     broadcast: bool,
@@ -164,11 +165,14 @@ impl ChainOps for FakeChain {
     async fn account_address(&self, account: u32) -> anyhow::Result<String> {
         Ok(format!("acct:{account}"))
     }
+    async fn transparent_address(&self, account: u32) -> anyhow::Result<String> {
+        Ok(format!("tsink:{account}"))
+    }
     async fn create_transfer(
         &self,
         from: u32,
         pays: Vec<Pay>,
-        _change_memo: Option<String>,
+        change_memo: Option<String>,
     ) -> anyhow::Result<Result<String, SpendError>> {
         if self.hooks.lock().unwrap().disk_full {
             anyhow::bail!("database or disk is full");
@@ -196,6 +200,7 @@ impl ChainOps for FakeChain {
                 FakeTx {
                     from,
                     pays,
+                    change_memo,
                     fee,
                     expiry,
                     broadcast: false,
@@ -686,4 +691,70 @@ async fn futures_all_mined(chain: &FakeChain, lines: &[db::LineRow]) -> bool {
         }
     }
     true
+}
+
+#[tokio::test]
+async fn converting_line_pays_the_venue_deposit_and_carries_the_memo_on_change() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    // Switch the second contractor to convert to USDC on Base.
+    let lines = db::lines(&pool, &run_id).await.unwrap();
+    let mateo = lines.iter().find(|l| l.account_index == 2).unwrap();
+    db::update_contractor(
+        &pool,
+        &mateo.contractor_id,
+        &NewContractor {
+            name: mateo.contractor_name.clone(),
+            email: None,
+            unified_address: mateo.unified_address.clone(),
+            settlement_choice: "convert_usdc".into(),
+            payout_chain: Some("base".into()),
+            payout_address: Some("0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into()),
+        },
+    )
+    .await
+    .unwrap();
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    let line = db::lines(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|l| l.account_index == 2)
+        .unwrap();
+    let mined: Vec<FakeTx> = chain.txs_from(2).into_iter().filter(|t| t.mined_at.is_some()).collect();
+    assert_eq!(mined.len(), 1);
+    let tx = &mined[0];
+    // The ZEC went to the venue's deposit address, with no memo on that transparent output...
+    assert_eq!(
+        tx.pays,
+        vec![Pay {
+            to: "tsink:0".into(),
+            zat: line.amount_zec.unwrap() as u64,
+            memo: None
+        }]
+    );
+    // ...and the pay line memo rides on the change, readable by the contractor's key.
+    assert_eq!(tx.change_memo.as_deref(), line.memo.as_deref());
+    assert!(line.memo.unwrap().starts_with("PS1|"));
+    let conv: serde_json::Value = serde_json::from_str(line.settlement_state.as_deref().unwrap()).unwrap();
+    assert_eq!(conv["status"], "processing");
+    assert_eq!(conv["simulated"], true);
+    assert_eq!(conv["deposit_address"], "tsink:0");
+    // The other lines are unaffected.
+    assert_eq!(
+        chain.external("contractor:0"),
+        db::lines(&pool, &run_id).await.unwrap()[0].amount_zec.unwrap() as u64
+    );
+    exec.refresh_conversions(&run_id).await.unwrap();
+    let line = db::lines(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|l| l.account_index == 2)
+        .unwrap();
+    let conv: serde_json::Value = serde_json::from_str(line.settlement_state.as_deref().unwrap()).unwrap();
+    assert_eq!(conv["status"], "simulated");
 }

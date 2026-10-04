@@ -46,6 +46,51 @@ pub struct Funding {
     pub refund_reason: Option<String>,
 }
 
+/// A contractor-side conversion of one pay line from ZEC to USDC (ADR-018). Stored as JSON in
+/// `pay_lines.settlement_state`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Conversion {
+    pub venue: String,
+    /// quoted, processing, success, refunded, failed, simulated
+    pub status: String,
+    /// Where the pay line's ZEC goes. 1Click issues a transparent address for ZEC input, so
+    /// this leg's amount is public (ADR-018).
+    pub deposit_address: String,
+    pub amount_zat: u64,
+    pub payout_chain: String,
+    pub payout_address: String,
+    pub quoted_out: String,
+    pub delivered_out: Option<String>,
+    pub delivered_tx: Option<String>,
+    pub venue_ref: Option<String>,
+    pub simulated: bool,
+    pub refund_reason: Option<String>,
+    /// Unix seconds of the last status check, to rate-limit polling.
+    pub checked_at: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConversionRequest {
+    pub amount_zat: u64,
+    pub payout_chain: String,
+    pub payout_address: String,
+    /// Where the venue refunds ZEC if it cannot deliver: the contractor's unified address.
+    pub refund_to: String,
+    /// Testnet only: the transparent address that stands in for the venue's deposit address.
+    pub testnet_sink: Option<String>,
+}
+
+/// USDC destination assets on 1Click per payout chain (token list, 5 Oct 2026).
+pub fn near_usdc_asset(chain: &str) -> Option<&'static str> {
+    match chain {
+        "base" => Some("nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near"),
+        "arb" => Some("nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near"),
+        "eth" => Some("nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near"),
+        "sol" => Some("nep141:sol-5ce3bf3a31af18be40ba30f721101b4341690186.omft.near"),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct QuoteRequest {
     pub usd_cents: u64,
@@ -87,6 +132,19 @@ pub trait SwapVenue: Send + Sync {
     async fn status(&self, funding: &Funding) -> Result<Funding, VenueError>;
     /// Optional: tells the venue which transaction carried the deposit.
     async fn submit_deposit(&self, funding: &Funding, tx_hash: &str) -> Result<Funding, VenueError>;
+    /// Quotes converting one pay line's ZEC into USDC for the contractor.
+    async fn quote_conversion(&self, req: &ConversionRequest) -> Result<Conversion, VenueError> {
+        let _ = req;
+        Err(VenueError::rejected(
+            "conversion_unsupported",
+            "This venue cannot convert ZEC to USDC.",
+            "Use NEAR Intents (PAYSLIP_SWAP_VENUE=near-intents) or set the contractor to Hold ZEC.",
+        ))
+    }
+    /// Refreshes a conversion from the venue.
+    async fn conversion_status(&self, c: &Conversion) -> Result<Conversion, VenueError> {
+        Ok(c.clone())
+    }
 }
 
 pub fn build(cfg: &Config) -> anyhow::Result<Arc<dyn SwapVenue>> {
@@ -160,6 +218,39 @@ impl SwapVenue for TestnetVenue {
 
     async fn submit_deposit(&self, funding: &Funding, _tx_hash: &str) -> Result<Funding, VenueError> {
         Ok(funding.clone())
+    }
+
+    /// Testnet has no USDC venue: the line's ZEC goes to a transparent address the payer owns,
+    /// which exercises the same transaction shape as a real conversion, and the outcome is
+    /// marked simulated.
+    async fn quote_conversion(&self, req: &ConversionRequest) -> Result<Conversion, VenueError> {
+        let sink = req.testnet_sink.clone().ok_or_else(|| {
+            VenueError::rejected(
+                "conversion_unsupported",
+                "No testnet conversion address.",
+                "Set the contractor to Hold ZEC.",
+            )
+        })?;
+        Ok(Conversion {
+            venue: VenueKind::TestnetFixedRate.as_str().into(),
+            status: "quoted".into(),
+            deposit_address: sink,
+            amount_zat: req.amount_zat,
+            payout_chain: req.payout_chain.clone(),
+            payout_address: req.payout_address.clone(),
+            quoted_out: money::format_usd(money::zat_to_usd_cents(req.amount_zat, self.rate_e6)),
+            simulated: true,
+            ..Default::default()
+        })
+    }
+
+    async fn conversion_status(&self, c: &Conversion) -> Result<Conversion, VenueError> {
+        let mut c = c.clone();
+        if c.status == "processing" {
+            c.status = "simulated".into();
+            c.delivered_out = Some(c.quoted_out.clone());
+        }
+        Ok(c)
     }
 }
 
@@ -401,6 +492,83 @@ impl SwapVenue for NearIntents1Click {
         let mut f = Self::apply_status(funding, &body);
         f.deposit_tx_hash = Some(tx_hash.to_string());
         Ok(f)
+    }
+
+    async fn quote_conversion(&self, req: &ConversionRequest) -> Result<Conversion, VenueError> {
+        let dest = near_usdc_asset(&req.payout_chain).ok_or_else(|| {
+            VenueError::rejected(
+                "invalid_payout_chain",
+                format!("No USDC route to {}.", req.payout_chain),
+                "Choose base, arb, eth or sol.",
+            )
+        })?;
+        let deadline = rfc3339(OffsetDateTime::now_utc() + time::Duration::hours(2));
+        let body = json!({
+            "dry": false,
+            "swapType": "EXACT_INPUT",
+            "slippageTolerance": 100,
+            "originAsset": NEAR_ZEC_ASSET,
+            "depositType": "ORIGIN_CHAIN",
+            "destinationAsset": dest,
+            "amount": req.amount_zat.to_string(),
+            "refundTo": req.refund_to,
+            "refundType": "ORIGIN_CHAIN",
+            "recipient": req.payout_address,
+            "recipientType": "DESTINATION_CHAIN",
+            "deadline": deadline,
+        });
+        let resp = self
+            .send(self.http.post(format!("{}/v0/quote", self.base)).json(&body))
+            .await?;
+        let q = &resp["quote"];
+        Ok(Conversion {
+            venue: VenueKind::NearIntents.as_str().into(),
+            status: "quoted".into(),
+            deposit_address: q["depositAddress"]
+                .as_str()
+                .map(String::from)
+                .ok_or_else(|| VenueError::Unavailable("quote has no deposit address".into()))?,
+            amount_zat: req.amount_zat,
+            payout_chain: req.payout_chain.clone(),
+            payout_address: req.payout_address.clone(),
+            quoted_out: q["amountOutFormatted"].as_str().unwrap_or("").to_string(),
+            venue_ref: resp["correlationId"].as_str().map(String::from),
+            ..Default::default()
+        })
+    }
+
+    async fn conversion_status(&self, c: &Conversion) -> Result<Conversion, VenueError> {
+        let body = self
+            .send(
+                self.http
+                    .get(format!("{}/v0/status", self.base))
+                    .query(&[("depositAddress", c.deposit_address.as_str())]),
+            )
+            .await?;
+        let mut c = c.clone();
+        let raw = body["status"].as_str().unwrap_or("");
+        c.status = match Self::map_status(raw) {
+            "success" => "success",
+            "refunded" => "refunded",
+            "failed" => "failed",
+            _ => "processing",
+        }
+        .into();
+        let d = &body["swapDetails"];
+        if let Some(out) = d["amountOutFormatted"].as_str() {
+            c.delivered_out = Some(out.to_string());
+        }
+        if let Some(h) = d["destinationChainTxHashes"]
+            .as_array()
+            .and_then(|a| a.first())
+            .and_then(|h| h["hash"].as_str())
+        {
+            c.delivered_tx = Some(h.to_string());
+        }
+        if let Some(r) = d["refundReason"].as_str() {
+            c.refund_reason = Some(r.to_string());
+        }
+        Ok(c)
     }
 }
 

@@ -512,6 +512,19 @@ pub fn txid_hex(txid: &TxId) -> String {
     txid.to_string()
 }
 
+/// Parses a recipient for this network. Transparent recipients (a swap venue's deposit
+/// address) are allowed only when the payment carries no memo.
+pub fn parse_recipient(params: &Network, s: &str, allow_transparent: bool) -> anyhow::Result<ZcashAddress> {
+    if !allow_transparent {
+        return parse_shielded_address(params, s);
+    }
+    let addr = ZcashAddress::from_str(s.trim()).map_err(|e| anyhow!("not a Zcash address: {e}"))?;
+    if zcash_keys::address::Address::decode(params, s.trim()).is_none() {
+        bail!("address is not valid for this network");
+    }
+    Ok(addr)
+}
+
 /// Parses an address and checks it is for this network and can receive a shielded memo.
 pub fn parse_shielded_address(params: &Network, s: &str) -> anyhow::Result<ZcashAddress> {
     use zcash_protocol::consensus::Parameters;

@@ -236,6 +236,24 @@ impl Payer {
             .await?
     }
 
+    /// The default external transparent address of account `index`.
+    pub async fn transparent_address(&self, index: u32) -> anyhow::Result<String> {
+        use zcash_transparent::keys::IncomingViewingKey;
+        self.wallet
+            .run(move |w| {
+                Box::pin(async move {
+                    let ufvk = w.ufvk(account_id(w, index)?)?;
+                    let tpk = ufvk.p2pkh().ok_or_else(|| anyhow!("account has no transparent key"))?;
+                    let (taddr, _) = tpk
+                        .derive_external_ivk()
+                        .map_err(|e| anyhow!("{e:?}"))?
+                        .default_address();
+                    Ok(zcash_keys::address::Address::Transparent(taddr).encode(w.params()))
+                })
+            })
+            .await?
+    }
+
     /// Builds and stores one transaction from account `from`; does not broadcast.
     pub async fn create_transfer(
         &self,
