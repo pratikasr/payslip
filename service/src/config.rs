@@ -86,7 +86,10 @@ pub struct Config {
 }
 
 fn var(name: &str) -> Option<String> {
-    env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
+    env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
 }
 
 impl Config {
@@ -110,7 +113,11 @@ impl Config {
             None => DEFAULT_TESTNET_RATE_E6,
         };
         let min_confirmations = match var("PAYSLIP_MIN_CONFIRMATIONS") {
-            Some(s) => s.parse::<u32>().ok().filter(|v| *v > 0).context("PAYSLIP_MIN_CONFIRMATIONS must be at least 1")?,
+            Some(s) => s
+                .parse::<u32>()
+                .ok()
+                .filter(|v| *v > 0)
+                .context("PAYSLIP_MIN_CONFIRMATIONS must be at least 1")?,
             None => 3,
         };
         Ok(Config {
@@ -125,11 +132,15 @@ impl Config {
             seed_passphrase: var("PAYSLIP_SEED_PASSPHRASE"),
             venue,
             testnet_rate_e6,
-            near_intents_api_url: var("NEAR_INTENTS_API_URL").unwrap_or_else(|| "https://1click.chaindefuser.com".into()),
+            near_intents_api_url: var("NEAR_INTENTS_API_URL")
+                .unwrap_or_else(|| "https://1click.chaindefuser.com".into()),
             near_intents_jwt: var("NEAR_INTENTS_JWT"),
             maya_api_url: var("MAYA_API_URL").unwrap_or_else(|| "https://mayanode.mayachain.info".into()),
             min_confirmations,
-            birthday_height: var("PAYSLIP_BIRTHDAY_HEIGHT").map(|s| s.parse()).transpose().context("PAYSLIP_BIRTHDAY_HEIGHT must be a block height")?,
+            birthday_height: var("PAYSLIP_BIRTHDAY_HEIGHT")
+                .map(|s| s.parse())
+                .transpose()
+                .context("PAYSLIP_BIRTHDAY_HEIGHT must be a block height")?,
         })
     }
 

@@ -111,7 +111,10 @@ impl UnlabelledReason {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Decoded {
     Payslip(PayslipMemo),
-    Unlabelled { reason: UnlabelledReason, text: Option<String> },
+    Unlabelled {
+        reason: UnlabelledReason,
+        text: Option<String>,
+    },
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -186,7 +189,10 @@ fn parse_positive(s: &str) -> Option<u64> {
 
 fn parse_uuid(s: &str) -> Option<Uuid> {
     // Only the canonical hyphenated lowercase form that the encoder writes.
-    (s.len() == 36).then(|| Uuid::parse_str(s).ok()).flatten().filter(|u| u.to_string() == s)
+    (s.len() == 36)
+        .then(|| Uuid::parse_str(s).ok())
+        .flatten()
+        .filter(|u| u.to_string() == s)
 }
 
 fn decode_text(text: &str) -> Decoded {
@@ -247,21 +253,36 @@ fn decode_text(text: &str) -> Decoded {
 pub fn decode_bytes(bytes: Option<&[u8]>) -> Decoded {
     use zcash_protocol::memo::{Memo, MemoBytes};
     let Some(bytes) = bytes else {
-        return Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None };
+        return Decoded::Unlabelled {
+            reason: UnlabelledReason::NoMemo,
+            text: None,
+        };
     };
     let memo = MemoBytes::from_bytes(bytes).ok().and_then(|mb| Memo::try_from(mb).ok());
     match memo {
-        None => Decoded::Unlabelled { reason: UnlabelledReason::NonText, text: None },
-        Some(Memo::Empty) => Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None },
+        None => Decoded::Unlabelled {
+            reason: UnlabelledReason::NonText,
+            text: None,
+        },
+        Some(Memo::Empty) => Decoded::Unlabelled {
+            reason: UnlabelledReason::NoMemo,
+            text: None,
+        },
         Some(Memo::Text(t)) => decode_str(&t),
-        Some(_) => Decoded::Unlabelled { reason: UnlabelledReason::NonText, text: None },
+        Some(_) => Decoded::Unlabelled {
+            reason: UnlabelledReason::NonText,
+            text: None,
+        },
     }
 }
 
 /// Decodes a memo that is already text.
 pub fn decode_str(text: &str) -> Decoded {
     if text.is_empty() {
-        return Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None };
+        return Decoded::Unlabelled {
+            reason: UnlabelledReason::NoMemo,
+            text: None,
+        };
     }
     if text.len() > MAX_MEMO_BYTES {
         return Decoded::Unlabelled {
@@ -365,7 +386,10 @@ mod tests {
         for text in ["thanks for lunch", "PS2|future|format", "ps1|lowercase", "INVOICE 14"] {
             assert_eq!(
                 decode_str(text),
-                Decoded::Unlabelled { reason: UnlabelledReason::UnknownPrefix, text: Some(text.into()) },
+                Decoded::Unlabelled {
+                    reason: UnlabelledReason::UnknownPrefix,
+                    text: Some(text.into())
+                },
                 "{text}"
             );
         }
@@ -377,7 +401,7 @@ mod tests {
         for text in [
             format!("PS1|{id}|2026-09|INV-1|480000"),
             format!("PS1|{id}|2026-09|INV-1|480000|1354930000|extra"),
-            format!("PS1|not-a-uuid|2026-09|INV-1|480000|1354930000"),
+            "PS1|not-a-uuid|2026-09|INV-1|480000|1354930000".to_string(),
             format!("PS1|{id}|2026-13|INV-1|480000|1354930000"),
             format!("PS1|{id}|26-09|INV-1|480000|1354930000"),
             format!("PS1|{id}|2026-09||480000|1354930000"),
@@ -392,7 +416,13 @@ mod tests {
             format!("PS1R|{id}|2026-09|100|0|1354930000"),
         ] {
             assert!(
-                matches!(decode_str(&text), Decoded::Unlabelled { reason: UnlabelledReason::Malformed, .. }),
+                matches!(
+                    decode_str(&text),
+                    Decoded::Unlabelled {
+                        reason: UnlabelledReason::Malformed,
+                        ..
+                    }
+                ),
                 "{text}"
             );
         }
@@ -400,13 +430,28 @@ mod tests {
 
     #[test]
     fn empty_and_missing_memos_are_no_memo() {
-        assert_eq!(decode_bytes(None), Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None });
+        assert_eq!(
+            decode_bytes(None),
+            Decoded::Unlabelled {
+                reason: UnlabelledReason::NoMemo,
+                text: None
+            }
+        );
         let empty = zcash_protocol::memo::MemoBytes::empty();
         assert_eq!(
             decode_bytes(Some(empty.as_slice())),
-            Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None }
+            Decoded::Unlabelled {
+                reason: UnlabelledReason::NoMemo,
+                text: None
+            }
         );
-        assert_eq!(decode_str(""), Decoded::Unlabelled { reason: UnlabelledReason::NoMemo, text: None });
+        assert_eq!(
+            decode_str(""),
+            Decoded::Unlabelled {
+                reason: UnlabelledReason::NoMemo,
+                text: None
+            }
+        );
     }
 
     #[test]
@@ -416,7 +461,10 @@ mod tests {
         raw[1] = 0x01;
         assert!(matches!(
             decode_bytes(Some(&raw)),
-            Decoded::Unlabelled { reason: UnlabelledReason::NonText, .. }
+            Decoded::Unlabelled {
+                reason: UnlabelledReason::NonText,
+                ..
+            }
         ));
     }
 

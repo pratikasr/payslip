@@ -14,7 +14,11 @@ use uuid::Uuid;
 pub type Pool = SqlitePool;
 
 pub fn now() -> String {
-    OffsetDateTime::now_utc().replace_nanosecond(0).unwrap_or_else(|_| OffsetDateTime::now_utc()).format(&Rfc3339).unwrap_or_default()
+    OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc())
+        .format(&Rfc3339)
+        .unwrap_or_default()
 }
 
 pub async fn open(path: &Path) -> anyhow::Result<Pool> {
@@ -31,21 +35,33 @@ pub async fn open(path: &Path) -> anyhow::Result<Pool> {
 }
 
 pub async fn open_with(opts: SqliteConnectOptions) -> anyhow::Result<Pool> {
-    let pool = SqlitePoolOptions::new().max_connections(8).connect_with(opts).await.context("opening payslip.db")?;
-    sqlx::migrate!("./migrations").run(&pool).await.context("migrating payslip.db")?;
+    let pool = SqlitePoolOptions::new()
+        .max_connections(8)
+        .connect_with(opts)
+        .await
+        .context("opening payslip.db")?;
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .context("migrating payslip.db")?;
     Ok(pool)
 }
 
 pub async fn setting(pool: &Pool, key: &str) -> anyhow::Result<Option<String>> {
-    Ok(sqlx::query_scalar("SELECT value FROM settings WHERE key = ?").bind(key).fetch_optional(pool).await?)
+    Ok(sqlx::query_scalar("SELECT value FROM settings WHERE key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn set_setting(pool: &Pool, key: &str, value: &str) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-        .bind(key)
-        .bind(value)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -83,32 +99,50 @@ pub struct NewContractor {
 }
 
 pub async fn list_contractors(pool: &Pool) -> anyhow::Result<Vec<Contractor>> {
-    Ok(sqlx::query_as("SELECT * FROM contractors WHERE archived_at IS NULL ORDER BY zip32_account_index").fetch_all(pool).await?)
+    Ok(
+        sqlx::query_as("SELECT * FROM contractors WHERE archived_at IS NULL ORDER BY zip32_account_index")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 pub async fn all_contractors(pool: &Pool) -> anyhow::Result<Vec<Contractor>> {
-    Ok(sqlx::query_as("SELECT * FROM contractors ORDER BY zip32_account_index").fetch_all(pool).await?)
+    Ok(sqlx::query_as("SELECT * FROM contractors ORDER BY zip32_account_index")
+        .fetch_all(pool)
+        .await?)
 }
 
 pub async fn get_contractor(pool: &Pool, id: &str) -> anyhow::Result<Option<Contractor>> {
-    Ok(sqlx::query_as("SELECT * FROM contractors WHERE id = ?").bind(id).fetch_optional(pool).await?)
+    Ok(sqlx::query_as("SELECT * FROM contractors WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn find_active_by_address(pool: &Pool, address: &str) -> anyhow::Result<Option<Contractor>> {
-    Ok(sqlx::query_as("SELECT * FROM contractors WHERE unified_address = ? AND archived_at IS NULL")
-        .bind(address)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as("SELECT * FROM contractors WHERE unified_address = ? AND archived_at IS NULL")
+            .bind(address)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 /// The next ZIP-32 account index. Indices are never reused, even after archiving, so a
 /// viewing key always maps to exactly one contractor.
 pub async fn next_account_index(pool: &Pool) -> anyhow::Result<u32> {
-    let max: Option<i64> = sqlx::query_scalar("SELECT MAX(zip32_account_index) FROM contractors").fetch_one(pool).await?;
+    let max: Option<i64> = sqlx::query_scalar("SELECT MAX(zip32_account_index) FROM contractors")
+        .fetch_one(pool)
+        .await?;
     Ok(max.map(|m| m as u32 + 1).unwrap_or(1))
 }
 
-pub async fn insert_contractor(pool: &Pool, c: &NewContractor, account_index: u32, birthday: u32) -> anyhow::Result<Contractor> {
+pub async fn insert_contractor(
+    pool: &Pool,
+    c: &NewContractor,
+    account_index: u32,
+    birthday: u32,
+) -> anyhow::Result<Contractor> {
     let id = Uuid::new_v4().to_string();
     sqlx::query(
         "INSERT INTO contractors (id, name, email, unified_address, zip32_account_index, account_birthday_height,
@@ -148,12 +182,20 @@ pub async fn update_contractor(pool: &Pool, id: &str, c: &NewContractor) -> anyh
 }
 
 pub async fn archive_contractor(pool: &Pool, id: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE contractors SET archived_at = ? WHERE id = ?").bind(now()).bind(id).execute(pool).await?;
+    sqlx::query("UPDATE contractors SET archived_at = ? WHERE id = ?")
+        .bind(now())
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
 pub async fn mark_fvk_shared(pool: &Pool, id: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE contractors SET fvk_shared_at = COALESCE(fvk_shared_at, ?) WHERE id = ?").bind(now()).bind(id).execute(pool).await?;
+    sqlx::query("UPDATE contractors SET fvk_shared_at = COALESCE(fvk_shared_at, ?) WHERE id = ?")
+        .bind(now())
+        .bind(id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -230,15 +272,23 @@ pub struct NewLine {
 }
 
 pub async fn get_run(pool: &Pool, id: &str) -> anyhow::Result<Option<RunRow>> {
-    Ok(sqlx::query_as("SELECT * FROM runs WHERE id = ?").bind(id).fetch_optional(pool).await?)
+    Ok(sqlx::query_as("SELECT * FROM runs WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn get_run_by_key(pool: &Pool, key: &str) -> anyhow::Result<Option<RunRow>> {
-    Ok(sqlx::query_as("SELECT * FROM runs WHERE idempotency_key = ?").bind(key).fetch_optional(pool).await?)
+    Ok(sqlx::query_as("SELECT * FROM runs WHERE idempotency_key = ?")
+        .bind(key)
+        .fetch_optional(pool)
+        .await?)
 }
 
 pub async fn list_runs(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
-    Ok(sqlx::query_as("SELECT * FROM runs ORDER BY created_at DESC, id").fetch_all(pool).await?)
+    Ok(sqlx::query_as("SELECT * FROM runs ORDER BY created_at DESC, id")
+        .fetch_all(pool)
+        .await?)
 }
 
 pub async fn lines(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<LineRow>> {
@@ -345,7 +395,13 @@ pub async fn set_venue(pool: &Pool, id: &str, venue: &str, state: &serde_json::V
     Ok(())
 }
 
-pub async fn set_fill(pool: &Pool, id: &str, funded_usd_cents: u64, zec_acquired_zat: u64, rate_e6: u64) -> anyhow::Result<()> {
+pub async fn set_fill(
+    pool: &Pool,
+    id: &str,
+    funded_usd_cents: u64,
+    zec_acquired_zat: u64,
+    rate_e6: u64,
+) -> anyhow::Result<()> {
     sqlx::query("UPDATE runs SET funding_amount = ?, zec_acquired = ?, zec_usd_rate = ?, updated_at = ? WHERE id = ?")
         .bind(funded_usd_cents as i64)
         .bind(zec_acquired_zat as i64)
@@ -378,7 +434,14 @@ pub async fn add_fees(pool: &Pool, id: &str, fee_zat: u64) -> anyhow::Result<()>
     Ok(())
 }
 
-pub async fn set_line_amount(pool: &Pool, line_id: &str, amount_zat: u64, fee_zat: u64, memo: &str, memo_hash: &str) -> anyhow::Result<()> {
+pub async fn set_line_amount(
+    pool: &Pool,
+    line_id: &str,
+    amount_zat: u64,
+    fee_zat: u64,
+    memo: &str,
+    memo_hash: &str,
+) -> anyhow::Result<()> {
     sqlx::query("UPDATE pay_lines SET amount_zec = ?, fee_zat = ?, memo = ?, memo_hash = ? WHERE id = ?")
         .bind(amount_zat as i64)
         .bind(fee_zat as i64)
@@ -391,11 +454,22 @@ pub async fn set_line_amount(pool: &Pool, line_id: &str, amount_zat: u64, fee_za
 }
 
 pub async fn set_lines_status(pool: &Pool, run_id: &str, from: &str, to: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE pay_lines SET status = ? WHERE run_id = ? AND status = ?").bind(to).bind(run_id).bind(from).execute(pool).await?;
+    sqlx::query("UPDATE pay_lines SET status = ? WHERE run_id = ? AND status = ?")
+        .bind(to)
+        .bind(run_id)
+        .bind(from)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
-pub async fn set_line_tx(pool: &Pool, line_id: &str, txid: Option<&str>, expiry_height: Option<u32>, status: &str) -> anyhow::Result<()> {
+pub async fn set_line_tx(
+    pool: &Pool,
+    line_id: &str,
+    txid: Option<&str>,
+    expiry_height: Option<u32>,
+    status: &str,
+) -> anyhow::Result<()> {
     sqlx::query(
         "UPDATE pay_lines SET txid = ?, expiry_height = ?, status = ?, attempts = attempts + (? IS NOT NULL),
                 error_code = NULL, error_message = NULL, error_hint = NULL WHERE id = ?",
@@ -411,7 +485,11 @@ pub async fn set_line_tx(pool: &Pool, line_id: &str, txid: Option<&str>, expiry_
 }
 
 pub async fn confirm_line(pool: &Pool, line_id: &str, height: u32) -> anyhow::Result<()> {
-    sqlx::query("UPDATE pay_lines SET status = 'confirmed', confirmed_height = ? WHERE id = ?").bind(height as i64).bind(line_id).execute(pool).await?;
+    sqlx::query("UPDATE pay_lines SET status = 'confirmed', confirmed_height = ? WHERE id = ?")
+        .bind(height as i64)
+        .bind(line_id)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -427,7 +505,12 @@ pub async fn fail_line(pool: &Pool, line_id: &str, code: &str, message: &str, hi
 }
 
 pub async fn log_event(pool: &Pool, run_id: &str, message: &str) -> anyhow::Result<()> {
-    sqlx::query("INSERT INTO run_events (run_id, at, message) VALUES (?, ?, ?)").bind(run_id).bind(now()).bind(message).execute(pool).await?;
+    sqlx::query("INSERT INTO run_events (run_id, at, message) VALUES (?, ?, ?)")
+        .bind(run_id)
+        .bind(now())
+        .bind(message)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -439,7 +522,12 @@ pub struct RunEvent {
 }
 
 pub async fn events(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<RunEvent>> {
-    Ok(sqlx::query_as("SELECT id, at, message FROM run_events WHERE run_id = ? ORDER BY id").bind(run_id).fetch_all(pool).await?)
+    Ok(
+        sqlx::query_as("SELECT id, at, message FROM run_events WHERE run_id = ? ORDER BY id")
+            .bind(run_id)
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 pub async fn record_statement(

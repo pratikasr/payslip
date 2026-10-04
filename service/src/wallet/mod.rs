@@ -113,8 +113,11 @@ impl WalletCore {
         }
         let mut db = WalletDb::for_path(path, params, SystemClock, UnwrapErr(SysRng))
             .with_context(|| format!("opening wallet database {}", path.display()))?;
-        init_wallet_db(&mut db, seed.as_ref().map(|s| SecretVec::new(s.expose_secret().clone())))
-            .map_err(|e| anyhow!("initialising wallet database {}: {e}", path.display()))?;
+        init_wallet_db(
+            &mut db,
+            seed.as_ref().map(|s| SecretVec::new(s.expose_secret().clone())),
+        )
+        .map_err(|e| anyhow!("initialising wallet database {}: {e}", path.display()))?;
         let n = std::num::NonZeroU32::new(min_confirmations.max(1)).expect("nonzero");
         Ok(WalletCore {
             params,
@@ -167,7 +170,12 @@ impl WalletCore {
     }
 
     /// Creates ZIP-32 account `index` from the seed if it does not exist yet.
-    pub async fn ensure_hd_account(&mut self, index: u32, name: &str, birthday_height: BlockHeight) -> anyhow::Result<AccountUuid> {
+    pub async fn ensure_hd_account(
+        &mut self,
+        index: u32,
+        name: &str,
+        birthday_height: BlockHeight,
+    ) -> anyhow::Result<AccountUuid> {
         if let Some(id) = self.hd_accounts()?.get(&index) {
             return Ok(*id);
         }
@@ -201,8 +209,13 @@ impl WalletCore {
     }
 
     pub fn ufvk(&self, account: AccountUuid) -> anyhow::Result<UnifiedFullViewingKey> {
-        let acct = self.db.get_account(account)?.ok_or_else(|| anyhow!("unknown account"))?;
-        acct.ufvk().cloned().ok_or_else(|| anyhow!("account has no unified full viewing key"))
+        let acct = self
+            .db
+            .get_account(account)?
+            .ok_or_else(|| anyhow!("unknown account"))?;
+        acct.ufvk()
+            .cloned()
+            .ok_or_else(|| anyhow!("account has no unified full viewing key"))
     }
 
     pub fn birthday(&self, account: AccountUuid) -> anyhow::Result<BlockHeight> {
@@ -212,7 +225,10 @@ impl WalletCore {
     /// A shielded unified address for the account (Orchard and Sapling receivers). After NU6.3
     /// value sent to the Orchard receiver lands in the Ironwood pool.
     pub fn address(&mut self, account: AccountUuid) -> anyhow::Result<zcash_keys::address::UnifiedAddress> {
-        if let Some(ua) = self.db.get_last_generated_address_matching(account, UnifiedAddressRequest::SHIELDED)? {
+        if let Some(ua) = self
+            .db
+            .get_last_generated_address_matching(account, UnifiedAddressRequest::SHIELDED)?
+        {
             return Ok(ua);
         }
         let (ua, _) = self
@@ -233,11 +249,16 @@ impl WalletCore {
         let (tip, scanned) = summary
             .map(|s| (u32::from(s.chain_tip_height()), u32::from(s.fully_scanned_height())))
             .unwrap_or((0, 0));
-        Ok(SyncReport { chain_tip: tip, fully_scanned: scanned })
+        Ok(SyncReport {
+            chain_tip: tip,
+            fully_scanned: scanned,
+        })
     }
 
     async fn enhance(&mut self) -> anyhow::Result<()> {
-        let Some(tip) = self.db.chain_height()? else { return Ok(()) };
+        let Some(tip) = self.db.chain_height()? else {
+            return Ok(());
+        };
         let mut done = BTreeSet::new();
         loop {
             let mut progressed = false;
@@ -257,7 +278,9 @@ impl WalletCore {
                     }
                     TransactionDataRequest::Enhancement(txid) => {
                         match lwd::fetch_tx(&mut self.client, &self.params, tip, txid).await? {
-                            None => self.db.set_transaction_status(txid, TransactionStatus::TxidNotRecognized)?,
+                            None => self
+                                .db
+                                .set_transaction_status(txid, TransactionStatus::TxidNotRecognized)?,
                             Some((tx, mined)) => {
                                 decrypt_and_store_transaction(&self.params, &mut self.db, &tx, mined)
                                     .map_err(|e| anyhow!("storing transaction {txid}: {e}"))?;
@@ -289,7 +312,14 @@ impl WalletCore {
             for (id, b) in summary.account_balances() {
                 let spendable = u64::from(b.spendable_value());
                 let total = u64::from(b.total());
-                out.insert(*id, AccountBalances { spendable_zat: spendable, pending_zat: total.saturating_sub(spendable), total_zat: total });
+                out.insert(
+                    *id,
+                    AccountBalances {
+                        spendable_zat: spendable,
+                        pending_zat: total.saturating_sub(spendable),
+                        total_zat: total,
+                    },
+                );
             }
         }
         Ok(out)
@@ -305,10 +335,17 @@ impl WalletCore {
     ) -> Result<TxId, SpendError> {
         let other = |e: &dyn std::fmt::Display| SpendError::Other(e.to_string());
         let accounts = self.hd_accounts().map_err(|e| other(&e))?;
-        let from = *accounts.get(&from_index).ok_or_else(|| SpendError::Other(format!("account {from_index} does not exist")))?;
-        let seed = self.seed.as_ref().ok_or_else(|| SpendError::Other("this wallet has no seed".into()))?;
-        let idx = zip32::AccountId::try_from(from_index).map_err(|_| SpendError::Other("invalid account index".into()))?;
-        let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), idx).map_err(|e| other(&format!("{e:?}")))?;
+        let from = *accounts
+            .get(&from_index)
+            .ok_or_else(|| SpendError::Other(format!("account {from_index} does not exist")))?;
+        let seed = self
+            .seed
+            .as_ref()
+            .ok_or_else(|| SpendError::Other("this wallet has no seed".into()))?;
+        let idx =
+            zip32::AccountId::try_from(from_index).map_err(|_| SpendError::Other("invalid account index".into()))?;
+        let usk = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), idx)
+            .map_err(|e| other(&format!("{e:?}")))?;
 
         let payments = payments
             .into_iter()
@@ -337,7 +374,10 @@ impl WalletCore {
         )
         .map_err(|e| match e {
             zcash_client_backend::data_api::error::Error::InsufficientFunds { available, required } => {
-                SpendError::InsufficientFunds { available: available.into(), required: required.into() }
+                SpendError::InsufficientFunds {
+                    available: available.into(),
+                    required: required.into(),
+                }
             }
             zcash_client_backend::data_api::error::Error::ScanRequired => SpendError::SyncRequired,
             e => SpendError::Other(format!("could not propose the transfer: {e}")),
@@ -360,14 +400,19 @@ impl WalletCore {
         self.prover = Some(prover);
         let txids = result.map_err(|e| SpendError::Other(format!("could not build the transaction: {e}")))?;
         if txids.len() != 1 {
-            return Err(SpendError::Other("the transfer needs more than one transaction; this is not supported".into()));
+            return Err(SpendError::Other(
+                "the transfer needs more than one transaction; this is not supported".into(),
+            ));
         }
         Ok(*txids.first())
     }
 
     /// Serialized bytes of a transaction the wallet created.
     pub fn raw_tx(&self, txid: TxId) -> anyhow::Result<Vec<u8>> {
-        let tx = self.db.get_transaction(txid)?.ok_or_else(|| anyhow!("transaction {txid} is not in the wallet"))?;
+        let tx = self
+            .db
+            .get_transaction(txid)?
+            .ok_or_else(|| anyhow!("transaction {txid} is not in the wallet"))?;
         let mut raw = vec![];
         tx.write(&mut raw)?;
         Ok(raw)
@@ -467,7 +512,9 @@ impl WalletHandle {
                 let _ = rt.block_on(AssertUnwindSafe(job(&mut core)).catch_unwind());
             }
         })?;
-        ready_rx.recv().map_err(|_| anyhow!("wallet thread exited during start-up"))??;
+        ready_rx
+            .recv()
+            .map_err(|_| anyhow!("wallet thread exited during start-up"))??;
         Ok(WalletHandle { tx })
     }
 
@@ -485,6 +532,7 @@ impl WalletHandle {
             })
         });
         self.tx.send(job).map_err(|_| anyhow!("wallet thread has stopped"))?;
-        orx.await.map_err(|_| anyhow!("wallet operation panicked; see the service log"))
+        orx.await
+            .map_err(|_| anyhow!("wallet operation panicked; see the service log"))
     }
 }

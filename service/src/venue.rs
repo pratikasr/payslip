@@ -57,14 +57,22 @@ pub struct QuoteRequest {
 #[derive(Debug, thiserror::Error)]
 pub enum VenueError {
     #[error("{message}")]
-    Rejected { code: &'static str, message: String, hint: String },
+    Rejected {
+        code: &'static str,
+        message: String,
+        hint: String,
+    },
     #[error("the swap venue did not answer: {0}")]
     Unavailable(String),
 }
 
 impl VenueError {
     fn rejected(code: &'static str, message: impl Into<String>, hint: impl Into<String>) -> Self {
-        VenueError::Rejected { code, message: message.into(), hint: hint.into() }
+        VenueError::Rejected {
+            code,
+            message: message.into(),
+            hint: hint.into(),
+        }
     }
 }
 
@@ -83,17 +91,28 @@ pub trait SwapVenue: Send + Sync {
 
 pub fn build(cfg: &Config) -> anyhow::Result<Arc<dyn SwapVenue>> {
     Ok(match cfg.venue {
-        VenueKind::NearIntents => Arc::new(NearIntents1Click::new(cfg.near_intents_api_url.clone(), cfg.near_intents_jwt.clone())?),
+        VenueKind::NearIntents => Arc::new(NearIntents1Click::new(
+            cfg.near_intents_api_url.clone(),
+            cfg.near_intents_jwt.clone(),
+        )?),
         VenueKind::Maya => Arc::new(Maya::new(cfg.maya_api_url.clone())?),
         VenueKind::TestnetFixedRate => {
-            anyhow::ensure!(cfg.network == crate::config::ZcashNetwork::Testnet, "TestnetVenue requires ZCASH_NETWORK=testnet");
-            Arc::new(TestnetVenue { rate_e6: cfg.testnet_rate_e6 })
+            anyhow::ensure!(
+                cfg.network == crate::config::ZcashNetwork::Testnet,
+                "TestnetVenue requires ZCASH_NETWORK=testnet"
+            );
+            Arc::new(TestnetVenue {
+                rate_e6: cfg.testnet_rate_e6,
+            })
         }
     })
 }
 
 fn rfc3339(t: OffsetDateTime) -> String {
-    t.replace_nanosecond(0).unwrap_or(t).format(&Rfc3339).unwrap_or_default()
+    t.replace_nanosecond(0)
+        .unwrap_or(t)
+        .format(&Rfc3339)
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -116,7 +135,8 @@ impl SwapVenue for TestnetVenue {
     }
 
     async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
-        let zat = money::usd_cents_to_zat(req.usd_cents, self.rate_e6).ok_or_else(|| VenueError::rejected("invalid_amount", "Amount out of range", "Use a smaller amount."))?;
+        let zat = money::usd_cents_to_zat(req.usd_cents, self.rate_e6)
+            .ok_or_else(|| VenueError::rejected("invalid_amount", "Amount out of range", "Use a smaller amount."))?;
         Ok(Funding {
             venue: VenueKind::TestnetFixedRate.as_str().into(),
             status: "success".into(),
@@ -155,9 +175,24 @@ pub struct OriginChain {
 
 /// USDC origins the web wallet can pay from (verified in the 1Click token list, 5 Oct 2026).
 pub const NEAR_ORIGINS: &[OriginChain] = &[
-    OriginChain { key: "base", asset_id: "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near", token_address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", chain_id: 8453 },
-    OriginChain { key: "arb", asset_id: "nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near", token_address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", chain_id: 42161 },
-    OriginChain { key: "eth", asset_id: "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near", token_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", chain_id: 1 },
+    OriginChain {
+        key: "base",
+        asset_id: "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+        token_address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+        chain_id: 8453,
+    },
+    OriginChain {
+        key: "arb",
+        asset_id: "nep141:arb-0xaf88d065e77c8cc2239327c5edb3a432268e5831.omft.near",
+        token_address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
+        chain_id: 42161,
+    },
+    OriginChain {
+        key: "eth",
+        asset_id: "nep141:eth-0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48.omft.near",
+        token_address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        chain_id: 1,
+    },
 ];
 
 pub const NEAR_ZEC_ASSET: &str = "nep141:zec.omft.near";
@@ -170,8 +205,15 @@ pub struct NearIntents1Click {
 
 impl NearIntents1Click {
     pub fn new(base: String, jwt: Option<String>) -> anyhow::Result<Self> {
-        let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).user_agent("payslip/0.1 (+https://github.com/pratikasr/payslip)").build()?;
-        Ok(NearIntents1Click { base: base.trim_end_matches('/').to_string(), jwt, http })
+        let http = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("payslip/0.1 (+https://github.com/pratikasr/payslip)")
+            .build()?;
+        Ok(NearIntents1Click {
+            base: base.trim_end_matches('/').to_string(),
+            jwt,
+            http,
+        })
     }
 
     fn req(&self, b: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -182,13 +224,23 @@ impl NearIntents1Click {
     }
 
     async fn send(&self, b: reqwest::RequestBuilder) -> Result<Value, VenueError> {
-        let resp = self.req(b).send().await.map_err(|e| VenueError::Unavailable(e.to_string()))?;
+        let resp = self
+            .req(b)
+            .send()
+            .await
+            .map_err(|e| VenueError::Unavailable(e.to_string()))?;
         let status = resp.status();
-        let body: Value = resp.json().await.map_err(|e| VenueError::Unavailable(format!("invalid response: {e}")))?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| VenueError::Unavailable(format!("invalid response: {e}")))?;
         if status.is_success() {
             Ok(body)
         } else if status.is_server_error() || status.as_u16() == 429 {
-            Err(VenueError::Unavailable(format!("HTTP {status}: {}", body["message"].as_str().unwrap_or(""))))
+            Err(VenueError::Unavailable(format!(
+                "HTTP {status}: {}",
+                body["message"].as_str().unwrap_or("")
+            )))
         } else {
             let msg = body["message"].as_str().unwrap_or("request rejected").to_string();
             let hint = if msg.contains("too low") {
@@ -223,7 +275,10 @@ impl NearIntents1Click {
         f.venue_status = Some(raw);
         let d = &body["swapDetails"];
         if let Some(arr) = d["destinationChainTxHashes"].as_array() {
-            f.delivered_txids = arr.iter().filter_map(|h| h["hash"].as_str().map(|s| s.trim_start_matches("0x").to_string())).collect();
+            f.delivered_txids = arr
+                .iter()
+                .filter_map(|h| h["hash"].as_str().map(|s| s.trim_start_matches("0x").to_string()))
+                .collect();
         }
         if let Some(amount_in) = d["amountIn"].as_str() {
             // USDC has 6 decimals; 1 USDC is 100 cents.
@@ -257,10 +312,18 @@ impl SwapVenue for NearIntents1Click {
 
     async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
         let origin = NEAR_ORIGINS.iter().find(|o| o.key == req.origin_chain).ok_or_else(|| {
-            VenueError::rejected("unsupported_origin_chain", format!("USDC on {} is not supported.", req.origin_chain), "Fund from Base, Arbitrum or Ethereum.")
+            VenueError::rejected(
+                "unsupported_origin_chain",
+                format!("USDC on {} is not supported.", req.origin_chain),
+                "Fund from Base, Arbitrum or Ethereum.",
+            )
         })?;
         let refund = req.refund_address.clone().ok_or_else(|| {
-            VenueError::rejected("refund_address_required", "The venue needs a refund address on the origin chain.", "Connect the wallet you will pay from; its address is used for refunds.")
+            VenueError::rejected(
+                "refund_address_required",
+                "The venue needs a refund address on the origin chain.",
+                "Connect the wallet you will pay from; its address is used for refunds.",
+            )
         })?;
         // USDC base units: 6 decimals, so cents * 10^4.
         let base_units = (req.usd_cents as u128) * 10_000;
@@ -279,10 +342,15 @@ impl SwapVenue for NearIntents1Click {
             "recipientType": "DESTINATION_CHAIN",
             "deadline": deadline,
         });
-        let resp = self.send(self.http.post(format!("{}/v0/quote", self.base)).json(&body)).await?;
+        let resp = self
+            .send(self.http.post(format!("{}/v0/quote", self.base)).json(&body))
+            .await?;
         let q = &resp["quote"];
         let quoted_zat: u64 = q["amountOut"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
-        let deposit = q["depositAddress"].as_str().map(String::from).ok_or_else(|| VenueError::Unavailable("quote has no deposit address".into()))?;
+        let deposit = q["depositAddress"]
+            .as_str()
+            .map(String::from)
+            .ok_or_else(|| VenueError::Unavailable("quote has no deposit address".into()))?;
         Ok(Funding {
             venue: VenueKind::NearIntents.as_str().into(),
             status: "awaiting_deposit".into(),
@@ -304,15 +372,31 @@ impl SwapVenue for NearIntents1Click {
     }
 
     async fn status(&self, funding: &Funding) -> Result<Funding, VenueError> {
-        let addr = funding.deposit_address.as_deref().ok_or_else(|| VenueError::Unavailable("no deposit address".into()))?;
-        let body = self.send(self.http.get(format!("{}/v0/status", self.base)).query(&[("depositAddress", addr)])).await?;
+        let addr = funding
+            .deposit_address
+            .as_deref()
+            .ok_or_else(|| VenueError::Unavailable("no deposit address".into()))?;
+        let body = self
+            .send(
+                self.http
+                    .get(format!("{}/v0/status", self.base))
+                    .query(&[("depositAddress", addr)]),
+            )
+            .await?;
         Ok(Self::apply_status(funding, &body))
     }
 
     async fn submit_deposit(&self, funding: &Funding, tx_hash: &str) -> Result<Funding, VenueError> {
-        let addr = funding.deposit_address.as_deref().ok_or_else(|| VenueError::Unavailable("no deposit address".into()))?;
+        let addr = funding
+            .deposit_address
+            .as_deref()
+            .ok_or_else(|| VenueError::Unavailable("no deposit address".into()))?;
         let body = self
-            .send(self.http.post(format!("{}/v0/deposit/submit", self.base)).json(&json!({"txHash": tx_hash, "depositAddress": addr})))
+            .send(
+                self.http
+                    .post(format!("{}/v0/deposit/submit", self.base))
+                    .json(&json!({"txHash": tx_hash, "depositAddress": addr})),
+            )
             .await?;
         let mut f = Self::apply_status(funding, &body);
         f.deposit_tx_hash = Some(tx_hash.to_string());
@@ -331,7 +415,10 @@ pub struct Maya {
 impl Maya {
     pub fn new(base: String) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
-        Ok(Maya { base: base.trim_end_matches('/').to_string(), http })
+        Ok(Maya {
+            base: base.trim_end_matches('/').to_string(),
+            http,
+        })
     }
 }
 
@@ -351,7 +438,10 @@ impl SwapVenue for Maya {
             .json()
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?;
-        let price: f64 = body["assetPriceUSD"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0.0);
+        let price: f64 = body["assetPriceUSD"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0.0);
         if price <= 0.0 {
             return Err(VenueError::Unavailable("ZEC pool price unavailable".into()));
         }
@@ -362,22 +452,40 @@ impl SwapVenue for Maya {
         let from = match req.origin_chain.as_str() {
             "eth" => "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
             "arb" => "ARB.USDC-0XAF88D065E77C8CC2239327C5EDB3A432268E5831",
-            other => return Err(VenueError::rejected("unsupported_origin_chain", format!("Maya has no USDC pool on {other}."), "Fund from Ethereum (the deepest Maya USDC pool).")),
+            other => {
+                return Err(VenueError::rejected(
+                    "unsupported_origin_chain",
+                    format!("Maya has no USDC pool on {other}."),
+                    "Fund from Ethereum (the deepest Maya USDC pool).",
+                ))
+            }
         };
         // Maya amounts use 8 decimals.
         let amount = (req.usd_cents as u128) * 1_000_000;
         let resp = self
             .http
             .get(format!("{}/mayachain/quote/swap", self.base))
-            .query(&[("from_asset", from), ("to_asset", "ZEC.ZEC"), ("amount", &amount.to_string()), ("destination", &req.recipient)])
+            .query(&[
+                ("from_asset", from),
+                ("to_asset", "ZEC.ZEC"),
+                ("amount", &amount.to_string()),
+                ("destination", &req.recipient),
+            ])
             .send()
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?;
         let body: Value = resp.json().await.map_err(|e| VenueError::Unavailable(e.to_string()))?;
         if let Some(err) = body["error"].as_str() {
-            return Err(VenueError::rejected("venue_rejected", err.to_string(), "Maya delivers through Sapling; use a unified address with a Sapling receiver."));
+            return Err(VenueError::rejected(
+                "venue_rejected",
+                err.to_string(),
+                "Maya delivers through Sapling; use a unified address with a Sapling receiver.",
+            ));
         }
-        let quoted_zat: u64 = body["expected_amount_out"].as_str().and_then(|s| s.parse().ok()).unwrap_or(0);
+        let quoted_zat: u64 = body["expected_amount_out"]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
         Ok(Funding {
             venue: VenueKind::Maya.as_str().into(),
             status: "awaiting_deposit".into(),
@@ -396,10 +504,16 @@ impl SwapVenue for Maya {
     }
 
     async fn status(&self, funding: &Funding) -> Result<Funding, VenueError> {
-        let Some(hash) = funding.deposit_tx_hash.as_deref() else { return Ok(funding.clone()) };
+        let Some(hash) = funding.deposit_tx_hash.as_deref() else {
+            return Ok(funding.clone());
+        };
         let body: Value = self
             .http
-            .get(format!("{}/mayachain/tx/status/{}", self.base, hash.trim_start_matches("0x")))
+            .get(format!(
+                "{}/mayachain/tx/status/{}",
+                self.base,
+                hash.trim_start_matches("0x")
+            ))
             .send()
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?
@@ -407,10 +521,15 @@ impl SwapVenue for Maya {
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?;
         let mut f = funding.clone();
-        let done = body["stages"]["outbound_signed"]["completed"].as_bool().unwrap_or(false);
+        let done = body["stages"]["outbound_signed"]["completed"]
+            .as_bool()
+            .unwrap_or(false);
         f.status = if done { "success".into() } else { "processing".into() };
         if let Some(out) = body["out_txs"].as_array() {
-            f.delivered_txids = out.iter().filter_map(|t| t["id"].as_str().map(|s| s.to_ascii_lowercase())).collect();
+            f.delivered_txids = out
+                .iter()
+                .filter_map(|t| t["id"].as_str().map(|s| s.to_ascii_lowercase()))
+                .collect();
         }
         Ok(f)
     }
@@ -444,7 +563,11 @@ mod tests {
 
     #[test]
     fn near_status_extracts_fill() {
-        let f = Funding { venue: "near-intents-1click".into(), deposit_address: Some("0xabc".into()), ..Default::default() };
+        let f = Funding {
+            venue: "near-intents-1click".into(),
+            deposit_address: Some("0xabc".into()),
+            ..Default::default()
+        };
         let body = json!({
             "status": "SUCCESS",
             "swapDetails": {
@@ -455,14 +578,24 @@ mod tests {
         let g = NearIntents1Click::apply_status(&f, &body);
         assert_eq!(g.status, "success");
         assert_eq!(g.funded_usd_cents, Some(2_846_215));
-        assert_eq!(g.delivered_txids, vec!["c3be8e48498c92aaa67361289eec08272f9c74631da3bf8d2bd3529d005db5b2".to_string()]);
+        assert_eq!(
+            g.delivered_txids,
+            vec!["c3be8e48498c92aaa67361289eec08272f9c74631da3bf8d2bd3529d005db5b2".to_string()]
+        );
     }
 
     #[tokio::test]
     async fn testnet_venue_fills_at_the_fixed_rate() {
-        let v = TestnetVenue { rate_e6: 1_350_000_000_000 };
+        let v = TestnetVenue {
+            rate_e6: 1_350_000_000_000,
+        };
         let f = v
-            .quote(&QuoteRequest { usd_cents: 135_000, origin_chain: "testnet".into(), refund_address: None, recipient: "utest1".into() })
+            .quote(&QuoteRequest {
+                usd_cents: 135_000,
+                origin_chain: "testnet".into(),
+                refund_address: None,
+                recipient: "utest1".into(),
+            })
             .await
             .unwrap();
         // $1,350.00 at $1,350,000 per TAZ is 0.001 TAZ.

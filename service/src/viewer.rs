@@ -4,11 +4,7 @@
 //! Each distinct set of keys gets its own view-only wallet database under
 //! `PAYSLIP_DATA_DIR/viewers/`, so repeated scans are incremental.
 
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, Context};
 use sha2::{Digest, Sha256};
@@ -48,7 +44,11 @@ impl ViewingKey {
         let s = s.trim();
         let paste_hint = "Paste the full viewing key from Payslip. It starts with uviewtest or uvftest on testnet, uview or uvf on mainnet.";
         if s.is_empty() {
-            return Err(ApiError::bad_request("invalid_viewing_key", "No viewing key was supplied.", paste_hint));
+            return Err(ApiError::bad_request(
+                "invalid_viewing_key",
+                "No viewing key was supplied.",
+                paste_hint,
+            ));
         }
         if looks_like_seed_phrase(s) {
             return Err(ApiError::bad_request(
@@ -58,7 +58,11 @@ impl ViewingKey {
             ));
         }
         let lower = s.to_ascii_lowercase();
-        if lower.starts_with("secret") || lower.starts_with("usk") || lower.starts_with("xprv") || lower.starts_with("tprv") {
+        if lower.starts_with("secret")
+            || lower.starts_with("usk")
+            || lower.starts_with("xprv")
+            || lower.starts_with("tprv")
+        {
             return Err(ApiError::bad_request(
                 "spending_key_rejected",
                 "That is a spending key. Payslip only accepts viewing keys and did not store it.",
@@ -73,14 +77,22 @@ impl ViewingKey {
             ));
         }
         if s.contains(' ') {
-            return Err(ApiError::bad_request("invalid_viewing_key", "A viewing key has no spaces.", paste_hint));
+            return Err(ApiError::bad_request(
+                "invalid_viewing_key",
+                "A viewing key has no spaces.",
+                paste_hint,
+            ));
         }
         let params = network.params();
         match UnifiedFullViewingKey::decode(&params, s) {
             Ok(ufvk) => {
                 let encoded = ufvk.encode(&params);
                 let fingerprint = fingerprint_of(&params, &ufvk);
-                Ok(ViewingKey { ufvk, encoded, fingerprint })
+                Ok(ViewingKey {
+                    ufvk,
+                    encoded,
+                    fingerprint,
+                })
             }
             Err(e) => {
                 let other = match network {
@@ -98,7 +110,11 @@ impl ViewingKey {
                         format!("Use the {svc_net} key from the same payer, or open the {key_net} Payslip deployment."),
                     ));
                 }
-                Err(ApiError::bad_request("invalid_viewing_key", format!("That is not a valid unified full viewing key ({e})."), paste_hint))
+                Err(ApiError::bad_request(
+                    "invalid_viewing_key",
+                    format!("That is not a valid unified full viewing key ({e})."),
+                    paste_hint,
+                ))
             }
         }
     }
@@ -167,8 +183,15 @@ impl ViewerRegistry {
             map.clear();
         }
         let path = self.dir.join(format!("{set_key}.db"));
-        let (params, p, url, conf) = (self.params, path.clone(), self.lightwalletd_url.clone(), self.min_confirmations);
-        let handle = WalletHandle::spawn(format!("viewer-{}", &set_key[..8]), move || WalletCore::open(params, &p, &url, None, conf))?;
+        let (params, p, url, conf) = (
+            self.params,
+            path.clone(),
+            self.lightwalletd_url.clone(),
+            self.min_confirmations,
+        );
+        let handle = WalletHandle::spawn(format!("viewer-{}", &set_key[..8]), move || {
+            WalletCore::open(params, &p, &url, None, conf)
+        })?;
         let v = Arc::new(Viewer { handle, path });
         map.insert(set_key.to_string(), v.clone());
         Ok(v)
@@ -192,7 +215,9 @@ impl ViewerRegistry {
                 Box::pin(async move {
                     let mut by_uuid: HashMap<uuid::Uuid, String> = HashMap::new();
                     for (key, label, birthday) in &keys {
-                        let id = w.ensure_ufvk_account(label, &key.ufvk, BlockHeight::from_u32(*birthday)).await?;
+                        let id = w
+                            .ensure_ufvk_account(label, &key.ufvk, BlockHeight::from_u32(*birthday))
+                            .await?;
                         by_uuid.insert(id.expose_uuid(), key.fingerprint.clone());
                     }
                     let report = w.sync().await?;
@@ -207,7 +232,10 @@ impl ViewerRegistry {
                             }
                             let block = w
                                 .client()
-                                .get_block(BlockId { height: u64::from(h), hash: vec![] })
+                                .get_block(BlockId {
+                                    height: u64::from(h),
+                                    hash: vec![],
+                                })
                                 .await
                                 .with_context(|| format!("GetBlock {h}"))?
                                 .into_inner();
@@ -215,7 +243,11 @@ impl ViewerRegistry {
                             o.block_time = Some(i64::from(block.time));
                         }
                     }
-                    Ok(ScanResult { scanned_to_height: report.fully_scanned, chain_tip: report.chain_tip, outputs })
+                    Ok(ScanResult {
+                        scanned_to_height: report.fully_scanned,
+                        chain_tip: report.chain_tip,
+                        outputs,
+                    })
                 })
             })
             .await?
@@ -278,7 +310,10 @@ mod tests {
         let net = ZcashNetwork::Testnet;
         let cases = [
             ("", "invalid_viewing_key"),
-            ("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about", "spending_key_rejected"),
+            (
+                "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+                "spending_key_rejected",
+            ),
             ("secret-extended-key-test1qqqqqqqq", "spending_key_rejected"),
             ("uivktest1abcdef", "incoming_viewing_key"),
             ("uviewtest1 not a key", "invalid_viewing_key"),

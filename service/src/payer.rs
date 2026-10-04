@@ -9,7 +9,11 @@ use zcash_address::unified::{self, Encoding as _};
 use zcash_client_sqlite::AccountUuid;
 use zcash_keys::address::UnifiedAddress;
 use zcash_primitives::transaction::TxId;
-use zcash_protocol::{consensus::{BlockHeight, Network, Parameters}, memo::MemoBytes, value::Zatoshis};
+use zcash_protocol::{
+    consensus::{BlockHeight, Network, Parameters},
+    memo::MemoBytes,
+    value::Zatoshis,
+};
 
 use crate::{
     config::{Config, ZcashNetwork},
@@ -52,28 +56,48 @@ pub struct Payer {
 pub fn encode_ua_r0(params: &Network, ua: &UnifiedAddress) -> anyhow::Result<String> {
     let mut items = vec![];
     if let Some(o) = ua.orchard() {
-        items.push(unified::Uitem::Data(unified::Receiver::Orchard(o.to_raw_address_bytes())));
+        items.push(unified::Uitem::Data(unified::Receiver::Orchard(
+            o.to_raw_address_bytes(),
+        )));
     }
     if let Some(s) = ua.sapling() {
         items.push(unified::Uitem::Data(unified::Receiver::Sapling(s.to_bytes())));
     }
-    let r0 = unified::Address::try_from_items(unified::Revision::R0, items).map_err(|e| anyhow!("encoding address: {e}"))?;
+    let r0 =
+        unified::Address::try_from_items(unified::Revision::R0, items).map_err(|e| anyhow!("encoding address: {e}"))?;
     Ok(r0.encode(&params.network_type()))
 }
 
 impl Payer {
     /// Unlocks the seed, opens `wallet.db` and makes sure the treasury account exists.
     pub async fn open(cfg: &Config) -> anyhow::Result<Self> {
-        let passphrase = cfg.seed_passphrase.clone().ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE to unlock the payer seed"))?;
+        let passphrase = cfg
+            .seed_passphrase
+            .clone()
+            .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE to unlock the payer seed"))?;
         let seed_file = SeedFile::new(cfg.seed_path());
         if !seed_file.exists() {
-            anyhow::bail!("no payer seed at {}; run `payslip-service init` first", seed_file.path().display());
+            anyhow::bail!(
+                "no payer seed at {}; run `payslip-service init` first",
+                seed_file.path().display()
+            );
         }
         let seed = seed_file.unlock(&passphrase)?;
         let params = cfg.network.params();
-        let (path, url, min_conf) = (cfg.wallet_db_path(), cfg.lightwalletd_url.clone(), cfg.min_confirmations);
-        let wallet = WalletHandle::spawn("payer-wallet".into(), move || WalletCore::open(params, &path, &url, Some(seed), min_conf))?;
-        let payer = Payer { wallet, network: cfg.network, params, db_path: cfg.wallet_db_path() };
+        let (path, url, min_conf) = (
+            cfg.wallet_db_path(),
+            cfg.lightwalletd_url.clone(),
+            cfg.min_confirmations,
+        );
+        let wallet = WalletHandle::spawn("payer-wallet".into(), move || {
+            WalletCore::open(params, &path, &url, Some(seed), min_conf)
+        })?;
+        let payer = Payer {
+            wallet,
+            network: cfg.network,
+            params,
+            db_path: cfg.wallet_db_path(),
+        };
         let configured_birthday = cfg.birthday_height;
         payer
             .wallet
@@ -84,7 +108,9 @@ impl Payer {
                     }
                     let tip = w.chain_tip().await?;
                     let birthday = configured_birthday.map(BlockHeight::from_u32).unwrap_or(tip - 10);
-                    w.ensure_hd_account(TREASURY_INDEX, "Treasury", birthday).await.map(|_| ())
+                    w.ensure_hd_account(TREASURY_INDEX, "Treasury", birthday)
+                        .await
+                        .map(|_| ())
                 })
             })
             .await?
@@ -118,7 +144,9 @@ impl Payer {
             .run(move |w| {
                 Box::pin(async move {
                     let accounts = w.hd_accounts()?;
-                    let treasury = *accounts.get(&TREASURY_INDEX).ok_or_else(|| anyhow!("treasury account missing"))?;
+                    let treasury = *accounts
+                        .get(&TREASURY_INDEX)
+                        .ok_or_else(|| anyhow!("treasury account missing"))?;
                     let ua = w.address(treasury)?;
                     let address = encode_ua_r0(w.params(), &ua)?;
                     let balances = w.balances()?;
@@ -150,7 +178,10 @@ impl Payer {
                 Box::pin(async move {
                     let accounts = w.hd_accounts()?;
                     let balances = w.balances()?;
-                    Ok(accounts.into_iter().map(|(i, id)| (i, balances.get(&id).copied().unwrap_or_default())).collect())
+                    Ok(accounts
+                        .into_iter()
+                        .map(|(i, id)| (i, balances.get(&id).copied().unwrap_or_default()))
+                        .collect())
                 })
             })
             .await?
@@ -182,7 +213,9 @@ impl Payer {
     }
 
     pub async fn account_birthday(&self, index: u32) -> anyhow::Result<u32> {
-        self.wallet.run(move |w| Box::pin(async move { Ok(u32::from(w.birthday(account_id(w, index)?)?)) })).await?
+        self.wallet
+            .run(move |w| Box::pin(async move { Ok(u32::from(w.birthday(account_id(w, index)?)?)) }))
+            .await?
     }
 
     /// Unified address (Revision 0) of account `index`.
@@ -205,7 +238,9 @@ impl Payer {
         payments: Vec<PaymentSpec>,
         change_memo: Option<MemoBytes>,
     ) -> anyhow::Result<Result<TxId, SpendError>> {
-        self.wallet.run(move |w| Box::pin(async move { w.create_transfer(from, payments, change_memo) })).await
+        self.wallet
+            .run(move |w| Box::pin(async move { w.create_transfer(from, payments, change_memo) }))
+            .await
     }
 
     pub async fn broadcast(&self, txid: TxId) -> anyhow::Result<()> {
@@ -213,15 +248,26 @@ impl Payer {
     }
 
     pub async fn mined_height(&self, txid: TxId) -> anyhow::Result<Option<u32>> {
-        Ok(self.wallet.run(move |w| Box::pin(w.mined_height(txid))).await??.map(u32::from))
+        Ok(self
+            .wallet
+            .run(move |w| Box::pin(w.mined_height(txid)))
+            .await??
+            .map(u32::from))
     }
 
     pub async fn expiry_height(&self, txid: TxId) -> anyhow::Result<Option<u32>> {
-        Ok(self.wallet.run(move |w| Box::pin(async move { w.expiry_height(txid) })).await??.map(u32::from))
+        Ok(self
+            .wallet
+            .run(move |w| Box::pin(async move { w.expiry_height(txid) }))
+            .await??
+            .map(u32::from))
     }
 
     fn read_conn(&self) -> anyhow::Result<rusqlite::Connection> {
-        Ok(rusqlite::Connection::open_with_flags(&self.db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?)
+        Ok(rusqlite::Connection::open_with_flags(
+            &self.db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?)
     }
 
     /// The fee the wallet recorded for a transaction it knows, in zatoshis.
@@ -229,18 +275,32 @@ impl Payer {
         let txid = wallet::parse_txid(txid_hex)?;
         let conn = self.read_conn()?;
         let fee: Option<Option<i64>> = conn
-            .query_row("SELECT fee FROM transactions WHERE txid = ?", [txid.as_ref().to_vec()], |r| r.get(0))
+            .query_row(
+                "SELECT fee FROM transactions WHERE txid = ?",
+                [txid.as_ref().to_vec()],
+                |r| r.get(0),
+            )
             .map(Some)
-            .or_else(|e| if matches!(e, rusqlite::Error::QueryReturnedNoRows) { Ok(None) } else { Err(e) })?;
+            .or_else(|e| {
+                if matches!(e, rusqlite::Error::QueryReturnedNoRows) {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            })?;
         Ok(fee.flatten().map(|f| f as u64))
     }
 
     /// Value received by ZIP-32 account `index` in transaction `txid` (not counting change).
     pub async fn received_in_tx(&self, txid_hex: &str, index: u32) -> anyhow::Result<u64> {
         let txid = wallet::parse_txid(txid_hex)?;
-        let uuid = self.wallet.run(move |w| Box::pin(async move { account_id(w, index).map(|a| a.expose_uuid()) })).await??;
+        let uuid = self
+            .wallet
+            .run(move |w| Box::pin(async move { account_id(w, index).map(|a| a.expose_uuid()) }))
+            .await??;
         let conn = self.read_conn()?;
-        let mut stmt = conn.prepare("SELECT o.to_account_uuid, o.value, o.is_change FROM v_tx_outputs o WHERE o.txid = ?")?;
+        let mut stmt =
+            conn.prepare("SELECT o.to_account_uuid, o.value, o.is_change FROM v_tx_outputs o WHERE o.txid = ?")?;
         let mut rows = stmt.query([txid.as_ref().to_vec()])?;
         let mut total = 0u64;
         while let Some(r) = rows.next()? {
@@ -256,7 +316,10 @@ impl Payer {
     /// Development helper behind the `send` CLI command: one payment, broadcast at once.
     pub async fn send_simple(&self, from: u32, to: &str, zat: u64, memo_text: Option<&str>) -> anyhow::Result<String> {
         let to = wallet::parse_shielded_address(&self.params, to)?;
-        let memo = memo_text.map(memo::to_memo_bytes).transpose().map_err(|e| anyhow!("{e}"))?;
+        let memo = memo_text
+            .map(memo::to_memo_bytes)
+            .transpose()
+            .map_err(|e| anyhow!("{e}"))?;
         let amount = Zatoshis::from_u64(zat).map_err(|_| anyhow!("invalid amount"))?;
         let txid = self
             .create_transfer(from, vec![PaymentSpec { to, amount, memo }], None)
@@ -268,5 +331,8 @@ impl Payer {
 }
 
 fn account_id(w: &WalletCore, index: u32) -> anyhow::Result<AccountUuid> {
-    w.hd_accounts()?.get(&index).copied().ok_or_else(|| anyhow!("account {index} does not exist"))
+    w.hd_accounts()?
+        .get(&index)
+        .copied()
+        .ok_or_else(|| anyhow!("account {index} does not exist"))
 }

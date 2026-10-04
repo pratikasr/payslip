@@ -59,13 +59,39 @@ async fn known_keys(s: &AppStateRef) -> ApiResult<HashMap<String, Known>> {
     let mut push = |ufvk: String, index: u32, label: String, role: &str, birthday: u32, cid: Option<String>| {
         if let Ok(k) = zcash_keys::keys::UnifiedFullViewingKey::decode(&params, &ufvk) {
             let fp = fingerprint_of(&params, &k);
-            out.insert(fp.clone(), Known { info: KeyInfo { fingerprint: fp, account_index: Some(index), label: Some(label), role: role.into() }, birthday, contractor_id: cid });
+            out.insert(
+                fp.clone(),
+                Known {
+                    info: KeyInfo {
+                        fingerprint: fp,
+                        account_index: Some(index),
+                        label: Some(label),
+                        role: role.into(),
+                    },
+                    birthday,
+                    contractor_id: cid,
+                },
+            );
         }
     };
-    push(s.payer.ufvk(TREASURY_INDEX).await?, TREASURY_INDEX, "Treasury".into(), "treasury", info.birthday_height, None);
+    push(
+        s.payer.ufvk(TREASURY_INDEX).await?,
+        TREASURY_INDEX,
+        "Treasury".into(),
+        "treasury",
+        info.birthday_height,
+        None,
+    );
     for c in db::all_contractors(&s.db).await? {
         if let Ok(ufvk) = s.payer.ufvk(c.account_index as u32).await {
-            push(ufvk, c.account_index as u32, c.name.clone(), "contractor", c.account_birthday_height as u32, Some(c.id.clone()));
+            push(
+                ufvk,
+                c.account_index as u32,
+                c.name.clone(),
+                "contractor",
+                c.account_birthday_height as u32,
+                Some(c.id.clone()),
+            );
         }
     }
     Ok(out)
@@ -82,10 +108,18 @@ struct Scanned {
 async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str) -> ApiResult<Scanned> {
     let (f, t) = validate_period(from, to)?;
     if raw_keys.is_empty() {
-        return Err(ApiError::bad_request("invalid_viewing_key", "No viewing keys were supplied.", "Paste at least one viewing key, one per line, or import the payer's export file."));
+        return Err(ApiError::bad_request(
+            "invalid_viewing_key",
+            "No viewing keys were supplied.",
+            "Paste at least one viewing key, one per line, or import the payer's export file.",
+        ));
     }
     if raw_keys.len() > 200 {
-        return Err(ApiError::bad_request("too_many_keys", "At most 200 viewing keys per request.", "Split the accounts into smaller groups."));
+        return Err(ApiError::bad_request(
+            "too_many_keys",
+            "At most 200 viewing keys per request.",
+            "Split the accounts into smaller groups.",
+        ));
     }
     let mut parsed = vec![];
     for (i, k) in raw_keys.iter().enumerate() {
@@ -112,27 +146,50 @@ async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str) -> Api
                 to_scan.push((k, kn.info.label.clone().unwrap_or_default(), kn.birthday));
             }
             None => {
-                keys.push(KeyInfo { fingerprint: k.fingerprint.clone(), account_index: None, label: None, role: "unknown".into() });
+                keys.push(KeyInfo {
+                    fingerprint: k.fingerprint.clone(),
+                    account_index: None,
+                    label: None,
+                    role: "unknown".into(),
+                });
                 contractor_ids.push(None);
                 to_scan.push((k, "Imported key".into(), default_birthday));
             }
         }
     }
-    let result = s.viewers.scan(to_scan).await.map_err(|e| ApiError::from(e.context("scanning with the viewing keys")))?;
+    let result = s
+        .viewers
+        .scan(to_scan)
+        .await
+        .map_err(|e| ApiError::from(e.context("scanning with the viewing keys")))?;
     let classified = statements::classify(s.cfg.network, &result.outputs, &keys, result.chain_tip, Some((f, t)));
-    Ok(Scanned { keys, contractor_ids, classified, scanned_to: result.scanned_to_height, period: (from.to_string(), to.to_string()) })
+    Ok(Scanned {
+        keys,
+        contractor_ids,
+        classified,
+        scanned_to: result.scanned_to_height,
+        period: (from.to_string(), to.to_string()),
+    })
 }
 
 /// Run metadata for runs this service knows, keyed by run id.
 async fn runs_index(s: &AppStateRef, c: &Classified) -> ApiResult<Value> {
-    let mut ids: Vec<&str> = c.lines.iter().chain(c.pending.iter()).map(|l| l.run_id.as_str()).collect();
+    let mut ids: Vec<&str> = c
+        .lines
+        .iter()
+        .chain(c.pending.iter())
+        .map(|l| l.run_id.as_str())
+        .collect();
     ids.extend(c.run_records.iter().map(|r| r.run_id.as_str()));
     ids.sort();
     ids.dedup();
     let mut out = serde_json::Map::new();
     for id in ids {
         if let Some(r) = db::get_run(&s.db, id).await? {
-            out.insert(id.into(), json!({"period_start": r.period_start, "period_end": r.period_end, "status": r.status}));
+            out.insert(
+                id.into(),
+                json!({"period_start": r.period_start, "period_end": r.period_end, "status": r.status}),
+            );
         }
     }
     Ok(Value::Object(out))
@@ -140,7 +197,13 @@ async fn runs_index(s: &AppStateRef, c: &Classified) -> ApiResult<Value> {
 
 fn csv_response(body: String, filename: &str) -> Response {
     (
-        [(header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()), (header::CONTENT_DISPOSITION, format!("attachment; filename=\"{filename}\""))],
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8".to_string()),
+            (
+                header::CONTENT_DISPOSITION,
+                format!("attachment; filename=\"{filename}\""),
+            ),
+        ],
         body,
     )
         .into_response()
@@ -167,7 +230,16 @@ async fn contractor_statement(s: &AppStateRef, req: &ContractorReq) -> ApiResult
 
 async fn contractor_json(State(s): State<AppStateRef>, Json(req): Json<ContractorReq>) -> ApiResult<Json<Value>> {
     let (sc, body) = contractor_statement(&s, &req).await?;
-    db::record_statement(&s.db, "contractor", sc.contractor_ids[0].as_deref(), &sc.keys[0].fingerprint, (&sc.period.0, &sc.period.1), sc.scanned_to, None).await?;
+    db::record_statement(
+        &s.db,
+        "contractor",
+        sc.contractor_ids[0].as_deref(),
+        &sc.keys[0].fingerprint,
+        (&sc.period.0, &sc.period.1),
+        sc.scanned_to,
+        None,
+    )
+    .await?;
     Ok(Json(body))
 }
 
@@ -175,12 +247,31 @@ async fn contractor_csv(State(s): State<AppStateRef>, Json(req): Json<Contractor
     let (sc, _) = contractor_statement(&s, &req).await?;
     let csv = statements::contractor_csv(&sc.classified);
     let hash = hex::encode(Sha256::digest(csv.as_bytes()));
-    db::record_statement(&s.db, "contractor", sc.contractor_ids[0].as_deref(), &sc.keys[0].fingerprint, (&sc.period.0, &sc.period.1), sc.scanned_to, Some(&hash)).await?;
-    let name = sc.keys[0].label.clone().unwrap_or_else(|| sc.keys[0].fingerprint.clone()).replace(|c: char| !c.is_ascii_alphanumeric(), "-");
-    Ok(csv_response(csv, &format!("payslip-statement-{name}-{}-{}.csv", sc.period.0, sc.period.1)))
+    db::record_statement(
+        &s.db,
+        "contractor",
+        sc.contractor_ids[0].as_deref(),
+        &sc.keys[0].fingerprint,
+        (&sc.period.0, &sc.period.1),
+        sc.scanned_to,
+        Some(&hash),
+    )
+    .await?;
+    let name = sc.keys[0]
+        .label
+        .clone()
+        .unwrap_or_else(|| sc.keys[0].fingerprint.clone())
+        .replace(|c: char| !c.is_ascii_alphanumeric(), "-");
+    Ok(csv_response(
+        csv,
+        &format!("payslip-statement-{name}-{}-{}.csv", sc.period.0, sc.period.1),
+    ))
 }
 
-async fn accountant_view(s: &AppStateRef, req: &AccountantReq) -> ApiResult<(Scanned, Vec<statements::RunReconciliation>, Value)> {
+async fn accountant_view(
+    s: &AppStateRef,
+    req: &AccountantReq,
+) -> ApiResult<(Scanned, Vec<statements::RunReconciliation>, Value)> {
     let sc = scan(s, &req.ufvks, &req.from, &req.to).await?;
     let runs = statements::reconcile(&sc.classified);
     let funded: i64 = runs.iter().filter_map(|r| r.funded_usd_cents).map(|v| v as i64).sum();
@@ -214,7 +305,16 @@ fn subject(sc: &Scanned) -> String {
 
 async fn accountant_json(State(s): State<AppStateRef>, Json(req): Json<AccountantReq>) -> ApiResult<Json<Value>> {
     let (sc, _, body) = accountant_view(&s, &req).await?;
-    db::record_statement(&s.db, "accountant", None, &subject(&sc), (&sc.period.0, &sc.period.1), sc.scanned_to, None).await?;
+    db::record_statement(
+        &s.db,
+        "accountant",
+        None,
+        &subject(&sc),
+        (&sc.period.0, &sc.period.1),
+        sc.scanned_to,
+        None,
+    )
+    .await?;
     Ok(Json(body))
 }
 
@@ -222,6 +322,18 @@ async fn accountant_csv(State(s): State<AppStateRef>, Json(req): Json<Accountant
     let (sc, runs, _) = accountant_view(&s, &req).await?;
     let csv = statements::accountant_csv(&runs, &sc.classified);
     let hash = hex::encode(Sha256::digest(csv.as_bytes()));
-    db::record_statement(&s.db, "accountant", None, &subject(&sc), (&sc.period.0, &sc.period.1), sc.scanned_to, Some(&hash)).await?;
-    Ok(csv_response(csv, &format!("payslip-reconciliation-{}-{}.csv", sc.period.0, sc.period.1)))
+    db::record_statement(
+        &s.db,
+        "accountant",
+        None,
+        &subject(&sc),
+        (&sc.period.0, &sc.period.1),
+        sc.scanned_to,
+        Some(&hash),
+    )
+    .await?;
+    Ok(csv_response(
+        csv,
+        &format!("payslip-reconciliation-{}-{}.csv", sc.period.0, sc.period.1),
+    ))
 }

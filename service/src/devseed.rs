@@ -32,16 +32,23 @@ pub fn contractor_wallets(cfg: &Config, passphrase: &str, count: u32) -> anyhow:
     (0..count)
         .map(|i| {
             let idx = zip32::AccountId::try_from(i).map_err(|_| anyhow!("invalid account index"))?;
-            let usk = UnifiedSpendingKey::from_seed(&params, seed.expose_secret(), idx).map_err(|e| anyhow!("{e:?}"))?;
+            let usk =
+                UnifiedSpendingKey::from_seed(&params, seed.expose_secret(), idx).map_err(|e| anyhow!("{e:?}"))?;
             let ufvk = usk.to_unified_full_viewing_key();
             let (ua, _) = ufvk
                 .default_address(UnifiedAddressRequest::SHIELDED)
                 .map_err(|e| anyhow!("deriving address: {e:?}"))?;
-            Ok(DevContractorWallet { address: encode_ua_r0(&params, &ua)?, ufvk: ufvk.encode(&params) })
+            Ok(DevContractorWallet {
+                address: encode_ua_r0(&params, &ua)?,
+                ufvk: ufvk.encode(&params),
+            })
         })
         .collect()
 }
 
 pub async fn contractor_addresses(cfg: &Config, passphrase: &str, count: u32) -> anyhow::Result<Vec<String>> {
-    Ok(contractor_wallets(cfg, passphrase, count)?.into_iter().map(|w| w.address).collect())
+    Ok(contractor_wallets(cfg, passphrase, count)?
+        .into_iter()
+        .map(|w| w.address)
+        .collect())
 }

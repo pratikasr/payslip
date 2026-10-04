@@ -22,7 +22,14 @@ pub struct ApiError {
 
 impl ApiError {
     pub fn new(status: StatusCode, code: &str, message: impl Into<String>, hint: impl Into<String>) -> Self {
-        ApiError { status, body: ErrorBody { code: code.into(), message: message.into(), hint: hint.into() } }
+        ApiError {
+            status,
+            body: ErrorBody {
+                code: code.into(),
+                message: message.into(),
+                hint: hint.into(),
+            },
+        }
     }
 
     pub fn bad_request(code: &str, message: impl Into<String>, hint: impl Into<String>) -> Self {
@@ -30,7 +37,12 @@ impl ApiError {
     }
 
     pub fn not_found(what: &str) -> Self {
-        Self::new(StatusCode::NOT_FOUND, "not_found", format!("{what} was not found"), "Check the id; list endpoints return every valid id.")
+        Self::new(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            format!("{what} was not found"),
+            "Check the id; list endpoints return every valid id.",
+        )
     }
 
     pub fn conflict(code: &str, message: impl Into<String>, hint: impl Into<String>) -> Self {
@@ -53,12 +65,26 @@ fn classify_internal(message: &str) -> (&'static str, &'static str) {
     let m = message.to_ascii_lowercase();
     if m.contains("database or disk is full") || m.contains("no space left") || m.contains("disk full") {
         ("disk_full", "The service's data disk is full. Free space on the volume holding PAYSLIP_DATA_DIR, then retry; run state is preserved.")
-    } else if m.contains("transport error") || m.contains("connection refused") || m.contains("dns error") || m.contains("timed out") || m.contains("getlatestblock") {
-        ("lightwalletd_unreachable", "The service cannot reach lightwalletd. Check LIGHTWALLETD_URL and network access, then retry.")
+    } else if m.contains("transport error")
+        || m.contains("connection refused")
+        || m.contains("dns error")
+        || m.contains("timed out")
+        || m.contains("getlatestblock")
+    {
+        (
+            "lightwalletd_unreachable",
+            "The service cannot reach lightwalletd. Check LIGHTWALLETD_URL and network access, then retry.",
+        )
     } else if m.contains("database is locked") {
-        ("database_busy", "Another operation holds the database. Retry in a few seconds.")
+        (
+            "database_busy",
+            "Another operation holds the database. Retry in a few seconds.",
+        )
     } else {
-        ("internal_error", "Check the service log for details, then retry. Runs resume from their last saved step.")
+        (
+            "internal_error",
+            "Check the service log for details, then retry. Runs resume from their last saved step.",
+        )
     }
 }
 

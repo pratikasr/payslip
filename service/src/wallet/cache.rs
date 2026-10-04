@@ -51,7 +51,10 @@ impl BlockSource for MemoryBlockCache {
     {
         let start = from_height.map(u32::from).unwrap_or(0);
         let blocks: Vec<CompactBlock> = {
-            let guard = self.blocks.lock().map_err(|_| ChainError::BlockSource(CacheError("poisoned".into())))?;
+            let guard = self
+                .blocks
+                .lock()
+                .map_err(|_| ChainError::BlockSource(CacheError("poisoned".into())))?;
             guard
                 .range(start..)
                 .take(limit.unwrap_or(usize::MAX))

@@ -92,7 +92,7 @@ mod tests {
     #[test]
     fn usd_to_zat_round_trips_within_one_cent() {
         let rate = 1_354_930_000;
-        for cents in [1u64, 99, 480_000, 325_000, 1_000_000_00, 7_777_77] {
+        for cents in [1u64, 99, 480_000, 325_000, 100_000_000, 777_777] {
             let zat = usd_cents_to_zat(cents, rate).unwrap();
             let back = zat_to_usd_cents(zat, rate);
             assert!(back.abs_diff(cents) <= 1, "{cents} -> {zat} -> {back}");

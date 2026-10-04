@@ -43,7 +43,11 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
     let db = db::open(&cfg.app_db_path()).await?;
     match db::setting(&db, "network").await? {
         Some(n) if n != cfg.network.as_str() => {
-            bail!("{} holds {n} data but ZCASH_NETWORK={}; use a separate PAYSLIP_DATA_DIR per network", cfg.data_dir.display(), cfg.network.as_str())
+            bail!(
+                "{} holds {n} data but ZCASH_NETWORK={}; use a separate PAYSLIP_DATA_DIR per network",
+                cfg.data_dir.display(),
+                cfg.network.as_str()
+            )
         }
         Some(_) => {}
         None => db::set_setting(&db, "network", cfg.network.as_str()).await?,
@@ -63,7 +67,11 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
 }
 
 pub fn router(state: AppStateRef) -> Router {
-    let origin = state.cfg.web_origin.parse::<HeaderValue>().unwrap_or_else(|_| HeaderValue::from_static("http://localhost:3000"));
+    let origin = state
+        .cfg
+        .web_origin
+        .parse::<HeaderValue>()
+        .unwrap_or_else(|_| HeaderValue::from_static("http://localhost:3000"));
     let cors = CorsLayer::new()
         .allow_origin(origin)
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
@@ -94,9 +102,17 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
         }
     });
     state.executor.resume_all().await;
-    let listener = tokio::net::TcpListener::bind(bind).await.with_context(|| format!("binding {bind}"))?;
-    tracing::info!("Payslip service on http://{bind} ({}, venue {})", state.cfg.network.as_str(), state.venue.kind().as_str());
-    axum::serve(listener, router(state)).with_graceful_shutdown(shutdown()).await?;
+    let listener = tokio::net::TcpListener::bind(bind)
+        .await
+        .with_context(|| format!("binding {bind}"))?;
+    tracing::info!(
+        "Payslip service on http://{bind} ({}, venue {})",
+        state.cfg.network.as_str(),
+        state.venue.kind().as_str()
+    );
+    axum::serve(listener, router(state))
+        .with_graceful_shutdown(shutdown())
+        .await?;
     Ok(())
 }
 

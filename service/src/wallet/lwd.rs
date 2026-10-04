@@ -36,7 +36,11 @@ pub struct LightdInfo {
 }
 
 pub async fn info(client: &mut Client) -> anyhow::Result<LightdInfo> {
-    let i = client.get_lightd_info(Empty {}).await.context("GetLightdInfo")?.into_inner();
+    let i = client
+        .get_lightd_info(Empty {})
+        .await
+        .context("GetLightdInfo")?
+        .into_inner();
     Ok(LightdInfo {
         chain_name: i.chain_name,
         block_height: i.block_height,
@@ -47,13 +51,22 @@ pub async fn info(client: &mut Client) -> anyhow::Result<LightdInfo> {
 }
 
 pub async fn tip(client: &mut Client) -> anyhow::Result<BlockHeight> {
-    let b = client.get_latest_block(ChainSpec::default()).await.context("GetLatestBlock")?.into_inner();
-    Ok(BlockHeight::from_u32(u32::try_from(b.height).context("tip height out of range")?))
+    let b = client
+        .get_latest_block(ChainSpec::default())
+        .await
+        .context("GetLatestBlock")?
+        .into_inner();
+    Ok(BlockHeight::from_u32(
+        u32::try_from(b.height).context("tip height out of range")?,
+    ))
 }
 
 pub async fn tree_state(client: &mut Client, height: BlockHeight) -> anyhow::Result<service::TreeState> {
     Ok(client
-        .get_tree_state(BlockId { height: u64::from(height), hash: vec![] })
+        .get_tree_state(BlockId {
+            height: u64::from(height),
+            hash: vec![],
+        })
         .await
         .with_context(|| format!("GetTreeState at {height}"))?
         .into_inner())
@@ -66,7 +79,13 @@ pub async fn fetch_tx<P: Parameters>(
     chain_tip: BlockHeight,
     txid: TxId,
 ) -> anyhow::Result<Option<(Transaction, Option<BlockHeight>)>> {
-    let raw = match client.get_transaction(TxFilter { hash: txid.as_ref().to_vec(), ..Default::default() }).await {
+    let raw = match client
+        .get_transaction(TxFilter {
+            hash: txid.as_ref().to_vec(),
+            ..Default::default()
+        })
+        .await
+    {
         Ok(r) => r.into_inner(),
         Err(status) if status.code() == tonic::Code::NotFound => return Ok(None),
         Err(status) if status.message().contains("No such mempool or") || status.message().contains("not found") => {
@@ -80,13 +99,21 @@ pub async fn fetch_tx<P: Parameters>(
 /// The mined height of a transaction if the server has it in a block. `Ok(None)` when it is in
 /// the mempool or unknown.
 pub async fn mined_height(client: &mut Client, txid: TxId) -> anyhow::Result<Option<BlockHeight>> {
-    match client.get_transaction(TxFilter { hash: txid.as_ref().to_vec(), ..Default::default() }).await {
+    match client
+        .get_transaction(TxFilter {
+            hash: txid.as_ref().to_vec(),
+            ..Default::default()
+        })
+        .await
+    {
         Ok(r) => {
             let h = r.into_inner().height;
             Ok((h > 0 && h < u64::from(u32::MAX)).then(|| BlockHeight::from_u32(h as u32)))
         }
         Err(status) if status.code() == tonic::Code::NotFound => Ok(None),
-        Err(status) if status.message().contains("No such mempool or") || status.message().contains("not found") => Ok(None),
+        Err(status) if status.message().contains("No such mempool or") || status.message().contains("not found") => {
+            Ok(None)
+        }
         Err(status) => Err(status).context("GetTransaction"),
     }
 }
@@ -97,8 +124,11 @@ pub fn parse_raw<P: Parameters>(
     raw: RawTransaction,
 ) -> anyhow::Result<(Transaction, Option<BlockHeight>)> {
     let mined = (raw.height > 0 && raw.height < u64::from(u32::MAX)).then(|| BlockHeight::from_u32(raw.height as u32));
-    let tx = Transaction::read(&raw.data[..], BranchId::for_height(params, mined.unwrap_or(chain_tip + 1)))
-        .context("parsing transaction")?;
+    let tx = Transaction::read(
+        &raw.data[..],
+        BranchId::for_height(params, mined.unwrap_or(chain_tip + 1)),
+    )
+    .context("parsing transaction")?;
     Ok((tx, mined))
 }
 
@@ -126,6 +156,9 @@ pub async fn broadcast(client: &mut Client, raw: Vec<u8>) -> anyhow::Result<Resu
     if resp.error_code == 0 {
         Ok(Ok(()))
     } else {
-        Ok(Err(BroadcastError { code: resp.error_code, message: resp.error_message }))
+        Ok(Err(BroadcastError {
+            code: resp.error_code,
+            message: resp.error_message,
+        }))
     }
 }

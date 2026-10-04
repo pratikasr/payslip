@@ -59,7 +59,10 @@ enum Command {
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,zcash_client_backend=warn,zcash_client_sqlite=warn")))
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,zcash_client_backend=warn,zcash_client_sqlite=warn")),
+        )
         .with_writer(std::io::stderr)
         .init();
     let cli = Cli::parse();
@@ -68,7 +71,10 @@ async fn main() -> anyhow::Result<()> {
     match cli.command.unwrap_or(Command::Serve) {
         Command::Serve => payslip::api::serve(cfg).await,
         Command::Init { import } => {
-            let passphrase = cfg.seed_passphrase.clone().ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE (12+ characters) first"))?;
+            let passphrase = cfg
+                .seed_passphrase
+                .clone()
+                .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE (12+ characters) first"))?;
             let seed = SeedFile::new(cfg.seed_path());
             if import {
                 let mut phrase = String::new();
@@ -102,7 +108,12 @@ async fn main() -> anyhow::Result<()> {
                 money::format_zec(info.treasury.total_zat)
             );
             for a in payer.account_balances().await? {
-                println!("Account {}: spendable {} total {}", a.0, money::format_zec(a.1.spendable_zat), money::format_zec(a.1.total_zat));
+                println!(
+                    "Account {}: spendable {} total {}",
+                    a.0,
+                    money::format_zec(a.1.spendable_zat),
+                    money::format_zec(a.1.total_zat)
+                );
             }
             Ok(())
         }
@@ -145,8 +156,15 @@ async fn main() -> anyhow::Result<()> {
             if cfg.network != payslip::config::ZcashNetwork::Testnet {
                 bail!("dev-contractors is a testnet helper");
             }
-            let passphrase = cfg.seed_passphrase.clone().ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE first"))?;
-            for (i, ua) in payslip::devseed::contractor_addresses(&cfg, &passphrase, count).await?.iter().enumerate() {
+            let passphrase = cfg
+                .seed_passphrase
+                .clone()
+                .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE first"))?;
+            for (i, ua) in payslip::devseed::contractor_addresses(&cfg, &passphrase, count)
+                .await?
+                .iter()
+                .enumerate()
+            {
                 println!("{i}\t{ua}");
             }
             Ok(())

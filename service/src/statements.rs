@@ -120,7 +120,13 @@ pub fn csv_safe(s: &str) -> String {
 
 /// Classifies outputs. `tip` decides which unmined transactions have expired; `period`
 /// filters by block date (UTC, inclusive). Pending lines are never period-filtered.
-pub fn classify(network: ZcashNetwork, outputs: &[ScanOutput], keys: &[KeyInfo], tip: u32, period: Option<(Date, Date)>) -> Classified {
+pub fn classify(
+    network: ZcashNetwork,
+    outputs: &[ScanOutput],
+    keys: &[KeyInfo],
+    tip: u32,
+    period: Option<(Date, Date)>,
+) -> Classified {
     let by_fp: HashMap<&str, &KeyInfo> = keys.iter().map(|k| (k.fingerprint.as_str(), k)).collect();
     let label = |fp: &str| by_fp.get(fp).and_then(|k| k.label.clone());
     let index = |fp: &str| by_fp.get(fp).and_then(|k| k.account_index);
@@ -139,7 +145,11 @@ pub fn classify(network: ZcashNetwork, outputs: &[ScanOutput], keys: &[KeyInfo],
         let decoded = memo::decode_bytes(o.memo.as_deref());
         let explorer_url = network.explorer_tx_url(&o.txid);
         let direction: &'static str = if o.from_account.is_some() { "out" } else { "in" };
-        let account = o.from_account.clone().or_else(|| o.to_account.clone()).unwrap_or_default();
+        let account = o
+            .from_account
+            .clone()
+            .or_else(|| o.to_account.clone())
+            .unwrap_or_default();
 
         if let Decoded::Payslip(PayslipMemo::RunFunding(r)) = &decoded {
             if in_period || o.mined_height.is_none() {
@@ -184,7 +194,12 @@ pub fn classify(network: ZcashNetwork, outputs: &[ScanOutput], keys: &[KeyInfo],
                     account_index: index(&account),
                     account,
                     fee_zat: o.fee_zat,
-                    sort_key: (o.mined_height.unwrap_or(u32::MAX), o.txid.clone(), o.pool, o.output_index),
+                    sort_key: (
+                        o.mined_height.unwrap_or(u32::MAX),
+                        o.txid.clone(),
+                        o.pool,
+                        o.output_index,
+                    ),
                 };
                 if o.mined_height.is_none() {
                     c.pending.push(line);
@@ -196,7 +211,14 @@ pub fn classify(network: ZcashNetwork, outputs: &[ScanOutput], keys: &[KeyInfo],
                 // Treasury to contractor account: internal. The receiving side is funding.
                 if let Some(to) = &o.to_account {
                     if in_period || o.mined_height.is_none() {
-                        c.funding.push(FundingIn { date, height: o.mined_height, txid: o.txid.clone(), amount_zat: o.value_zat, run_id: a.run_id.to_string(), account: to.clone() });
+                        c.funding.push(FundingIn {
+                            date,
+                            height: o.mined_height,
+                            txid: o.txid.clone(),
+                            amount_zat: o.value_zat,
+                            run_id: a.run_id.to_string(),
+                            account: to.clone(),
+                        });
                     }
                 }
             }
@@ -238,7 +260,11 @@ pub struct Totals {
 }
 
 pub fn totals(lines: &[Line]) -> Totals {
-    Totals { count: lines.len(), zat: lines.iter().map(|l| l.amount_zat).sum(), usd_cents: lines.iter().map(|l| l.usd_basis_cents).sum() }
+    Totals {
+        count: lines.len(),
+        zat: lines.iter().map(|l| l.amount_zat).sum(),
+        usd_cents: lines.iter().map(|l| l.usd_basis_cents).sum(),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -269,8 +295,16 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
     let mut out = vec![];
     for run_id in run_ids {
         let record = c.run_records.iter().find(|r| r.run_id == run_id);
-        let lines: Vec<&Line> = c.lines.iter().filter(|l| l.run_id == run_id && l.direction == "out").collect();
-        let pending = c.pending.iter().filter(|l| l.run_id == run_id && l.direction == "out").count();
+        let lines: Vec<&Line> = c
+            .lines
+            .iter()
+            .filter(|l| l.run_id == run_id && l.direction == "out")
+            .collect();
+        let pending = c
+            .pending
+            .iter()
+            .filter(|l| l.run_id == run_id && l.direction == "out")
+            .count();
         let paid_usd: u64 = lines.iter().map(|l| l.usd_basis_cents).sum();
         let paid_zat: u64 = lines.iter().map(|l| l.amount_zat).sum();
         let mut fee_txs: BTreeMap<&str, u64> = BTreeMap::new();
@@ -281,9 +315,16 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
             fee_txs.insert(&r.txid, r.fee_zat.unwrap_or(0));
         }
         let fees: u64 = fee_txs.values().sum();
-        let period = record.map(|r| r.period.clone()).or_else(|| lines.first().map(|l| l.period.clone())).unwrap_or_default();
+        let period = record
+            .map(|r| r.period.clone())
+            .or_else(|| lines.first().map(|l| l.period.clone()))
+            .unwrap_or_default();
         let (funded, acquired, rate) = match record {
-            Some(r) => (Some(r.funded_usd_cents), Some(r.zec_acquired_zat), Some(r.rate_usd_per_zec_e6)),
+            Some(r) => (
+                Some(r.funded_usd_cents),
+                Some(r.zec_acquired_zat),
+                Some(r.rate_usd_per_zec_e6),
+            ),
             None => (None, None, None),
         };
         let unspent = acquired.map(|a| a as i64 - paid_zat as i64 - fees as i64);
@@ -328,7 +369,20 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
 
 pub fn contractor_csv(c: &Classified) -> String {
     let mut w = csv::WriterBuilder::new().flexible(true).from_writer(vec![]);
-    let _ = w.write_record(["date", "block_time", "height", "txid", "amount_zec", "usd_basis", "rate_usd_per_zec", "run_id", "period", "invoice_ref", "running_zec", "running_usd"]);
+    let _ = w.write_record([
+        "date",
+        "block_time",
+        "height",
+        "txid",
+        "amount_zec",
+        "usd_basis",
+        "rate_usd_per_zec",
+        "run_id",
+        "period",
+        "invoice_ref",
+        "running_zec",
+        "running_usd",
+    ]);
     for l in &c.lines {
         let _ = w.write_record(line_record(l));
     }
@@ -359,7 +413,16 @@ fn line_record(l: &Line) -> Vec<String> {
 
 fn write_unlabelled(w: &mut csv::Writer<Vec<u8>>, items: &[Unlabelled]) {
     let _ = w.write_record(["# unlabelled"]);
-    let _ = w.write_record(["date", "height", "txid", "direction", "amount_zec", "reason", "memo_text", "account"]);
+    let _ = w.write_record([
+        "date",
+        "height",
+        "txid",
+        "direction",
+        "amount_zec",
+        "reason",
+        "memo_text",
+        "account",
+    ]);
     for u in items {
         let _ = w.write_record([
             u.date.clone().unwrap_or_default(),
@@ -378,7 +441,20 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
     let mut w = csv::WriterBuilder::new().flexible(true).from_writer(vec![]);
     let _ = w.write_record(["# reconciliation"]);
     let _ = w.write_record([
-        "run_id", "period", "funded_usd", "zec_acquired", "rate_usd_per_zec", "paid_usd", "paid_zec", "lines", "pending_lines", "network_fees_zec", "unspent_zec", "variance_usd", "explained_usd", "status",
+        "run_id",
+        "period",
+        "funded_usd",
+        "zec_acquired",
+        "rate_usd_per_zec",
+        "paid_usd",
+        "paid_zec",
+        "lines",
+        "pending_lines",
+        "network_fees_zec",
+        "unspent_zec",
+        "variance_usd",
+        "explained_usd",
+        "status",
     ]);
     let opt = |v: Option<String>| v.unwrap_or_default();
     for r in runs {
@@ -400,7 +476,19 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
         ]);
     }
     let _ = w.write_record(["# lines"]);
-    let _ = w.write_record(["account", "date", "block_time", "height", "txid", "amount_zec", "usd_basis", "rate_usd_per_zec", "run_id", "period", "invoice_ref"]);
+    let _ = w.write_record([
+        "account",
+        "date",
+        "block_time",
+        "height",
+        "txid",
+        "amount_zec",
+        "usd_basis",
+        "rate_usd_per_zec",
+        "run_id",
+        "period",
+        "invoice_ref",
+    ]);
     for l in c.lines.iter().chain(c.pending.iter()) {
         let _ = w.write_record([
             csv_safe(&l.label.clone().unwrap_or_else(|| l.account.clone())),
@@ -435,7 +523,17 @@ pub(crate) mod tests {
         Some(memo::to_memo_bytes(&m.encode().unwrap()).unwrap().as_slice().to_vec())
     }
 
-    pub fn out(txid: &str, h: Option<u32>, t: i64, from: Option<&str>, to: Option<&str>, zat: u64, change: bool, memo: Option<Vec<u8>>) -> ScanOutput {
+    #[allow(clippy::too_many_arguments)]
+    pub fn out(
+        txid: &str,
+        h: Option<u32>,
+        t: i64,
+        from: Option<&str>,
+        to: Option<&str>,
+        zat: u64,
+        change: bool,
+        memo: Option<Vec<u8>>,
+    ) -> ScanOutput {
         ScanOutput {
             txid: txid.into(),
             mined_height: h,
@@ -454,14 +552,35 @@ pub(crate) mod tests {
     }
 
     pub fn pay(usd: u64, inv: &str) -> PayslipMemo {
-        PayslipMemo::PayLine(PayLineMemo { run_id: Uuid::parse_str(RUN).unwrap(), period: Period::new(2026, 9).unwrap(), invoice_ref: inv.into(), usd_basis_cents: usd, rate_e6: RATE })
+        PayslipMemo::PayLine(PayLineMemo {
+            run_id: Uuid::parse_str(RUN).unwrap(),
+            period: Period::new(2026, 9).unwrap(),
+            invoice_ref: inv.into(),
+            usd_basis_cents: usd,
+            rate_e6: RATE,
+        })
     }
 
     fn keys() -> Vec<KeyInfo> {
         vec![
-            KeyInfo { fingerprint: "treasury".into(), account_index: Some(0), label: Some("Treasury".into()), role: "treasury".into() },
-            KeyInfo { fingerprint: "a1".into(), account_index: Some(1), label: Some("Amara".into()), role: "contractor".into() },
-            KeyInfo { fingerprint: "a2".into(), account_index: Some(2), label: Some("Bo".into()), role: "contractor".into() },
+            KeyInfo {
+                fingerprint: "treasury".into(),
+                account_index: Some(0),
+                label: Some("Treasury".into()),
+                role: "treasury".into(),
+            },
+            KeyInfo {
+                fingerprint: "a1".into(),
+                account_index: Some(1),
+                label: Some("Amara".into()),
+                role: "contractor".into(),
+            },
+            KeyInfo {
+                fingerprint: "a2".into(),
+                account_index: Some(2),
+                label: Some("Bo".into()),
+                role: "contractor".into(),
+            },
         ]
     }
 
@@ -471,14 +590,67 @@ pub(crate) mod tests {
         let z2 = money::usd_cents_to_zat(325_050, RATE).unwrap();
         let funded = 805_300u64;
         let acquired = money::usd_cents_to_zat(funded, RATE).unwrap();
-        let alloc = PayslipMemo::Allocation(AllocationMemo { run_id: Uuid::parse_str(RUN).unwrap() });
-        let record = PayslipMemo::RunFunding(RunFundingMemo { run_id: Uuid::parse_str(RUN).unwrap(), period: Period::new(2026, 9).unwrap(), funded_usd_cents: funded, zec_acquired_zat: acquired, rate_e6: RATE });
+        let alloc = PayslipMemo::Allocation(AllocationMemo {
+            run_id: Uuid::parse_str(RUN).unwrap(),
+        });
+        let record = PayslipMemo::RunFunding(RunFundingMemo {
+            run_id: Uuid::parse_str(RUN).unwrap(),
+            period: Period::new(2026, 9).unwrap(),
+            funded_usd_cents: funded,
+            zec_acquired_zat: acquired,
+            rate_e6: RATE,
+        });
         vec![
-            out("aa", Some(100), T0, Some("treasury"), Some("a1"), z1 + 10_000, false, memo_bytes(alloc.clone())),
-            out("aa", Some(100), T0, Some("treasury"), Some("a2"), z2 + 10_000, false, memo_bytes(alloc)),
-            out("aa", Some(100), T0, Some("treasury"), Some("treasury"), 5_000_000, true, memo_bytes(record)),
-            out("b1", Some(102), T0 + 60, Some("a1"), None, z1, false, memo_bytes(pay(480_000, "INV-14"))),
-            out("b2", Some(103), T0 + 90, Some("a2"), None, z2, false, memo_bytes(pay(325_050, "INV-7"))),
+            out(
+                "aa",
+                Some(100),
+                T0,
+                Some("treasury"),
+                Some("a1"),
+                z1 + 10_000,
+                false,
+                memo_bytes(alloc.clone()),
+            ),
+            out(
+                "aa",
+                Some(100),
+                T0,
+                Some("treasury"),
+                Some("a2"),
+                z2 + 10_000,
+                false,
+                memo_bytes(alloc),
+            ),
+            out(
+                "aa",
+                Some(100),
+                T0,
+                Some("treasury"),
+                Some("treasury"),
+                5_000_000,
+                true,
+                memo_bytes(record),
+            ),
+            out(
+                "b1",
+                Some(102),
+                T0 + 60,
+                Some("a1"),
+                None,
+                z1,
+                false,
+                memo_bytes(pay(480_000, "INV-14")),
+            ),
+            out(
+                "b2",
+                Some(103),
+                T0 + 90,
+                Some("a2"),
+                None,
+                z2,
+                false,
+                memo_bytes(pay(325_050, "INV-7")),
+            ),
         ]
     }
 
@@ -486,9 +658,38 @@ pub(crate) mod tests {
     fn contractor_statement_has_only_their_lines_with_running_totals() {
         let z1 = money::usd_cents_to_zat(480_000, RATE).unwrap();
         let outputs = vec![
-            out("aa", Some(100), T0, None, Some("a1"), z1 + 10_000, false, memo_bytes(PayslipMemo::Allocation(AllocationMemo { run_id: Uuid::parse_str(RUN).unwrap() }))),
-            out("b1", Some(102), T0 + 60, Some("a1"), None, z1, false, memo_bytes(pay(480_000, "INV-14"))),
-            out("b3", Some(150), T0 + 86_400 * 3, Some("a1"), None, z1, false, memo_bytes(pay(480_000, "INV-15"))),
+            out(
+                "aa",
+                Some(100),
+                T0,
+                None,
+                Some("a1"),
+                z1 + 10_000,
+                false,
+                memo_bytes(PayslipMemo::Allocation(AllocationMemo {
+                    run_id: Uuid::parse_str(RUN).unwrap(),
+                })),
+            ),
+            out(
+                "b1",
+                Some(102),
+                T0 + 60,
+                Some("a1"),
+                None,
+                z1,
+                false,
+                memo_bytes(pay(480_000, "INV-14")),
+            ),
+            out(
+                "b3",
+                Some(150),
+                T0 + 86_400 * 3,
+                Some("a1"),
+                None,
+                z1,
+                false,
+                memo_bytes(pay(480_000, "INV-15")),
+            ),
         ];
         let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None);
         assert_eq!(c.lines.len(), 2);
@@ -499,15 +700,40 @@ pub(crate) mod tests {
         assert_eq!(c.lines[0].invoice_ref, "INV-14");
         assert_eq!(c.lines[0].label.as_deref(), Some("Amara"));
         assert_eq!(c.lines[0].date.as_deref(), Some("2026-10-05"));
-        assert_eq!(totals(&c.lines), Totals { count: 2, zat: 2 * z1, usd_cents: 960_000 });
+        assert_eq!(
+            totals(&c.lines),
+            Totals {
+                count: 2,
+                zat: 2 * z1,
+                usd_cents: 960_000
+            }
+        );
     }
 
     #[test]
     fn unlabelled_lines_are_listed_never_dropped() {
         let outputs = vec![
             out("c1", Some(110), T0, None, Some("a1"), 777, false, None),
-            out("c2", Some(111), T0, None, Some("a1"), 888, false, memo_bytes_text("hello")),
-            out("c3", Some(112), T0, Some("a1"), None, 999, false, memo_bytes_text("PS1|broken")),
+            out(
+                "c2",
+                Some(111),
+                T0,
+                None,
+                Some("a1"),
+                888,
+                false,
+                memo_bytes_text("hello"),
+            ),
+            out(
+                "c3",
+                Some(112),
+                T0,
+                Some("a1"),
+                None,
+                999,
+                false,
+                memo_bytes_text("PS1|broken"),
+            ),
         ];
         let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None);
         assert!(c.lines.is_empty());
@@ -526,15 +752,45 @@ pub(crate) mod tests {
         let last = 1_790_812_799;
         let first = last + 1;
         let outputs = vec![
-            out("p1", Some(100), last, Some("a1"), None, 1, false, memo_bytes(pay(100, "A"))),
-            out("p2", Some(101), first, Some("a1"), None, 2, false, memo_bytes(pay(200, "B"))),
+            out(
+                "p1",
+                Some(100),
+                last,
+                Some("a1"),
+                None,
+                1,
+                false,
+                memo_bytes(pay(100, "A")),
+            ),
+            out(
+                "p2",
+                Some(101),
+                first,
+                Some("a1"),
+                None,
+                2,
+                false,
+                memo_bytes(pay(200, "B")),
+            ),
         ];
-        let sep = (Date::from_calendar_date(2026, time::Month::September, 1).unwrap(), Date::from_calendar_date(2026, time::Month::September, 30).unwrap());
+        let sep = (
+            Date::from_calendar_date(2026, time::Month::September, 1).unwrap(),
+            Date::from_calendar_date(2026, time::Month::September, 30).unwrap(),
+        );
         let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, Some(sep));
-        assert_eq!(c.lines.iter().map(|l| l.invoice_ref.as_str()).collect::<Vec<_>>(), vec!["A"]);
-        let oct = (Date::from_calendar_date(2026, time::Month::October, 1).unwrap(), Date::from_calendar_date(2026, time::Month::October, 31).unwrap());
+        assert_eq!(
+            c.lines.iter().map(|l| l.invoice_ref.as_str()).collect::<Vec<_>>(),
+            vec!["A"]
+        );
+        let oct = (
+            Date::from_calendar_date(2026, time::Month::October, 1).unwrap(),
+            Date::from_calendar_date(2026, time::Month::October, 31).unwrap(),
+        );
         let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, Some(oct));
-        assert_eq!(c.lines.iter().map(|l| l.invoice_ref.as_str()).collect::<Vec<_>>(), vec!["B"]);
+        assert_eq!(
+            c.lines.iter().map(|l| l.invoice_ref.as_str()).collect::<Vec<_>>(),
+            vec!["B"]
+        );
     }
 
     #[test]
@@ -558,7 +814,10 @@ pub(crate) mod tests {
         let r = &r[0];
         assert_eq!(r.paid_usd_cents, 805_050);
         assert_eq!(r.variance_usd_cents, Some(250));
-        assert!((r.variance_usd_cents.unwrap() - r.explained_usd_cents.unwrap()).abs() <= 3, "{r:?}");
+        assert!(
+            (r.variance_usd_cents.unwrap() - r.explained_usd_cents.unwrap()).abs() <= 3,
+            "{r:?}"
+        );
         assert_eq!(r.status, "reconciled");
         assert_eq!(r.network_fees_zat, 30_000);
     }
@@ -581,7 +840,16 @@ pub(crate) mod tests {
     fn overpayment_is_an_unexplained_variance() {
         let mut outputs = accountant_outputs();
         // A third payment that claims the same run but was never funded.
-        outputs.push(out("b9", Some(104), T0 + 120, Some("a2"), None, 50_000_000, false, memo_bytes(pay(100_000, "INV-X"))));
+        outputs.push(out(
+            "b9",
+            Some(104),
+            T0 + 120,
+            Some("a2"),
+            None,
+            50_000_000,
+            false,
+            memo_bytes(pay(100_000, "INV-X")),
+        ));
         let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None));
         assert_eq!(r[0].status, "variance_unexplained");
     }
@@ -590,7 +858,16 @@ pub(crate) mod tests {
     fn csv_escapes_formulas_and_keeps_unlabelled_section() {
         assert_eq!(csv_safe("=HYPERLINK(1)"), "'=HYPERLINK(1)");
         assert_eq!(csv_safe("INV-1"), "INV-1");
-        let outputs = vec![out("c1", Some(110), T0, None, Some("a1"), 777, false, memo_bytes_text("=cmd|' /C calc'!A0"))];
+        let outputs = vec![out(
+            "c1",
+            Some(110),
+            T0,
+            None,
+            Some("a1"),
+            777,
+            false,
+            memo_bytes_text("=cmd|' /C calc'!A0"),
+        )];
         let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None);
         let csv = contractor_csv(&c);
         assert!(csv.contains("# unlabelled"));

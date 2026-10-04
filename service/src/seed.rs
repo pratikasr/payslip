@@ -60,7 +60,9 @@ impl SeedFile {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(0o600);
         }
-        let mut f = opts.open(&self.path).with_context(|| format!("creating {}", self.path.display()))?;
+        let mut f = opts
+            .open(&self.path)
+            .with_context(|| format!("creating {}", self.path.display()))?;
         f.write_all(ciphertext.as_bytes())?;
         f.sync_all()?;
         Ok(())
@@ -73,7 +75,8 @@ impl SeedFile {
         let plaintext = age::decrypt(&identity, &ciphertext)
             .map_err(|_| anyhow::anyhow!("could not decrypt the seed file: wrong PAYSLIP_SEED_PASSPHRASE?"))?;
         let phrase = SecretString::from(String::from_utf8(plaintext).context("seed file is not UTF-8")?);
-        let mnemonic = <Mnemonic<English>>::from_phrase(phrase.expose_secret()).context("seed file holds an invalid mnemonic")?;
+        let mnemonic =
+            <Mnemonic<English>>::from_phrase(phrase.expose_secret()).context("seed file holds an invalid mnemonic")?;
         Ok(SecretVec::new(mnemonic.to_seed("").to_vec()))
     }
 }
@@ -110,6 +113,9 @@ mod tests {
         let f = SeedFile::new(dir.path().join("s.age"));
         f.import(phrase, "correct horse battery").unwrap();
         let expected = <Mnemonic<English>>::from_phrase(phrase).unwrap().to_seed("");
-        assert_eq!(f.unlock("correct horse battery").unwrap().expose_secret().as_slice(), &expected[..]);
+        assert_eq!(
+            f.unlock("correct horse battery").unwrap().expose_secret().as_slice(),
+            &expected[..]
+        );
     }
 }

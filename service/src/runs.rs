@@ -81,7 +81,12 @@ pub trait ChainOps: Send + Sync {
     async fn spendable(&self, account: u32) -> anyhow::Result<u64>;
     async fn total(&self, account: u32) -> anyhow::Result<u64>;
     async fn account_address(&self, account: u32) -> anyhow::Result<String>;
-    async fn create_transfer(&self, from: u32, pays: Vec<Pay>, change_memo: Option<String>) -> anyhow::Result<Result<String, SpendError>>;
+    async fn create_transfer(
+        &self,
+        from: u32,
+        pays: Vec<Pay>,
+        change_memo: Option<String>,
+    ) -> anyhow::Result<Result<String, SpendError>>;
     async fn broadcast(&self, txid: &str) -> anyhow::Result<()>;
     async fn mined_height(&self, txid: &str) -> anyhow::Result<Option<u32>>;
     async fn expiry_height(&self, txid: &str) -> anyhow::Result<Option<u32>>;
@@ -100,26 +105,57 @@ impl ChainOps for PayerChain {
         self.0.chain_tip().await
     }
     async fn spendable(&self, account: u32) -> anyhow::Result<u64> {
-        Ok(self.0.account_balances().await?.get(&account).map(|b| b.spendable_zat).unwrap_or(0))
+        Ok(self
+            .0
+            .account_balances()
+            .await?
+            .get(&account)
+            .map(|b| b.spendable_zat)
+            .unwrap_or(0))
     }
     async fn total(&self, account: u32) -> anyhow::Result<u64> {
-        Ok(self.0.account_balances().await?.get(&account).map(|b| b.total_zat).unwrap_or(0))
+        Ok(self
+            .0
+            .account_balances()
+            .await?
+            .get(&account)
+            .map(|b| b.total_zat)
+            .unwrap_or(0))
     }
     async fn account_address(&self, account: u32) -> anyhow::Result<String> {
         self.0.address(account).await
     }
-    async fn create_transfer(&self, from: u32, pays: Vec<Pay>, change_memo: Option<String>) -> anyhow::Result<Result<String, SpendError>> {
+    async fn create_transfer(
+        &self,
+        from: u32,
+        pays: Vec<Pay>,
+        change_memo: Option<String>,
+    ) -> anyhow::Result<Result<String, SpendError>> {
         let params = self.0.params();
         let mut specs = vec![];
         for p in pays {
             specs.push(crate::wallet::PaymentSpec {
                 to: crate::wallet::parse_shielded_address(&params, &p.to)?,
-                amount: zcash_protocol::value::Zatoshis::from_u64(p.zat).map_err(|_| anyhow::anyhow!("invalid amount {}", p.zat))?,
-                memo: p.memo.as_deref().map(crate::memo::to_memo_bytes).transpose().map_err(|e| anyhow::anyhow!("{e}"))?,
+                amount: zcash_protocol::value::Zatoshis::from_u64(p.zat)
+                    .map_err(|_| anyhow::anyhow!("invalid amount {}", p.zat))?,
+                memo: p
+                    .memo
+                    .as_deref()
+                    .map(crate::memo::to_memo_bytes)
+                    .transpose()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?,
             });
         }
-        let change = change_memo.as_deref().map(crate::memo::to_memo_bytes).transpose().map_err(|e| anyhow::anyhow!("{e}"))?;
-        Ok(self.0.create_transfer(from, specs, change).await?.map(|t| crate::wallet::txid_hex(&t)))
+        let change = change_memo
+            .as_deref()
+            .map(crate::memo::to_memo_bytes)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        Ok(self
+            .0
+            .create_transfer(from, specs, change)
+            .await?
+            .map(|t| crate::wallet::txid_hex(&t)))
     }
     async fn broadcast(&self, txid: &str) -> anyhow::Result<()> {
         self.0.broadcast(crate::wallet::parse_txid(txid)?).await
@@ -142,7 +178,10 @@ impl ChainOps for PayerChain {
 // JSON rendering (docs/API.md)
 
 pub fn line_json(network: ZcashNetwork, l: &LineRow) -> Value {
-    let error = l.error_code.as_ref().map(|c| json!({"code": c, "message": l.error_message, "hint": l.error_hint}));
+    let error = l
+        .error_code
+        .as_ref()
+        .map(|c| json!({"code": c, "message": l.error_message, "hint": l.error_hint}));
     json!({
         "id": l.id,
         "contractor_id": l.contractor_id,
@@ -162,16 +201,32 @@ pub fn line_json(network: ZcashNetwork, l: &LineRow) -> Value {
 }
 
 pub fn run_json(network: ZcashNetwork, r: &RunRow, lines: &[LineRow]) -> Value {
-    let funding: Option<Value> = r.venue_state.as_deref().and_then(|s| serde_json::from_str::<Funding>(s).ok()).map(|f| {
-        let mut v = serde_json::to_value(&f).unwrap_or(Value::Null);
-        if let Some(obj) = v.as_object_mut() {
-            obj.insert("funded_usd_cents".into(), json!(r.funding_amount.or(f.funded_usd_cents.map(|x| x as i64))));
-            obj.insert("zec_acquired_zat".into(), json!(r.zec_acquired.or(f.zec_acquired_zat.map(|x| x as i64))));
-            obj.insert("rate_usd_per_zec_e6".into(), json!(r.zec_usd_rate.or(f.rate_usd_per_zec_e6.map(|x| x as i64))));
-        }
-        v
-    });
-    let error = r.error_code.as_ref().map(|c| json!({"code": c, "message": r.error_message, "hint": r.error_hint}));
+    let funding: Option<Value> = r
+        .venue_state
+        .as_deref()
+        .and_then(|s| serde_json::from_str::<Funding>(s).ok())
+        .map(|f| {
+            let mut v = serde_json::to_value(&f).unwrap_or(Value::Null);
+            if let Some(obj) = v.as_object_mut() {
+                obj.insert(
+                    "funded_usd_cents".into(),
+                    json!(r.funding_amount.or(f.funded_usd_cents.map(|x| x as i64))),
+                );
+                obj.insert(
+                    "zec_acquired_zat".into(),
+                    json!(r.zec_acquired.or(f.zec_acquired_zat.map(|x| x as i64))),
+                );
+                obj.insert(
+                    "rate_usd_per_zec_e6".into(),
+                    json!(r.zec_usd_rate.or(f.rate_usd_per_zec_e6.map(|x| x as i64))),
+                );
+            }
+            v
+        });
+    let error = r
+        .error_code
+        .as_ref()
+        .map(|c| json!({"code": c, "message": r.error_message, "hint": r.error_hint}));
     let total_usd: i64 = lines.iter().map(|l| l.amount_usd_basis).sum();
     let total_zat: Option<i64> = lines.iter().map(|l| l.amount_zec).sum();
     json!({
@@ -210,11 +265,19 @@ enum StepError {
     /// Retry later; the run stays in its state.
     Transient(String),
     /// Mark the run failed with an actionable error; executing again resumes it.
-    Permanent { code: String, message: String, hint: String },
+    Permanent {
+        code: String,
+        message: String,
+        hint: String,
+    },
 }
 
 fn permanent(code: &str, message: impl Into<String>, hint: impl Into<String>) -> StepError {
-    StepError::Permanent { code: code.into(), message: message.into(), hint: hint.into() }
+    StepError::Permanent {
+        code: code.into(),
+        message: message.into(),
+        hint: hint.into(),
+    }
 }
 
 impl From<anyhow::Error> for StepError {
@@ -252,14 +315,50 @@ pub struct Executor {
 
 const MAX_TRANSIENT_RETRIES: u32 = 360;
 
+struct RunningGuard {
+    exec: Executor,
+    run_id: String,
+}
+
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        if let Ok(mut running) = self.exec.inner.running.lock() {
+            running.remove(&self.run_id);
+        }
+        self.exec.notify(&self.run_id);
+    }
+}
+
 impl Executor {
     pub fn new(cfg: Config, db: Pool, payer: Payer, venue: Arc<dyn SwapVenue>) -> Self {
-        Self::with_chain(cfg.network, db, Arc::new(PayerChain(payer)), venue, Duration::from_secs(10))
+        Self::with_chain(
+            cfg.network,
+            db,
+            Arc::new(PayerChain(payer)),
+            venue,
+            Duration::from_secs(10),
+        )
     }
 
-    pub fn with_chain(network: ZcashNetwork, db: Pool, chain: Arc<dyn ChainOps>, venue: Arc<dyn SwapVenue>, poll: Duration) -> Self {
+    pub fn with_chain(
+        network: ZcashNetwork,
+        db: Pool,
+        chain: Arc<dyn ChainOps>,
+        venue: Arc<dyn SwapVenue>,
+        poll: Duration,
+    ) -> Self {
         let (changes, _) = broadcast::channel(256);
-        Executor { inner: Arc::new(Inner { network, db, chain, venue, running: Mutex::new(HashSet::new()), changes, poll }) }
+        Executor {
+            inner: Arc::new(Inner {
+                network,
+                db,
+                chain,
+                venue,
+                running: Mutex::new(HashSet::new()),
+                changes,
+                poll,
+            }),
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
@@ -284,22 +383,43 @@ impl Executor {
     }
 
     pub async fn run_view(&self, run_id: &str) -> Result<Value, ApiError> {
-        let r = db::get_run(&self.inner.db, run_id).await?.ok_or_else(|| ApiError::not_found("Run"))?;
+        let r = db::get_run(&self.inner.db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
         let lines = db::lines(&self.inner.db, run_id).await?;
         Ok(run_json(self.inner.network, &r, &lines))
     }
 
     /// Requests funding from the venue. Valid in `draft`, or in `awaiting_funds` when the quote
     /// expired or failed before any deposit (a fresh quote replaces it).
-    pub async fn fund(&self, run_id: &str, origin_chain: Option<String>, refund_address: Option<String>) -> Result<(), ApiError> {
+    pub async fn fund(
+        &self,
+        run_id: &str,
+        origin_chain: Option<String>,
+        refund_address: Option<String>,
+    ) -> Result<(), ApiError> {
         let db = &self.inner.db;
-        let run = db::get_run(db, run_id).await?.ok_or_else(|| ApiError::not_found("Run"))?;
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
         let current: Option<Funding> = run.venue_state.as_deref().and_then(|s| serde_json::from_str(s).ok());
         let requotable = run.status == "awaiting_funds"
-            && current.as_ref().map(|f| matches!(f.status.as_str(), "awaiting_deposit" | "expired" | "refunded" | "failed")).unwrap_or(true)
+            && current
+                .as_ref()
+                .map(|f| {
+                    matches!(
+                        f.status.as_str(),
+                        "awaiting_deposit" | "expired" | "refunded" | "failed"
+                    )
+                })
+                .unwrap_or(true)
             && current.as_ref().map(|f| f.deposit_tx_hash.is_none()).unwrap_or(true);
         if run.status != "draft" && !requotable {
-            return Err(ApiError::conflict("run_already_funded", format!("This run is {} and cannot be funded again.", run.status), "Open the run to follow its progress."));
+            return Err(ApiError::conflict(
+                "run_already_funded",
+                format!("This run is {} and cannot be funded again.", run.status),
+                "Open the run to follow its progress.",
+            ));
         }
         let lines = db::lines(db, run_id).await?;
         let total: u64 = lines.iter().map(|l| l.amount_usd_basis as u64).sum();
@@ -325,18 +445,38 @@ impl Executor {
         let quote = self
             .inner
             .venue
-            .quote(&QuoteRequest { usd_cents: request_cents, origin_chain: origin_chain.unwrap_or_else(|| "base".into()), refund_address, recipient })
+            .quote(&QuoteRequest {
+                usd_cents: request_cents,
+                origin_chain: origin_chain.unwrap_or_else(|| "base".into()),
+                refund_address,
+                recipient,
+            })
             .await
             .map_err(venue_api_error)?;
-        db::set_venue(db, run_id, &quote.venue, &serde_json::to_value(&quote).map_err(anyhow::Error::from)?).await?;
+        db::set_venue(
+            db,
+            run_id,
+            &quote.venue,
+            &serde_json::to_value(&quote).map_err(anyhow::Error::from)?,
+        )
+        .await?;
         let to = if testnet { "funded" } else { "awaiting_funds" };
         db::transition(db, run_id, &["draft", "awaiting_funds"], to).await?;
         self.log(
             run_id,
             if testnet {
-                format!("Funded from the testnet treasury at the fixed rate {} USD per TAZ", money::format_rate(quote.quote_rate_e6))
+                format!(
+                    "Funded from the testnet treasury at the fixed rate {} USD per TAZ",
+                    money::format_rate(quote.quote_rate_e6)
+                )
             } else {
-                format!("Quote from {}: deposit {} USDC on {} to {}", quote.venue, quote.amount_in, quote.origin_chain.clone().unwrap_or_default(), quote.deposit_address.clone().unwrap_or_default())
+                format!(
+                    "Quote from {}: deposit {} USDC on {} to {}",
+                    quote.venue,
+                    quote.amount_in,
+                    quote.origin_chain.clone().unwrap_or_default(),
+                    quote.deposit_address.clone().unwrap_or_default()
+                )
             },
         )
         .await;
@@ -346,14 +486,30 @@ impl Executor {
     /// Polls the venue once and stores the result.
     pub async fn refresh_funding(&self, run_id: &str) -> Result<(), ApiError> {
         let db = &self.inner.db;
-        let run = db::get_run(db, run_id).await?.ok_or_else(|| ApiError::not_found("Run"))?;
-        let Some(f) = run.venue_state.as_deref().and_then(|s| serde_json::from_str::<Funding>(s).ok()) else {
-            return Err(ApiError::conflict("not_funded", "This run has no funding request yet.", "Fund the run first."));
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
+        let Some(f) = run
+            .venue_state
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Funding>(s).ok())
+        else {
+            return Err(ApiError::conflict(
+                "not_funded",
+                "This run has no funding request yet.",
+                "Fund the run first.",
+            ));
         };
         if matches!(run.status.as_str(), "awaiting_funds" | "funded" | "swapping") {
             let g = self.inner.venue.status(&f).await.map_err(venue_api_error)?;
             if g != f {
-                db::set_venue(db, run_id, &g.venue, &serde_json::to_value(&g).map_err(anyhow::Error::from)?).await?;
+                db::set_venue(
+                    db,
+                    run_id,
+                    &g.venue,
+                    &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
+                )
+                .await?;
                 if g.status == "deposit_seen" {
                     db::transition(db, run_id, &["awaiting_funds"], "funded").await?;
                 }
@@ -365,22 +521,52 @@ impl Executor {
 
     pub async fn submit_deposit(&self, run_id: &str, tx_hash: &str) -> Result<(), ApiError> {
         let db = &self.inner.db;
-        let run = db::get_run(db, run_id).await?.ok_or_else(|| ApiError::not_found("Run"))?;
-        let Some(f) = run.venue_state.as_deref().and_then(|s| serde_json::from_str::<Funding>(s).ok()) else {
-            return Err(ApiError::conflict("not_funded", "This run has no funding request yet.", "Fund the run first."));
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
+        let Some(f) = run
+            .venue_state
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Funding>(s).ok())
+        else {
+            return Err(ApiError::conflict(
+                "not_funded",
+                "This run has no funding request yet.",
+                "Fund the run first.",
+            ));
         };
-        let g = self.inner.venue.submit_deposit(&f, tx_hash).await.map_err(venue_api_error)?;
-        db::set_venue(db, run_id, &g.venue, &serde_json::to_value(&g).map_err(anyhow::Error::from)?).await?;
-        self.log(run_id, format!("Deposit transaction {tx_hash} reported to the venue")).await;
+        let g = self
+            .inner
+            .venue
+            .submit_deposit(&f, tx_hash)
+            .await
+            .map_err(venue_api_error)?;
+        db::set_venue(
+            db,
+            run_id,
+            &g.venue,
+            &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
+        )
+        .await?;
+        self.log(run_id, format!("Deposit transaction {tx_hash} reported to the venue"))
+            .await;
         Ok(())
     }
 
     /// Starts (or resumes) the executor for a run. A second call while it runs is a no-op.
     pub async fn start(&self, run_id: &str) -> Result<(), ApiError> {
         let db = &self.inner.db;
-        let run = db::get_run(db, run_id).await?.ok_or_else(|| ApiError::not_found("Run"))?;
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
         match run.status.as_str() {
-            "draft" => return Err(ApiError::conflict("not_funded", "The run has not been funded.", "Fund the run first, then execute it.")),
+            "draft" => {
+                return Err(ApiError::conflict(
+                    "not_funded",
+                    "The run has not been funded.",
+                    "Fund the run first, then execute it.",
+                ))
+            }
             "paid" => return Ok(()),
             "failed" => {
                 let back = run.failed_from.clone().unwrap_or_else(|| "funded".into());
@@ -395,26 +581,34 @@ impl Executor {
 
     fn spawn(&self, run_id: String) {
         {
-            let Ok(mut running) = self.inner.running.lock() else { return };
+            let Ok(mut running) = self.inner.running.lock() else {
+                return;
+            };
             if !running.insert(run_id.clone()) {
                 return;
             }
         }
         let this = self.clone();
         tokio::spawn(async move {
+            // Clears the running flag even if the step panics, so the run can be executed again.
+            let _guard = RunningGuard {
+                exec: this.clone(),
+                run_id: run_id.clone(),
+            };
             this.drive(&run_id).await;
-            if let Ok(mut running) = this.inner.running.lock() {
-                running.remove(&run_id);
-            }
-            this.notify(&run_id);
         });
     }
 
     /// Restarts every run that was executing when the service stopped.
     pub async fn resume_all(&self) {
-        let Ok(runs) = db::list_runs(&self.inner.db).await else { return };
+        let Ok(runs) = db::list_runs(&self.inner.db).await else {
+            return;
+        };
         for r in runs {
-            if matches!(r.status.as_str(), "funded" | "swapping" | "swapped" | "allocating" | "paying") {
+            if matches!(
+                r.status.as_str(),
+                "funded" | "swapping" | "swapped" | "allocating" | "paying"
+            ) {
                 tracing::info!("resuming run {} in {}", r.id, r.status);
                 self.spawn(r.id);
             }
@@ -438,7 +632,8 @@ impl Executor {
                 Ok(Outcome::Done) => return,
                 Err(StepError::Transient(msg)) => {
                     transient += 1;
-                    self.log(run_id, format!("Retrying after a temporary error: {msg}")).await;
+                    self.log(run_id, format!("Retrying after a temporary error: {msg}"))
+                        .await;
                     if transient >= MAX_TRANSIENT_RETRIES {
                         let _ = db::fail_run(&self.inner.db, run_id, "retries_exhausted", &msg, "Check lightwalletd and the venue, then execute the run again; it resumes from its last saved step.").await;
                         self.log(run_id, "Run paused after repeated temporary errors").await;
@@ -456,13 +651,19 @@ impl Executor {
     }
 
     async fn step(&self, run_id: &str) -> Result<Outcome, StepError> {
-        let run = db::get_run(&self.inner.db, run_id).await?.ok_or_else(|| permanent("not_found", "Run not found", "Check the run id."))?;
+        let run = db::get_run(&self.inner.db, run_id)
+            .await?
+            .ok_or_else(|| permanent("not_found", "Run not found", "Check the run id."))?;
         match run.status.as_str() {
             "awaiting_funds" | "funded" | "swapping" => self.step_funding(&run).await,
             "swapped" => self.step_allocate(&run).await,
             "allocating" => self.step_allocating(&run).await,
             "paying" => self.step_paying(&run).await,
-            "draft" => Err(permanent("not_funded", "The run has not been funded.", "Fund the run first.")),
+            "draft" => Err(permanent(
+                "not_funded",
+                "The run has not been funded.",
+                "Fund the run first.",
+            )),
             _ => Ok(Outcome::Done),
         }
     }
@@ -478,7 +679,13 @@ impl Executor {
         let f = match self.inner.venue.status(&f).await {
             Ok(g) => {
                 if g != f {
-                    db::set_venue(db, &run.id, &g.venue, &serde_json::to_value(&g).map_err(anyhow::Error::from)?).await?;
+                    db::set_venue(
+                        db,
+                        &run.id,
+                        &g.venue,
+                        &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
+                    )
+                    .await?;
                 }
                 g
             }
@@ -487,9 +694,17 @@ impl Executor {
         };
         match f.status.as_str() {
             "awaiting_deposit" => {
-                if let Some(deadline) = f.deadline.as_deref().and_then(|d| OffsetDateTime::parse(d, &Rfc3339).ok()) {
+                if let Some(deadline) = f
+                    .deadline
+                    .as_deref()
+                    .and_then(|d| OffsetDateTime::parse(d, &Rfc3339).ok())
+                {
                     if OffsetDateTime::now_utc() > deadline + time::Duration::minutes(10) {
-                        return Err(permanent("funding_expired", "The venue's deposit window closed before a deposit arrived.", "Fund the run again to get a fresh quote and deposit address."));
+                        return Err(permanent(
+                            "funding_expired",
+                            "The venue's deposit window closed before a deposit arrived.",
+                            "Fund the run again to get a fresh quote and deposit address.",
+                        ));
                     }
                 }
                 Ok(Outcome::Wait(poll))
@@ -507,10 +722,29 @@ impl Executor {
                 Ok(Outcome::Wait(poll))
             }
             "success" => self.record_fill(run, &f).await,
-            "refunded" => Err(permanent("venue_refunded", format!("The venue refunded the deposit{}.", f.refund_reason.map(|r| format!(": {r}")).unwrap_or_default()), "The USDC went back to the refund address. Fund the run again.")),
-            "incomplete" => Err(permanent("deposit_incomplete", "The deposit was smaller than the quote required.", "Send the remaining USDC to the same deposit address, or wait for the refund and fund again.")),
-            "expired" => Err(permanent("funding_expired", "The quote expired.", "Fund the run again to get a fresh quote.")),
-            _ => Err(permanent("venue_failed", "The venue reported that the swap failed.", "Check the venue's explorer for the deposit, then fund the run again.")),
+            "refunded" => Err(permanent(
+                "venue_refunded",
+                format!(
+                    "The venue refunded the deposit{}.",
+                    f.refund_reason.map(|r| format!(": {r}")).unwrap_or_default()
+                ),
+                "The USDC went back to the refund address. Fund the run again.",
+            )),
+            "incomplete" => Err(permanent(
+                "deposit_incomplete",
+                "The deposit was smaller than the quote required.",
+                "Send the remaining USDC to the same deposit address, or wait for the refund and fund again.",
+            )),
+            "expired" => Err(permanent(
+                "funding_expired",
+                "The quote expired.",
+                "Fund the run again to get a fresh quote.",
+            )),
+            _ => Err(permanent(
+                "venue_failed",
+                "The venue reported that the swap failed.",
+                "Check the venue's explorer for the deposit, then fund the run again.",
+            )),
         }
     }
 
@@ -523,7 +757,10 @@ impl Executor {
         }
         let testnet = f.venue == crate::config::VenueKind::TestnetFixedRate.as_str();
         let (funded_cents, acquired) = if testnet {
-            (f.funded_usd_cents.unwrap_or(f.requested_usd_cents), f.zec_acquired_zat.unwrap_or(f.quoted_zat))
+            (
+                f.funded_usd_cents.unwrap_or(f.requested_usd_cents),
+                f.zec_acquired_zat.unwrap_or(f.quoted_zat),
+            )
         } else {
             if f.delivered_txids.is_empty() {
                 return Ok(Outcome::Wait(self.inner.poll));
@@ -538,17 +775,37 @@ impl Executor {
             }
             (f.funded_usd_cents.unwrap_or(f.requested_usd_cents), got)
         };
-        let rate = money::fill_rate_e6(funded_cents, acquired).ok_or_else(|| permanent("invalid_fill", "The venue reported an empty fill.", "Check the venue status, then fund again."))?;
+        let rate = money::fill_rate_e6(funded_cents, acquired).ok_or_else(|| {
+            permanent(
+                "invalid_fill",
+                "The venue reported an empty fill.",
+                "Check the venue status, then fund again.",
+            )
+        })?;
         db::set_fill(db, &run.id, funded_cents, acquired, rate).await?;
         let lines = db::lines(db, &run.id).await?;
-        let period = Period::parse(&period_label(&run.period_start)).ok_or_else(|| permanent("invalid_period", "The run period is invalid.", "Create a new run."))?;
+        let period = Period::parse(&period_label(&run.period_start))
+            .ok_or_else(|| permanent("invalid_period", "The run period is invalid.", "Create a new run."))?;
         let run_uuid = Uuid::parse_str(&run.id).map_err(|e| anyhow::anyhow!(e))?;
         let mut need = MARGINAL_FEE_ZAT * (lines.len() as u64 + 3);
         for l in &lines {
-            let zat = money::usd_cents_to_zat(l.amount_usd_basis as u64, rate).ok_or_else(|| permanent("invalid_amount", "A line amount is out of range.", "Edit the run."))?;
-            let memo = PayslipMemo::PayLine(PayLineMemo { run_id: run_uuid, period, invoice_ref: l.invoice_ref.clone(), usd_basis_cents: l.amount_usd_basis as u64, rate_e6: rate })
-                .encode()
-                .map_err(|e| permanent("memo_invalid", e.to_string(), "Shorten the invoice reference and create the run again."))?;
+            let zat = money::usd_cents_to_zat(l.amount_usd_basis as u64, rate)
+                .ok_or_else(|| permanent("invalid_amount", "A line amount is out of range.", "Edit the run."))?;
+            let memo = PayslipMemo::PayLine(PayLineMemo {
+                run_id: run_uuid,
+                period,
+                invoice_ref: l.invoice_ref.clone(),
+                usd_basis_cents: l.amount_usd_basis as u64,
+                rate_e6: rate,
+            })
+            .encode()
+            .map_err(|e| {
+                permanent(
+                    "memo_invalid",
+                    e.to_string(),
+                    "Shorten the invoice reference and create the run again.",
+                )
+            })?;
             db::set_line_amount(db, &l.id, zat, LINE_FEE_ZAT, &memo, &memo_hash(&memo)).await?;
             need += zat + LINE_FEE_ZAT;
         }
@@ -556,17 +813,38 @@ impl Executor {
         if total < need {
             return Err(permanent(
                 "treasury_insufficient",
-                format!("The treasury holds {} ZEC but the run needs {} ZEC.", money::format_zec(total), money::format_zec(need)),
+                format!(
+                    "The treasury holds {} ZEC but the run needs {} ZEC.",
+                    money::format_zec(total),
+                    money::format_zec(need)
+                ),
                 "Top up the treasury address, then execute the run again.",
             ));
         }
         let spendable = chain.spendable(TREASURY_INDEX).await?;
         if spendable < need {
-            self.log(&run.id, format!("Waiting for treasury confirmations ({} of {} ZEC spendable)", money::format_zec(spendable), money::format_zec(need))).await;
+            self.log(
+                &run.id,
+                format!(
+                    "Waiting for treasury confirmations ({} of {} ZEC spendable)",
+                    money::format_zec(spendable),
+                    money::format_zec(need)
+                ),
+            )
+            .await;
             return Ok(Outcome::Wait(self.inner.poll));
         }
         if db::transition(db, &run.id, &["swapping"], "swapped").await? {
-            self.log(&run.id, format!("Filled: {} ZEC for {} USD at {} USD per ZEC", money::format_zec(acquired), money::format_usd(funded_cents), money::format_rate(rate))).await;
+            self.log(
+                &run.id,
+                format!(
+                    "Filled: {} ZEC for {} USD at {} USD per ZEC",
+                    money::format_zec(acquired),
+                    money::format_usd(funded_cents),
+                    money::format_rate(rate)
+                ),
+            )
+            .await;
         }
         Ok(Outcome::Continue)
     }
@@ -581,11 +859,20 @@ impl Executor {
         let lines = db::lines(db, &run.id).await?;
         let mut pays = vec![];
         for l in &lines {
-            let zat = l.amount_zec.ok_or_else(|| permanent("missing_amount", "A line has no ZEC amount.", "Execute the run again."))? as u64;
+            let zat = l
+                .amount_zec
+                .ok_or_else(|| permanent("missing_amount", "A line has no ZEC amount.", "Execute the run again."))?
+                as u64;
             pays.push(Pay {
                 to: chain.account_address(l.account_index as u32).await?,
                 zat: zat + l.fee_zat.unwrap_or(LINE_FEE_ZAT as i64) as u64,
-                memo: Some(PayslipMemo::Allocation(AllocationMemo { run_id: Uuid::parse_str(&run.id).map_err(|e| anyhow::anyhow!(e))? }).encode().map_err(|e| anyhow::anyhow!("{e}"))?),
+                memo: Some(
+                    PayslipMemo::Allocation(AllocationMemo {
+                        run_id: Uuid::parse_str(&run.id).map_err(|e| anyhow::anyhow!(e))?,
+                    })
+                    .encode()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?,
+                ),
             });
         }
         let change_memo = PayslipMemo::RunFunding(RunFundingMemo {
@@ -606,7 +893,8 @@ impl Executor {
                 db::transition(db, &run.id, &["swapped"], "allocating").await?;
                 self.log(&run.id, format!("Allocation transaction built: {txid}")).await;
                 if let Err(e) = chain.broadcast(&txid).await {
-                    self.log(&run.id, format!("Allocation broadcast will be retried: {e:#}")).await;
+                    self.log(&run.id, format!("Allocation broadcast will be retried: {e:#}"))
+                        .await;
                 } else {
                     self.log(&run.id, "Allocation transaction broadcast").await;
                 }
@@ -617,11 +905,23 @@ impl Executor {
                 Ok(Outcome::Continue)
             }
             Err(SpendError::InsufficientFunds { available, required }) => {
-                self.log(&run.id, format!("Waiting for spendable treasury funds ({} of {} ZEC)", money::format_zec(available), money::format_zec(required))).await;
+                self.log(
+                    &run.id,
+                    format!(
+                        "Waiting for spendable treasury funds ({} of {} ZEC)",
+                        money::format_zec(available),
+                        money::format_zec(required)
+                    ),
+                )
+                .await;
                 chain.sync().await?;
                 Ok(Outcome::Wait(self.inner.poll))
             }
-            Err(SpendError::Other(m)) => Err(permanent("allocation_failed", m, "Check the service log; execute the run again to retry.")),
+            Err(SpendError::Other(m)) => Err(permanent(
+                "allocation_failed",
+                m,
+                "Check the service log; execute the run again to retry.",
+            )),
         }
     }
 
@@ -640,7 +940,11 @@ impl Executor {
                         chain.sync().await?;
                         db::set_allocation(db, &run.id, None, None).await?;
                         db::transition(db, &run.id, &["allocating"], "swapped").await?;
-                        self.log(&run.id, format!("Allocation {txid} expired unmined at {exp}; rebuilding")).await;
+                        self.log(
+                            &run.id,
+                            format!("Allocation {txid} expired unmined at {exp}; rebuilding"),
+                        )
+                        .await;
                         return Ok(Outcome::Continue);
                     }
                 }
@@ -681,8 +985,15 @@ impl Executor {
             pending += 1;
             match &l.txid {
                 None => {
-                    let memo = l.memo.clone().ok_or_else(|| permanent("missing_memo", "A line has no memo.", "Execute the run again."))?;
-                    let pay = Pay { to: l.unified_address.clone(), zat: l.amount_zec.unwrap_or(0) as u64, memo: Some(memo) };
+                    let memo = l
+                        .memo
+                        .clone()
+                        .ok_or_else(|| permanent("missing_memo", "A line has no memo.", "Execute the run again."))?;
+                    let pay = Pay {
+                        to: l.unified_address.clone(),
+                        zat: l.amount_zec.unwrap_or(0) as u64,
+                        memo: Some(memo),
+                    };
                     match chain.create_transfer(l.account_index as u32, vec![pay], None).await? {
                         Ok(txid) => {
                             let exp = chain.expiry_height(&txid).await?;
@@ -692,15 +1003,32 @@ impl Executor {
                             }
                             match chain.broadcast(&txid).await {
                                 Ok(()) => self.log(&run.id, format!("Paid {}: {txid}", l.contractor_name)).await,
-                                Err(e) => self.log(&run.id, format!("Broadcast for {} will be retried: {e:#}", l.contractor_name)).await,
+                                Err(e) => {
+                                    self.log(
+                                        &run.id,
+                                        format!("Broadcast for {} will be retried: {e:#}", l.contractor_name),
+                                    )
+                                    .await
+                                }
                             }
                         }
                         Err(SpendError::InsufficientFunds { .. }) | Err(SpendError::SyncRequired) => {
                             chain.sync().await?;
                         }
                         Err(SpendError::Other(m)) => {
-                            db::fail_line(db, &l.id, "payment_failed", &m, "Execute the run again to retry this line.").await?;
-                            return Err(permanent("payment_failed", format!("Payment to {} could not be built: {m}", l.contractor_name), "Execute the run again to retry the remaining lines."));
+                            db::fail_line(
+                                db,
+                                &l.id,
+                                "payment_failed",
+                                &m,
+                                "Execute the run again to retry this line.",
+                            )
+                            .await?;
+                            return Err(permanent(
+                                "payment_failed",
+                                format!("Payment to {} could not be built: {m}", l.contractor_name),
+                                "Execute the run again to retry the remaining lines.",
+                            ));
                         }
                     }
                 }
@@ -708,7 +1036,8 @@ impl Executor {
                     Some(h) => {
                         db::confirm_line(db, &l.id, h).await?;
                         pending -= 1;
-                        self.log(&run.id, format!("{} confirmed at height {h}", l.contractor_name)).await;
+                        self.log(&run.id, format!("{} confirmed at height {h}", l.contractor_name))
+                            .await;
                     }
                     None => {
                         let t = match tip {
@@ -723,7 +1052,11 @@ impl Executor {
                         if exp.is_some_and(|e| t > e) {
                             chain.sync().await?;
                             db::set_line_tx(db, &l.id, None, None, "allocated").await?;
-                            self.log(&run.id, format!("Payment to {} expired unmined; rebuilding", l.contractor_name)).await;
+                            self.log(
+                                &run.id,
+                                format!("Payment to {} expired unmined; rebuilding", l.contractor_name),
+                            )
+                            .await;
                         } else {
                             let _ = chain.broadcast(txid).await;
                         }
@@ -733,7 +1066,8 @@ impl Executor {
         }
         if pending == 0 {
             if db::transition(db, &run.id, &["paying"], "paid").await? {
-                self.log(&run.id, format!("Run paid: {} lines confirmed", lines.len())).await;
+                self.log(&run.id, format!("Run paid: {} lines confirmed", lines.len()))
+                    .await;
             }
             return Ok(Outcome::Done);
         }
@@ -744,17 +1078,27 @@ impl Executor {
 fn venue_api_error(e: VenueError) -> ApiError {
     match e {
         VenueError::Rejected { code, message, hint } => ApiError::bad_request(code, message, hint),
-        VenueError::Unavailable(m) => ApiError::unavailable("venue_unavailable", format!("The swap venue did not answer: {m}"), "Retry in a minute. If it persists, check the venue's status page."),
+        VenueError::Unavailable(m) => ApiError::unavailable(
+            "venue_unavailable",
+            format!("The swap venue did not answer: {m}"),
+            "Retry in a minute. If it persists, check the venue's status page.",
+        ),
     }
 }
 
 /// Validates a run request; returns (period_start, period_end).
 pub fn validate_period(start: &str, end: &str) -> Result<(Date, Date), ApiError> {
     let hint = "Use dates in the form YYYY-MM-DD with the start on or before the end, at most one year apart.";
-    let s = parse_date(start).ok_or_else(|| ApiError::bad_request("invalid_period", format!("{start} is not a date."), hint))?;
-    let e = parse_date(end).ok_or_else(|| ApiError::bad_request("invalid_period", format!("{end} is not a date."), hint))?;
+    let s = parse_date(start)
+        .ok_or_else(|| ApiError::bad_request("invalid_period", format!("{start} is not a date."), hint))?;
+    let e = parse_date(end)
+        .ok_or_else(|| ApiError::bad_request("invalid_period", format!("{end} is not a date."), hint))?;
     if e < s || (e - s).whole_days() > 366 {
-        return Err(ApiError::bad_request("invalid_period", "The period is reversed or longer than a year.", hint));
+        return Err(ApiError::bad_request(
+            "invalid_period",
+            "The period is reversed or longer than a year.",
+            hint,
+        ));
     }
     Ok((s, e))
 }

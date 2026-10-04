@@ -77,7 +77,11 @@ async fn get_one(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
 async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> ApiResult<(StatusCode, Json<Value>)> {
     if let Some(key) = input.idempotency_key.as_deref() {
         if key.is_empty() || key.len() > 100 {
-            return Err(ApiError::bad_request("invalid_idempotency_key", "The idempotency key must be 1 to 100 characters.", "Send a fresh UUID per form submission."));
+            return Err(ApiError::bad_request(
+                "invalid_idempotency_key",
+                "The idempotency key must be 1 to 100 characters.",
+                "Send a fresh UUID per form submission.",
+            ));
         }
         if let Some(existing) = db::get_run_by_key(&s.db, key).await? {
             return Ok((StatusCode::OK, Json(view(&s, &existing.id).await?)));
@@ -85,10 +89,18 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
     }
     validate_period(&input.period_start, &input.period_end)?;
     if input.lines.is_empty() {
-        return Err(ApiError::bad_request("no_lines", "A run needs at least one pay line.", "Add an amount for at least one contractor."));
+        return Err(ApiError::bad_request(
+            "no_lines",
+            "A run needs at least one pay line.",
+            "Add an amount for at least one contractor.",
+        ));
     }
     if input.lines.len() > MAX_LINES {
-        return Err(ApiError::bad_request("too_many_lines", format!("A run can pay at most {MAX_LINES} contractors."), "Split the payroll into two runs."));
+        return Err(ApiError::bad_request(
+            "too_many_lines",
+            format!("A run can pay at most {MAX_LINES} contractors."),
+            "Split the payroll into two runs.",
+        ));
     }
     let mut seen = std::collections::HashSet::new();
     let mut lines = vec![];
@@ -96,32 +108,80 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
         let c = db::get_contractor(&s.db, &l.contractor_id)
             .await?
             .filter(|c| c.archived_at.is_none())
-            .ok_or_else(|| ApiError::bad_request("unknown_contractor", format!("Contractor {} does not exist.", l.contractor_id), "Refresh the contractor list and pick from it."))?;
+            .ok_or_else(|| {
+                ApiError::bad_request(
+                    "unknown_contractor",
+                    format!("Contractor {} does not exist.", l.contractor_id),
+                    "Refresh the contractor list and pick from it.",
+                )
+            })?;
         if !seen.insert(c.id.clone()) {
-            return Err(ApiError::bad_request("duplicate_contractor_line", format!("{} appears twice in this run.", c.name), "Combine the amounts into one line per contractor."));
+            return Err(ApiError::bad_request(
+                "duplicate_contractor_line",
+                format!("{} appears twice in this run.", c.name),
+                "Combine the amounts into one line per contractor.",
+            ));
         }
-        let cents = l.amount_usd_cents.as_i64().filter(|_| l.amount_usd_cents.is_i64() || l.amount_usd_cents.is_u64()).ok_or_else(|| {
-            ApiError::bad_request("invalid_amount", format!("The amount for {} must be a whole number of cents.", c.name), "Send amount_usd_cents as an integer, for example 480000 for $4,800.00.")
-        })?;
+        let cents = l
+            .amount_usd_cents
+            .as_i64()
+            .filter(|_| l.amount_usd_cents.is_i64() || l.amount_usd_cents.is_u64())
+            .ok_or_else(|| {
+                ApiError::bad_request(
+                    "invalid_amount",
+                    format!("The amount for {} must be a whole number of cents.", c.name),
+                    "Send amount_usd_cents as an integer, for example 480000 for $4,800.00.",
+                )
+            })?;
         if cents <= 0 {
-            return Err(ApiError::bad_request("invalid_amount", format!("The amount for {} must be greater than zero.", c.name), "Enter a positive USD amount, or remove the line."));
+            return Err(ApiError::bad_request(
+                "invalid_amount",
+                format!("The amount for {} must be greater than zero.", c.name),
+                "Enter a positive USD amount, or remove the line.",
+            ));
         }
         if cents > MAX_LINE_CENTS {
-            return Err(ApiError::bad_request("invalid_amount", format!("The amount for {} is over $10,000,000.", c.name), "Check the amount is in cents, not a larger unit."));
+            return Err(ApiError::bad_request(
+                "invalid_amount",
+                format!("The amount for {} is over $10,000,000.", c.name),
+                "Check the amount is in cents, not a larger unit.",
+            ));
         }
         let invoice = l.invoice_ref.trim().to_string();
         memo::validate_invoice_ref(&invoice).map_err(|e| {
-            let code = if matches!(e, memo::EncodeError::InvoiceRefTooLong) { "invoice_ref_too_long" } else { "invalid_invoice_ref" };
-            ApiError::bad_request(code, format!("Invoice reference for {}: {e}.", c.name), "Use up to 64 plain characters (letters, digits, spaces, - / . #), no '|'.")
+            let code = if matches!(e, memo::EncodeError::InvoiceRefTooLong) {
+                "invoice_ref_too_long"
+            } else {
+                "invalid_invoice_ref"
+            };
+            ApiError::bad_request(
+                code,
+                format!("Invoice reference for {}: {e}.", c.name),
+                "Use up to 64 plain characters (letters, digits, spaces, - / . #), no '|'.",
+            )
         })?;
-        lines.push(NewLine { contractor_id: c.id.clone(), amount_usd_cents: cents as u64, invoice_ref: invoice });
+        lines.push(NewLine {
+            contractor_id: c.id.clone(),
+            amount_usd_cents: cents as u64,
+            invoice_ref: invoice,
+        });
     }
-    match db::insert_run(&s.db, input.idempotency_key.as_deref(), &input.period_start, &input.period_end, &lines).await? {
+    match db::insert_run(
+        &s.db,
+        input.idempotency_key.as_deref(),
+        &input.period_start,
+        &input.period_end,
+        &lines,
+    )
+    .await?
+    {
         Some(id) => Ok((StatusCode::CREATED, Json(view(&s, &id).await?))),
         None => {
             // Lost a race with an identical submission.
             let key = input.idempotency_key.unwrap_or_default();
-            let existing = db::get_run_by_key(&s.db, &key).await?.ok_or_else(|| ApiError::internal("idempotency conflict"))?;
+            let existing = db::get_run_by_key(&s.db, &key)
+                .await?
+                .ok_or_else(|| ApiError::internal("idempotency conflict"))?;
             Ok((StatusCode::OK, Json(view(&s, &existing.id).await?)))
         }
     }
@@ -133,7 +193,11 @@ struct FundInput {
     refund_address: Option<String>,
 }
 
-async fn fund(State(s): State<AppStateRef>, Path(id): Path<String>, body: Option<Json<FundInput>>) -> ApiResult<Json<Value>> {
+async fn fund(
+    State(s): State<AppStateRef>,
+    Path(id): Path<String>,
+    body: Option<Json<FundInput>>,
+) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
     s.executor.fund(&id, input.origin_chain, input.refund_address).await?;
     Ok(Json(view(&s, &id).await?))
@@ -149,10 +213,18 @@ struct DepositInput {
     tx_hash: String,
 }
 
-async fn deposit_tx(State(s): State<AppStateRef>, Path(id): Path<String>, Json(input): Json<DepositInput>) -> ApiResult<Json<Value>> {
+async fn deposit_tx(
+    State(s): State<AppStateRef>,
+    Path(id): Path<String>,
+    Json(input): Json<DepositInput>,
+) -> ApiResult<Json<Value>> {
     let h = input.tx_hash.trim();
     if h.len() < 32 || h.len() > 100 || !h.trim_start_matches("0x").chars().all(|c| c.is_ascii_alphanumeric()) {
-        return Err(ApiError::bad_request("invalid_tx_hash", "That is not a transaction hash.", "Paste the hash your wallet showed after sending the USDC."));
+        return Err(ApiError::bad_request(
+            "invalid_tx_hash",
+            "That is not a transaction hash.",
+            "Paste the hash your wallet showed after sending the USDC.",
+        ));
     }
     s.executor.submit_deposit(&id, h).await?;
     Ok(Json(view(&s, &id).await?))
@@ -168,7 +240,10 @@ async fn log(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<
     Ok(Json(serde_json::json!({ "events": db::events(&s.db, &id).await? })))
 }
 
-async fn events(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
+async fn events(
+    State(s): State<AppStateRef>,
+    Path(id): Path<String>,
+) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     view(&s, &id).await?;
     let rx = s.executor.subscribe();
     let stream = futures_util::stream::unfold((s, id, rx, 0i64, true), |(s, id, mut rx, last, first)| async move {
