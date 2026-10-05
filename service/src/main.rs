@@ -41,6 +41,13 @@ enum Command {
         #[arg(long)]
         memo: Option<String>,
     },
+    /// Send the whole spendable balance of account N (minus the fee) to an address.
+    Sweep {
+        #[arg(long, default_value_t = 0)]
+        from: u32,
+        #[arg(long)]
+        to: String,
+    },
     /// Scan the chain with a viewing key and print every output with its decoded memo.
     Scan {
         #[arg(long)]
@@ -143,6 +150,14 @@ async fn main() -> anyhow::Result<()> {
             let payer = Payer::open(&cfg).await?;
             payer.sync().await?;
             let txid = payer.send_simple(from, &to, zat, memo.as_deref()).await?;
+            println!("{txid}");
+            println!("{}", cfg.network.explorer_tx_url(&txid));
+            Ok(())
+        }
+        Command::Sweep { from, to } => {
+            let payer = Payer::open(&cfg).await?;
+            payer.sync().await?;
+            let txid = payer.sweep(from, &to).await?;
             println!("{txid}");
             println!("{}", cfg.network.explorer_tx_url(&txid));
             Ok(())

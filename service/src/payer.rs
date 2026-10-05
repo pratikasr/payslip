@@ -336,6 +336,18 @@ impl Payer {
         Ok(total)
     }
 
+    /// Sends the whole spendable balance of account `from` to `to`, broadcast at once.
+    pub async fn sweep(&self, from: u32, to: &str) -> anyhow::Result<String> {
+        let to = wallet::parse_shielded_address(&self.params, to)?;
+        let txid = self
+            .wallet
+            .run(move |w| Box::pin(async move { w.sweep(from, to, None) }))
+            .await?
+            .map_err(|e| anyhow!("{e}"))?;
+        self.broadcast(txid).await?;
+        Ok(wallet::txid_hex(&txid))
+    }
+
     /// Development helper behind the `send` CLI command: one payment, broadcast at once.
     pub async fn send_simple(&self, from: u32, to: &str, zat: u64, memo_text: Option<&str>) -> anyhow::Result<String> {
         let to = wallet::parse_shielded_address(&self.params, to)?;
