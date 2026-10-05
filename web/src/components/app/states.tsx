@@ -155,7 +155,7 @@ export function Stat({
   hint,
   className,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: ReactNode;
   hint?: ReactNode;
   className?: string;

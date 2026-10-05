@@ -151,6 +151,23 @@ export interface PayLine {
   memo: string | null;
   error: ApiErrorBody | null;
   settlement_choice?: SettlementChoice;
+  payout_chain?: string | null;
+  /** Conversion to USDC for a convert_usdc line (ADR-018); null for lines that hold ZEC. */
+  settlement?: Conversion | null;
+}
+
+export interface Conversion {
+  venue: string;
+  status: "quoted" | "processing" | "success" | "refunded" | "failed" | "simulated";
+  deposit_address: string;
+  amount_zat: number;
+  payout_chain: string;
+  payout_address: string;
+  quoted_out: string;
+  delivered_out: string | null;
+  delivered_tx: string | null;
+  simulated: boolean;
+  refund_reason: string | null;
 }
 
 export interface Run {
@@ -218,6 +235,9 @@ export interface StatementLine {
   running_zat: number;
   running_usd_cents: number;
   explorer_url: string | null;
+  /** held: paid to the contractor's shielded address; converted: paid to a swap venue for USDC (memo on change). */
+  settlement?: "held" | "converted";
+  to_address?: string | null;
 }
 
 export interface UnlabelledLine {
@@ -227,7 +247,7 @@ export interface UnlabelledLine {
   direction: "in" | "out";
   amount_zat: number;
   memo_text: string | null;
-  reason: "no_memo" | "unknown_prefix" | "malformed";
+  reason: "no_memo" | "unknown_prefix" | "malformed" | "non_text";
 }
 
 export interface FundingLine {

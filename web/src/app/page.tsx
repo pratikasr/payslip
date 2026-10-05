@@ -235,7 +235,9 @@ function OnePaymentTwoViews() {
           <Field label="USD basis">
             <span className="num">$4,800.00</span>
           </Field>
-          <Field label="Memo">Sep 2026, INV-2026-014</Field>
+          <Field label="Memo">
+            Sep 2026, <span className="whitespace-nowrap">INV-2026-014</span>
+          </Field>
         </ViewCard>
       </div>
       <figcaption className="mt-3 text-xs text-muted-foreground">

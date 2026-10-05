@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Scale } from "lucide-react";
-import { Usd, Zec, Rate } from "@/components/app/amount";
+import { Usd, Zec, Rate, Coin } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { Hash } from "@/components/app/hash";
 import { EmptyState, ErrorState, PageHeader, Panel, Stat, TableSkeleton } from "@/components/app/states";
@@ -192,7 +192,13 @@ function ReconciliationView({
         <Stat label="Variance" hint="Funded minus paid">
           <Usd cents={r.totals.variance_usd_cents} />
         </Stat>
-        <Stat label="Paid in ZEC">
+        <Stat
+          label={
+            <>
+              Paid in <Coin />
+            </>
+          }
+        >
           <Zec zat={r.totals.paid_zat} />
         </Stat>
         <Stat label="Pay lines">
@@ -210,91 +216,144 @@ function ReconciliationView({
             funding.
           </EmptyState>
         ) : (
-          <Table label="Run reconciliation" minWidth={1260}>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Run</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead numeric>Funded USD</TableHead>
-                <TableHead numeric>ZEC acquired</TableHead>
-                <TableHead numeric>{r.network === "testnet" ? "Testnet fixed rate" : "Fill rate"}</TableHead>
-                <TableHead numeric>Paid USD</TableHead>
-                <TableHead numeric>Paid ZEC</TableHead>
-                <TableHead numeric>Network fees</TableHead>
-                <TableHead numeric>Unspent</TableHead>
-                <TableHead numeric>Variance</TableHead>
-                <TableHead numeric>Explained</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <>
+            <ul className="divide-y md:hidden" aria-label="Run reconciliation">
               {r.runs.map((run) => (
-                <TableRow key={run.run_id}>
-                  <TableCell>
-                    <div className="font-medium">{formatPeriodLabel(run.period)}</div>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      {run.lines} {run.lines === 1 ? "line" : "lines"}
-                      {run.pending_lines ? `, ${run.pending_lines} pending` : ""},{" "}
-                      <Hash value={run.run_id} label="run id" head={6} tail={4} />
-                    </div>
-                  </TableCell>
-                  <TableCell>
+                <li key={run.run_id} className="space-y-2 px-4 py-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{formatPeriodLabel(run.period)}</span>
                     <ReconStatusBadge status={run.status} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Usd cents={run.funded_usd_cents} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Zec zat={run.zec_acquired_zat} unit={false} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Rate e6={run.rate_usd_per_zec_e6} unit={false} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Usd cents={run.paid_usd_cents} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Zec zat={run.paid_zat} unit={false} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Zec zat={run.network_fees_zat} unit={false} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Zec zat={run.unspent_zat} unit={false} />
-                  </TableCell>
-                  <TableCell
-                    numeric
-                    className={cn(run.status === "variance_unexplained" && "font-semibold text-danger")}
-                  >
-                    <Usd cents={run.variance_usd_cents} />
-                  </TableCell>
-                  <TableCell numeric>
-                    <Usd cents={run.explained_usd_cents} />
-                  </TableCell>
-                </TableRow>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    <dt className="text-muted-foreground">Funded</dt>
+                    <dd className="text-right">
+                      <Usd cents={run.funded_usd_cents} />
+                    </dd>
+                    <dt className="text-muted-foreground">Paid</dt>
+                    <dd className="text-right">
+                      <Usd cents={run.paid_usd_cents} />
+                    </dd>
+                    <dt className="text-muted-foreground">Variance</dt>
+                    <dd
+                      className={cn("text-right", run.status === "variance_unexplained" && "font-semibold text-danger")}
+                    >
+                      <Usd cents={run.variance_usd_cents} />
+                    </dd>
+                    <dt className="text-muted-foreground">Explained</dt>
+                    <dd className="text-right">
+                      <Usd cents={run.explained_usd_cents} />
+                    </dd>
+                    <dt className="text-muted-foreground">
+                      Paid <Coin />
+                    </dt>
+                    <dd className="text-right">
+                      <Zec zat={run.paid_zat} unit={false} />
+                    </dd>
+                    <dt className="text-muted-foreground">Network fees</dt>
+                    <dd className="text-right">
+                      <Zec zat={run.network_fees_zat} unit={false} />
+                    </dd>
+                  </dl>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                    {run.lines} {run.lines === 1 ? "line" : "lines"}
+                    {run.pending_lines ? `, ${run.pending_lines} pending` : ""},{" "}
+                    <Hash value={run.run_id} label="run id" head={6} tail={4} />
+                  </div>
+                </li>
               ))}
-            </TableBody>
-            <TableFooter>
-              <TableRow className="hover:bg-transparent">
-                <TableCell>Total</TableCell>
-                <TableCell />
-                <TableCell numeric>
-                  <Usd cents={r.totals.funded_usd_cents} />
-                </TableCell>
-                <TableCell colSpan={2} />
-                <TableCell numeric>
-                  <Usd cents={r.totals.paid_usd_cents} />
-                </TableCell>
-                <TableCell numeric>
-                  <Zec zat={r.totals.paid_zat} unit={false} />
-                </TableCell>
-                <TableCell colSpan={2} />
-                <TableCell numeric>
-                  <Usd cents={r.totals.variance_usd_cents} />
-                </TableCell>
-                <TableCell />
-              </TableRow>
-            </TableFooter>
-          </Table>
+            </ul>
+            <div className="hidden md:block">
+              <Table label="Run reconciliation" minWidth={1200}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Run</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead numeric>Funded USD</TableHead>
+                    <TableHead numeric>
+                      <Coin /> acquired
+                    </TableHead>
+                    <TableHead numeric>{r.network === "testnet" ? "Testnet fixed rate" : "Fill rate"}</TableHead>
+                    <TableHead numeric>Paid USD</TableHead>
+                    <TableHead numeric>
+                      Paid <Coin />
+                    </TableHead>
+                    <TableHead numeric>Network fees</TableHead>
+                    <TableHead numeric>Unspent</TableHead>
+                    <TableHead numeric>Variance</TableHead>
+                    <TableHead numeric>Explained</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {r.runs.map((run) => (
+                    <TableRow key={run.run_id}>
+                      <TableCell>
+                        <div className="font-medium">{formatPeriodLabel(run.period)}</div>
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          {run.lines} {run.lines === 1 ? "line" : "lines"}
+                          {run.pending_lines ? `, ${run.pending_lines} pending` : ""},{" "}
+                          <Hash value={run.run_id} label="run id" head={6} tail={4} />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <ReconStatusBadge status={run.status} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Usd cents={run.funded_usd_cents} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Zec zat={run.zec_acquired_zat} unit={false} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Rate e6={run.rate_usd_per_zec_e6} unit={false} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Usd cents={run.paid_usd_cents} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Zec zat={run.paid_zat} unit={false} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Zec zat={run.network_fees_zat} unit={false} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Zec zat={run.unspent_zat} unit={false} />
+                      </TableCell>
+                      <TableCell
+                        numeric
+                        className={cn(run.status === "variance_unexplained" && "font-semibold text-danger")}
+                      >
+                        <Usd cents={run.variance_usd_cents} />
+                      </TableCell>
+                      <TableCell numeric>
+                        <Usd cents={run.explained_usd_cents} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+                <TableFooter>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell>Total</TableCell>
+                    <TableCell />
+                    <TableCell numeric>
+                      <Usd cents={r.totals.funded_usd_cents} />
+                    </TableCell>
+                    <TableCell colSpan={2} />
+                    <TableCell numeric>
+                      <Usd cents={r.totals.paid_usd_cents} />
+                    </TableCell>
+                    <TableCell numeric>
+                      <Zec zat={r.totals.paid_zat} unit={false} />
+                    </TableCell>
+                    <TableCell colSpan={2} />
+                    <TableCell numeric>
+                      <Usd cents={r.totals.variance_usd_cents} />
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                </TableFooter>
+              </Table>
+            </div>
+          </>
         )}
       </Panel>
 

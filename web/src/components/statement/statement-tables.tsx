@@ -1,4 +1,4 @@
-import { Rate, Usd, Zec } from "@/components/app/amount";
+import { Rate, Usd, Zec, Coin } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { FundingLine, StatementLine, UnlabelledLine } from "@/lib/api";
@@ -39,6 +39,7 @@ export function StatementLinesTable({
               <span>
                 {formatPeriodLabel(l.period)}
                 {l.invoice_ref ? `, ${l.invoice_ref}` : ""}
+                {l.settlement === "converted" ? ", converted to USDC" : ""}
               </span>
               <Zec zat={l.amount_zat} />
             </div>
@@ -60,14 +61,20 @@ export function StatementLinesTable({
             <TableRow>
               <TableHead>Date</TableHead>
               {showContractor ? <TableHead>Contractor</TableHead> : null}
-              <TableHead numeric>ZEC</TableHead>
+              <TableHead numeric>
+                <Coin />
+              </TableHead>
               <TableHead numeric>USD basis</TableHead>
               {showRate ? <TableHead numeric>{testnet ? "Testnet fixed rate" : "Rate"}</TableHead> : null}
               <TableHead>Invoice</TableHead>
               <TableHead>Run period</TableHead>
               <TableHead>Transaction</TableHead>
               <TableHead numeric>Height</TableHead>
-              {showRunning ? <TableHead numeric>Running ZEC</TableHead> : null}
+              {showRunning ? (
+                <TableHead numeric>
+                  Running <Coin />
+                </TableHead>
+              ) : null}
               {showRunning ? <TableHead numeric>Running USD</TableHead> : null}
             </TableRow>
           </TableHeader>
@@ -94,7 +101,12 @@ export function StatementLinesTable({
                     <Rate e6={l.rate_usd_per_zec_e6} unit={false} />
                   </TableCell>
                 ) : null}
-                <TableCell>{l.invoice_ref || <span className="text-muted-foreground">None</span>}</TableCell>
+                <TableCell>
+                  {l.invoice_ref || <span className="text-muted-foreground">None</span>}
+                  {l.settlement === "converted" ? (
+                    <div className="text-xs text-muted-foreground">Converted to USDC via the venue</div>
+                  ) : null}
+                </TableCell>
                 <TableCell>{formatPeriodLabel(l.period)}</TableCell>
                 <TableCell>
                   <Hash value={l.txid} label="transaction id" explorerUrl={l.explorer_url} />
@@ -125,6 +137,7 @@ const REASONS: Record<UnlabelledLine["reason"], string> = {
   no_memo: "No memo",
   unknown_prefix: "Not a Payslip memo",
   malformed: "Payslip memo that could not be read",
+  non_text: "Binary memo",
 };
 
 export function UnlabelledTable({ lines, label }: { lines: UnlabelledLine[]; label: string }) {
@@ -134,7 +147,9 @@ export function UnlabelledTable({ lines, label }: { lines: UnlabelledLine[]; lab
         <TableRow>
           <TableHead>Date</TableHead>
           <TableHead>Direction</TableHead>
-          <TableHead numeric>ZEC</TableHead>
+          <TableHead numeric>
+            <Coin />
+          </TableHead>
           <TableHead>Why unlabelled</TableHead>
           <TableHead>Memo text</TableHead>
           <TableHead>Transaction</TableHead>
@@ -174,7 +189,9 @@ export function FundingTable({ lines, label }: { lines: FundingLine[]; label: st
       <TableHeader>
         <TableRow>
           <TableHead>Date</TableHead>
-          <TableHead numeric>ZEC</TableHead>
+          <TableHead numeric>
+            <Coin />
+          </TableHead>
           <TableHead>Run</TableHead>
           <TableHead>Transaction</TableHead>
           <TableHead numeric>Height</TableHead>

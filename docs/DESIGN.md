@@ -458,3 +458,29 @@ Checked 5 Oct 2026. These belong in `docs/TECH-DECISIONS.md` under Verified fact
 - The running Payslip service on testnet issues UFVKs with the `uvftest` prefix (observed via `GET /api/viewing-keys`).
 - RainbowKit 2.2.11 `connectorsForWallets` passes the project id only to WalletConnect-based wallets; `injectedWallet` never reads it, so an injected-only configuration works with an empty id. Source: `node_modules/@rainbow-me/rainbowkit/dist/index.js`.
 - `@coinbase/cdp-sdk` 1.57.1 (pulled in by wagmi's Base Account connector) statically imports optional peers `@x402/*`; they are aliased to empty modules in `web/next.config.ts` because Payslip never uses that connector.
+
+## 13. Screenshot reviews
+
+Screens are captured by `web/scripts/screenshots.mjs` (every route) and `web/scripts/screenshots-states.mjs` (statement, reconciliation, share-key dialog and dark mode, using real testnet data from the running service) at 375, 768 and 1440 px into `docs/screenshots/`. Both scripts report any page wider than the viewport; neither pass found one.
+
+### Pass 1, 5 Oct 2026
+
+| Finding | Fix |
+| --- | --- |
+| Testnet amounts were labelled ZEC; testnet coins are TAZ | Units come from the service's network: values, table headers and stat labels show TAZ on testnet and ZEC on mainnet |
+| Landing hero: the memo value broke inside the invoice reference ("INV-" / "2026-014") | The reference never wraps |
+| Accountant runs table clipped its last column at 1440 px | App shell widened to 1,360 px and the table's minimum width tightened; it fits at 1440 and scrolls inside its card below that |
+| Accountant runs table at 375 px showed two columns and a sideways scroll | Stacked run cards below the md breakpoint: period, status, funded, paid, variance, explained, paid coin, fees, run id |
+| Payout and origin chains offered Optimism and Polygon, which the service does not route | Options match the service: Base, Arbitrum, Ethereum |
+| A converting pay line appeared as an unlabelled outflow and its run as zero lines | Service fix: the statement engine pairs the venue deposit with the memo on the change output regardless of which account the deposit lands in; lines show "Converted to USDC via the venue" |
+| The Convert to USDC option did not say what it gives up | The option now states that the venue's explorer shows that payment's amount and USDC address |
+
+### Pass 2, 5 Oct 2026
+
+| Finding | Outcome |
+| --- | --- |
+| Runs table at 1440 px | Fits, all eleven columns visible |
+| Runs at 375 px | Cards, no sideways scroll |
+| Unit labels | TAZ throughout on testnet |
+| Long unlabelled list on testnet | Kept: faucet and fund-recycling deposits carry no Payslip memo and nothing is hidden. Recycling transfers now carry a descriptive memo |
+| Sticky header shown mid-page in full-page captures | Capture artifact of a sticky header in a scrolled page, not a layout defect |

@@ -207,7 +207,8 @@ export function ContractorFormDialog({
                 <span className="space-y-0.5">
                   <span className="block text-sm font-medium">Convert to USDC</span>
                   <span className="block text-xs text-muted-foreground">
-                    Paid in ZEC, then swapped to USDC on receipt and sent to the payout address.
+                    Paid in ZEC and swapped to USDC through NEAR Intents, then sent to the payout address. Less private:
+                    the venue&apos;s public explorer shows this payment&apos;s amount and the USDC address.
                   </span>
                 </span>
               </label>

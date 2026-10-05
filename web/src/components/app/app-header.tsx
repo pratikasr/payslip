@@ -20,7 +20,7 @@ export function AppHeader() {
       role="banner"
       className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/75"
     >
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4 sm:gap-6 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-[1360px] items-center gap-3 px-4 sm:gap-6 sm:px-6">
         <Logo href="/" />
         <nav aria-label="Role" className="hidden md:block">
           <RoleLinks pathname={pathname} />

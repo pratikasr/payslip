@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Usd, Zec } from "@/components/app/amount";
+import { Usd, Zec, Coin } from "@/components/app/amount";
 import { RunStatusBadge } from "@/components/app/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { Run } from "@/lib/api";
@@ -38,7 +38,9 @@ export function RunsTable({ runs, label }: { runs: Run[]; label: string }) {
               <TableHead>Status</TableHead>
               <TableHead numeric>Contractors</TableHead>
               <TableHead numeric>Total USD</TableHead>
-              <TableHead numeric>Total ZEC</TableHead>
+              <TableHead numeric>
+                Total <Coin />
+              </TableHead>
               <TableHead>Created</TableHead>
             </TableRow>
           </TableHeader>

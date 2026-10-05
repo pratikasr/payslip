@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
-import { Usd, Zec, Rate } from "@/components/app/amount";
+import { Usd, Zec, Rate, Coin } from "@/components/app/amount";
 import { describedBy, Field } from "@/components/app/field";
 import { useHealth } from "@/components/app/health-provider";
 import { Hash } from "@/components/app/hash";
@@ -325,7 +325,9 @@ function DepositDetails({ run, onRun }: { run: Run; onRun: (run: Run) => void })
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted-foreground">ZEC acquired</dt>
+            <dt className="text-xs text-muted-foreground">
+              <Coin /> acquired
+            </dt>
             <dd>
               <Zec zat={funding.zec_acquired_zat} />
             </dd>

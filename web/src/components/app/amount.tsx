@@ -58,3 +58,8 @@ export function Rate({
     </span>
   );
 }
+
+/** The coin's unit as text: TAZ on testnet, ZEC on mainnet. For headers and labels. */
+export function Coin() {
+  return <>{useCoinUnit()}</>;
+}

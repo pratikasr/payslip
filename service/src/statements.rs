@@ -167,12 +167,11 @@ pub fn classify(
         if let (
             false,
             Some(from),
-            None,
             Decoded::Unlabelled {
                 reason: memo::UnlabelledReason::NoMemo,
                 ..
             },
-        ) = (o.is_change, &o.from_account, &o.to_account, &decoded)
+        ) = (o.is_change, &o.from_account, &decoded)
         {
             if let Some(m) = converted.get(&(o.txid.clone(), from.clone())) {
                 decoded = Decoded::Payslip(PayslipMemo::PayLine(m.clone()));
@@ -911,6 +910,18 @@ pub(crate) mod tests {
         // An unrelated transparent payment with no memo stays unlabelled.
         let mut stray = out("zz", Some(121), T0, Some("a1"), None, 5_000, false, None);
         stray.pool = 0;
+        // With the treasury key also scanned, the testnet stand-in deposit belongs to a known account.
+        let mut deposit_known = deposit.clone();
+        deposit_known.to_account = Some("treasury".into());
+        let c2 = classify(
+            ZcashNetwork::Testnet,
+            &[deposit_known, change.clone()],
+            &keys(),
+            200,
+            None,
+        );
+        assert_eq!(c2.lines.len(), 1, "{c2:?}");
+        assert!(c2.unlabelled.is_empty());
         let c = classify(ZcashNetwork::Testnet, &[deposit, change, stray], &keys(), 200, None);
         assert_eq!(c.lines.len(), 1, "{c:?}");
         let l = &c.lines[0];

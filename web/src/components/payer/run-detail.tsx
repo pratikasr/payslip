@@ -5,7 +5,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Play, RotateCw, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Rate, Usd, Zec } from "@/components/app/amount";
+import { Rate, Usd, Zec, Coin } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { EmptyState, ErrorState, PageHeader, Panel, Stat, TableSkeleton } from "@/components/app/states";
 import { LineStatusBadge, RUN_STATUS, RunStatusBadge } from "@/components/app/status-badge";
@@ -25,7 +25,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useResource } from "@/hooks/use-resource";
 import { useRunEvents, type StreamState } from "@/hooks/use-run-events";
-import { api, ApiError, toDisplayError, type Run } from "@/lib/api";
+import { api, ApiError, toDisplayError, type PayLine, type Run } from "@/lib/api";
 import {
   formatDate,
   formatDateTime,
@@ -315,6 +315,7 @@ function PayLines({ run }: { run: Run }) {
                     </p>
                   </div>
                   <LineStatusBadge status={l.status} />
+                  <ConversionNote line={l} />
                 </div>
                 <div
                   className={cn(
@@ -361,7 +362,9 @@ function PayLines({ run }: { run: Run }) {
                   <TableHead>Contractor</TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead numeric>USD</TableHead>
-                  <TableHead numeric>ZEC</TableHead>
+                  <TableHead numeric>
+                    <Coin />
+                  </TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Transaction</TableHead>
                   <TableHead numeric>Height</TableHead>
@@ -387,6 +390,7 @@ function PayLines({ run }: { run: Run }) {
                     </TableCell>
                     <TableCell>
                       <LineStatusBadge status={l.status} />
+                      <ConversionNote line={l} />
                       {l.error ? (
                         <p className="mt-1 max-w-56 text-xs whitespace-normal text-danger">
                           {l.error.message} {l.error.hint}
@@ -452,7 +456,13 @@ function RunSummary({ run }: { run: Run }) {
         <Stat label="Total owed">
           <Usd cents={run.total_usd_cents} />
         </Stat>
-        <Stat label="Total paid in ZEC">
+        <Stat
+          label={
+            <>
+              Total paid in <Coin />
+            </>
+          }
+        >
           {run.total_zat ? (
             <Zec zat={run.total_zat} />
           ) : (
@@ -482,7 +492,13 @@ function RunSummary({ run }: { run: Run }) {
           </Stat>
         ) : null}
         {f?.zec_acquired_zat ? (
-          <Stat label="ZEC acquired">
+          <Stat
+            label={
+              <>
+                <Coin /> acquired
+              </>
+            }
+          >
             <Zec zat={f.zec_acquired_zat} />
           </Stat>
         ) : null}
@@ -576,4 +592,22 @@ function DiscardDraft({ runId }: { runId: string }) {
       </Dialog>
     </>
   );
+}
+
+const CHAIN_NAMES: Record<string, string> = { base: "Base", arb: "Arbitrum", eth: "Ethereum", sol: "Solana" };
+
+/** Settlement of a convert_usdc line: quote, conversion in flight, delivered, or simulated on testnet. */
+function ConversionNote({ line }: { line: PayLine }) {
+  const c = line.settlement;
+  if (!c) return null;
+  const chain = CHAIN_NAMES[c.payout_chain] ?? c.payout_chain;
+  const text =
+    c.status === "success"
+      ? `Converted: ${c.delivered_out ?? c.quoted_out} USDC on ${chain}`
+      : c.status === "simulated"
+        ? `Testnet: conversion to USDC on ${chain} simulated`
+        : c.status === "refunded" || c.status === "failed"
+          ? `Conversion ${c.status}${c.refund_reason ? `: ${c.refund_reason}` : ""}`
+          : `Converting to about ${c.quoted_out} USDC on ${chain}`;
+  return <p className="mt-1 max-w-56 text-xs whitespace-normal text-muted-foreground">{text}</p>;
 }

@@ -39,7 +39,7 @@ try {
     const context = await browser.newContext({
       viewport: { width, height: 900 },
       colorScheme: THEME,
-      deviceScaleFactor: 2,
+      deviceScaleFactor: 1,
     });
     const page = await context.newPage();
     for (const [name, path] of routes) {

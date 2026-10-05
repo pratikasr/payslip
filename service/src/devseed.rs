@@ -87,7 +87,10 @@ pub async fn sweep_to_treasury(
                 w.sync().await?;
                 let mut out = vec![];
                 for i in 0..count {
-                    match w.sweep(i, to.clone(), None) {
+                    let memo =
+                        crate::memo::to_memo_bytes("Payslip testnet: dev contractor wallet returned to the treasury")
+                            .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    match w.sweep(i, to.clone(), Some(memo)) {
                         Ok(txid) => {
                             w.broadcast(txid).await?;
                             out.push((i, txid_hex(&txid)));
