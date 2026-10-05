@@ -1,7 +1,7 @@
 {
   "network": "testnet",
   "run_id": "09019bd8-d31d-400b-a779-050afeb3083e",
-  "note": "Testnet viewing keys for Payslip's demo wallet. They reveal only this demo run's payments and cannot spend.",
+  "note": "Testnet viewing keys for Payslip's demo wallet. They reveal only the demo company's July, August and September payrolls and cannot spend.",
   "birthday_height": 4466858,
   "keys": [
     {

@@ -2,6 +2,13 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 5 Oct 2026, a fuller, calmer company dashboard
+
+- The owner found the internal dashboard still not premium. Compared with Mercury's dashboard, it had an empty hero card (one payroll, nothing to chart), counter cards of zeros, coin amounts under every figure, a block height in the top bar, and a gold tag on every row.
+- The demo company now has three months of real testnet payroll (July and August paid through the API in the clean demo wallet, September is rehearsal 3; docs/proof/demo-wallet-runs.json), so charts, payslip lists and the books have history.
+- Company home rebuilt: a hero with paid-this-year and monthly bars, treasury in dollars with how many payrolls it covers, the next payroll as a dated card, and a to-do list written as sentences; the counter cards and the half-empty "Payroll movement" section are gone. Tables use calm "Paid" tags with one note that every payment is shielded; dollars lead on the treasury and run pages; runs and payslips order by pay period; avatars get a colour per person; the top bar shows only the network.
+- Checks: browser suite 30 of 30 (the demo walkthrough needs a clean database and passed in the previous entry); 102 screenshots with no horizontal scroll.
+
 ## 5 Oct 2026, redesign in Mercury's style and a clean demo wallet
 
 - The owner judged the first look too basic. Five research agents studied Request Finance, Ontop, Wise, Remitly, Revolut Business, Mercury, Ramp, Brex, Deel, Rippling, the Zcash brand and crypto payroll tools and audited the app; the owner chose to copy Mercury's design, not one hundred percent. Decision and system recorded in docs/DESIGN.md section 15.
