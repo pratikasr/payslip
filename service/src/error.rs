@@ -12,6 +12,10 @@ pub struct ErrorBody {
     pub code: String,
     pub message: String,
     pub hint: String,
+    /// Ids of the runs the error is about (`period_overlap`, `idempotency_mismatch`); absent
+    /// on other errors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runs: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug)]
@@ -28,8 +32,15 @@ impl ApiError {
                 code: code.into(),
                 message: message.into(),
                 hint: hint.into(),
+                runs: None,
             },
         }
+    }
+
+    /// Names the runs the error is about, in the error's `runs` field.
+    pub fn with_runs(mut self, runs: Vec<String>) -> Self {
+        self.body.runs = Some(runs);
+        self
     }
 
     pub fn bad_request(code: &str, message: impl Into<String>, hint: impl Into<String>) -> Self {

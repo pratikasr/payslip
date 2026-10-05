@@ -12,7 +12,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use async_trait::async_trait;
@@ -176,6 +176,8 @@ pub trait ChainOps: Send + Sync {
     async fn expiry_height(&self, txid: &str) -> anyhow::Result<Option<u32>>;
     async fn tx_fee(&self, txid: &str) -> anyhow::Result<Option<u64>>;
     async fn received_in_tx(&self, txid: &str, account: u32) -> anyhow::Result<u64>;
+    /// Unix time of the block at `height`: its header time, the time statements show.
+    async fn block_time(&self, height: u32) -> anyhow::Result<i64>;
 }
 
 pub struct PayerChain(pub Payer);
@@ -259,6 +261,9 @@ impl ChainOps for PayerChain {
     async fn received_in_tx(&self, txid: &str, account: u32) -> anyhow::Result<u64> {
         self.0.received_in_tx(txid, account).await
     }
+    async fn block_time(&self, height: u32) -> anyhow::Result<i64> {
+        self.0.block_time(height).await
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -280,6 +285,7 @@ pub fn line_json(network: ZcashNetwork, l: &LineRow) -> Value {
         "status": l.status,
         "txid": l.txid,
         "confirmed_height": l.confirmed_height,
+        "confirmed_at": l.confirmed_at,
         "explorer_url": l.txid.as_ref().map(|t| network.explorer_tx_url(t)),
         "memo": l.memo,
         "settlement_choice": l.settlement_choice,
@@ -405,6 +411,9 @@ struct Inner {
     /// Per line (or per run, for the allocation): the tip when its account first could not cover
     /// the transaction. Cleared when the transaction is built.
     underfunded: Mutex<HashMap<String, u32>>,
+    /// After a block time lookup fails, no other is tried before this instant, so reading runs
+    /// stays fast while lightwalletd is unreachable.
+    block_time_retry_at: Mutex<Option<Instant>>,
 }
 
 /// Records the tip at which a shortfall started (if not yet recorded) and returns
@@ -488,6 +497,7 @@ impl Executor {
                 rejected_builds: Mutex::new(HashMap::new()),
                 rejected_allocations: Mutex::new(HashMap::new()),
                 underfunded: Mutex::new(HashMap::new()),
+                block_time_retry_at: Mutex::new(None),
             }),
         }
     }
@@ -517,8 +527,78 @@ impl Executor {
         let r = db::get_run(&self.inner.db, run_id)
             .await?
             .ok_or_else(|| ApiError::not_found("Run"))?;
-        let lines = db::lines(&self.inner.db, run_id).await?;
+        let mut lines = db::lines(&self.inner.db, run_id).await?;
+        // Lines confirmed before block times were recorded, or whose lookup failed, get theirs
+        // the first time the run is read. A failure here never fails the read.
+        if lines
+            .iter()
+            .any(|l| l.confirmed_height.is_some() && l.confirmed_at.is_none())
+        {
+            match self.backfill_confirmed_at(Some(run_id)).await {
+                Ok(0) => {}
+                Ok(_) => lines = db::lines(&self.inner.db, run_id).await?,
+                Err(e) => tracing::warn!(run = run_id, "could not record pay line block times: {e:#}"),
+            }
+        }
         Ok(run_json(self.inner.network, &r, &lines))
+    }
+
+    /// Records `confirmed_at` on confirmed lines that have none, of one run or of every run.
+    /// Returns how many lines it filled; a height whose time cannot be looked up now is left for
+    /// the next read.
+    pub async fn backfill_confirmed_at(&self, run_id: Option<&str>) -> anyhow::Result<usize> {
+        let db = &self.inner.db;
+        let mut times: HashMap<i64, Option<String>> = HashMap::new();
+        let mut filled = 0;
+        for (line_id, height) in db::lines_missing_confirmed_at(db, run_id).await? {
+            let at = match times.get(&height) {
+                Some(t) => t.clone(),
+                None => {
+                    let t = match u32::try_from(height) {
+                        Ok(h) => self.confirmed_at(h).await,
+                        Err(_) => None,
+                    };
+                    times.insert(height, t.clone());
+                    t
+                }
+            };
+            if let Some(at) = at {
+                if db::set_line_confirmed_at(db, &line_id, height, &at).await? {
+                    filled += 1;
+                }
+            }
+        }
+        Ok(filled)
+    }
+
+    /// The block time of `height` as RFC 3339 UTC, formatted as statements format it; None when
+    /// it cannot be looked up now (then no lookup is tried for six poll intervals).
+    async fn confirmed_at(&self, height: u32) -> Option<String> {
+        let paused = self
+            .inner
+            .block_time_retry_at
+            .lock()
+            .ok()
+            .and_then(|r| *r)
+            .is_some_and(|at| Instant::now() < at);
+        if paused {
+            return None;
+        }
+        let looked_up = tokio::time::timeout(Duration::from_secs(10), self.inner.chain.block_time(height)).await;
+        match looked_up {
+            Ok(Ok(t)) => crate::statements::block_time_rfc3339(t),
+            failed => {
+                let why = match failed {
+                    Ok(Err(e)) => format!("{e:#}"),
+                    _ => "no answer within 10 seconds".into(),
+                };
+                tracing::warn!("block time at {height} not available yet: {why}");
+                if let Ok(mut r) = self.inner.block_time_retry_at.lock() {
+                    *r = Some(Instant::now() + self.inner.poll * 6);
+                }
+                None
+            }
+        }
     }
 
     /// Requests funding from the venue. Valid in `draft`, and again for a run that received no
@@ -1640,7 +1720,8 @@ impl Executor {
                             }
                         };
                         if t + 1 >= h + self.inner.confirm_depth {
-                            db::confirm_line(db, &l.id, h).await?;
+                            let at = self.confirmed_at(h).await;
+                            db::confirm_line(db, &l.id, h, at.as_deref()).await?;
                             db::clear_line_error(db, &l.id, "broadcast_rejected").await?;
                             reset(&self.inner.rejected_builds, &l.id);
                             fees_changed = true;

@@ -21,7 +21,10 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/api/contractors", get(list).post(create))
         .route("/api/contractors/{id}", get(get_one).patch(update).delete(archive))
         .route("/api/contractors/{id}/viewing-key", get(viewing_key))
-        .route("/api/contractors/{id}/viewing-key/shared", post(mark_shared))
+        .route(
+            "/api/contractors/{id}/viewing-key/shared",
+            post(mark_shared).delete(unmark_shared),
+        )
         .route("/api/viewing-keys", get(all_viewing_keys))
 }
 
@@ -300,6 +303,14 @@ async fn viewing_key(State(s): State<AppStateRef>, Path(id): Path<String>) -> Ap
 async fn mark_shared(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Contractor>> {
     get_contractor(&s, &id).await?;
     db::mark_fvk_shared(&s.db, &id).await?;
+    Ok(Json(get_contractor(&s, &id).await?))
+}
+
+/// Undoes "Mark as shared" (a click by mistake). It records nothing about the key itself: a key
+/// that was handed over still reads the contractor's payments.
+async fn unmark_shared(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Contractor>> {
+    get_contractor(&s, &id).await?;
+    db::clear_fvk_shared(&s.db, &id).await?;
     Ok(Json(get_contractor(&s, &id).await?))
 }
 

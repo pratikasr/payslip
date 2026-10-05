@@ -211,6 +211,15 @@ pub async fn mark_fvk_shared(pool: &Pool, id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Undoes [`mark_fvk_shared`]: the key is recorded as not shared.
+pub async fn clear_fvk_shared(pool: &Pool, id: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE contractors SET fvk_shared_at = NULL WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 /// True if the contractor is in a run that has started and not finished (not a draft, not paid,
 /// not cancelled).
 pub async fn contractor_in_active_run(pool: &Pool, id: &str) -> anyhow::Result<bool> {
@@ -251,6 +260,9 @@ pub struct RunRow {
     pub updated_at: String,
     /// True once the payer executed the run; a restart resumes only such runs.
     pub execute_requested: bool,
+    /// SHA-256 of the canonical create request sent with `idempotency_key`; None for runs
+    /// created without a key or before it was recorded.
+    pub idempotency_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -269,6 +281,8 @@ pub struct LineRow {
     pub txid: Option<String>,
     pub expiry_height: Option<i64>,
     pub confirmed_height: Option<i64>,
+    /// Block time of `confirmed_height`, RFC 3339 UTC; set with it, cleared with it.
+    pub confirmed_at: Option<String>,
     pub attempts: i64,
     pub error_code: Option<String>,
     pub error_message: Option<String>,
@@ -346,7 +360,8 @@ pub async fn fix_line_payouts(pool: &Pool, run_id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Inserts a run and its lines atomically. Returns `Ok(None)` if the idempotency key exists.
+/// Inserts a run and its lines atomically, whatever other runs cover its period. Returns
+/// `Ok(None)` if the idempotency key exists.
 pub async fn insert_run(
     pool: &Pool,
     idempotency_key: Option<&str>,
@@ -354,25 +369,110 @@ pub async fn insert_run(
     period_end: &str,
     new_lines: &[NewLine],
 ) -> anyhow::Result<Option<String>> {
+    let run = NewRun {
+        idempotency_key,
+        request_hash: None,
+        period_start,
+        period_end,
+        allow_overlap: true,
+    };
+    Ok(match create_run(pool, &run, new_lines).await? {
+        RunInsert::Created(id) => Some(id),
+        RunInsert::KeyExists(_) | RunInsert::Overlaps(_) => None,
+    })
+}
+
+pub struct NewRun<'a> {
+    pub idempotency_key: Option<&'a str>,
+    /// Stored with the key, so a later request with the same key and another body is told apart.
+    pub request_hash: Option<&'a str>,
+    pub period_start: &'a str,
+    pub period_end: &'a str,
+    /// Create the run even when a run that is not cancelled covers part of its period.
+    pub allow_overlap: bool,
+}
+
+#[derive(Debug)]
+pub enum RunInsert {
+    Created(String),
+    /// A run already has this idempotency key.
+    KeyExists(Box<RunRow>),
+    /// Runs that are not cancelled and cover part of the period, earliest period first.
+    Overlaps(Vec<RunRow>),
+}
+
+/// Runs that are not cancelled and share at least one day with `start..=end` (dates are
+/// `YYYY-MM-DD`, so text order is date order). A run with `exclude_key` as its idempotency key
+/// is left out: a retry never overlaps the run it created.
+pub async fn overlapping_runs(
+    pool: &Pool,
+    start: &str,
+    end: &str,
+    exclude_key: Option<&str>,
+) -> anyhow::Result<Vec<RunRow>> {
+    Ok(sqlx::query_as(
+        "SELECT * FROM runs WHERE status <> 'cancelled' AND period_start <= ? AND period_end >= ?
+           AND (? IS NULL OR idempotency_key IS NULL OR idempotency_key <> ?)
+         ORDER BY period_start, created_at, id",
+    )
+    .bind(end)
+    .bind(start)
+    .bind(exclude_key)
+    .bind(exclude_key)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Inserts a run and its lines atomically. The insert itself checks the idempotency key and,
+/// unless `allow_overlap`, that no other run covers part of the period, so two requests at once
+/// cannot both pass.
+pub async fn create_run(pool: &Pool, run: &NewRun<'_>, new_lines: &[NewLine]) -> anyhow::Result<RunInsert> {
     let id = Uuid::new_v4().to_string();
     let ts = now();
-    let mut tx = pool.begin().await?;
-    let inserted = sqlx::query(
-        "INSERT INTO runs (id, idempotency_key, period_start, period_end, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'draft', ?, ?) ON CONFLICT (idempotency_key) DO NOTHING",
-    )
-    .bind(&id)
-    .bind(idempotency_key)
-    .bind(period_start)
-    .bind(period_end)
-    .bind(&ts)
-    .bind(&ts)
-    .execute(&mut *tx)
-    .await?;
-    if inserted.rows_affected() == 0 {
+    // A run cancelled between the failed insert and the overlap query leaves nothing to report;
+    // the insert is simply tried again.
+    let mut attempts = 0;
+    let mut tx = loop {
+        attempts += 1;
+        let mut tx = pool.begin().await?;
+        let inserted = sqlx::query(
+            "INSERT INTO runs (id, idempotency_key, idempotency_hash, period_start, period_end, status, created_at,
+                               updated_at)
+             SELECT ?, ?, ?, ?, ?, 'draft', ?, ?
+             WHERE ? OR NOT EXISTS (
+                 SELECT 1 FROM runs o WHERE o.status <> 'cancelled' AND o.period_start <= ? AND o.period_end >= ?
+                   AND (? IS NULL OR o.idempotency_key IS NULL OR o.idempotency_key <> ?))
+             ON CONFLICT (idempotency_key) DO NOTHING",
+        )
+        .bind(&id)
+        .bind(run.idempotency_key)
+        .bind(run.idempotency_key.and(run.request_hash))
+        .bind(run.period_start)
+        .bind(run.period_end)
+        .bind(&ts)
+        .bind(&ts)
+        .bind(run.allow_overlap)
+        .bind(run.period_end)
+        .bind(run.period_start)
+        .bind(run.idempotency_key)
+        .bind(run.idempotency_key)
+        .execute(&mut *tx)
+        .await?;
+        if inserted.rows_affected() == 1 {
+            break tx;
+        }
         tx.rollback().await?;
-        return Ok(None);
-    }
+        if let Some(key) = run.idempotency_key {
+            if let Some(existing) = get_run_by_key(pool, key).await? {
+                return Ok(RunInsert::KeyExists(Box::new(existing)));
+            }
+        }
+        let overlaps = overlapping_runs(pool, run.period_start, run.period_end, run.idempotency_key).await?;
+        if !overlaps.is_empty() {
+            return Ok(RunInsert::Overlaps(overlaps));
+        }
+        anyhow::ensure!(attempts < 3, "the run could not be inserted; retry the request");
+    };
     for (i, l) in new_lines.iter().enumerate() {
         sqlx::query(
             "INSERT INTO pay_lines (id, run_id, contractor_id, position, invoice_ref, amount_usd_basis, status)
@@ -394,7 +494,7 @@ pub async fn insert_run(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Some(id))
+    Ok(RunInsert::Created(id))
 }
 
 /// Deletes a run that never left `draft`. Returns false if it is not a draft.
@@ -586,13 +686,48 @@ pub async fn set_line_tx(
     Ok(())
 }
 
-pub async fn confirm_line(pool: &Pool, line_id: &str, height: u32) -> anyhow::Result<()> {
-    sqlx::query("UPDATE pay_lines SET status = 'confirmed', confirmed_height = ? WHERE id = ?")
+/// Marks a line confirmed at `height`. `confirmed_at` is that block's time (RFC 3339 UTC), or
+/// None when it could not be looked up yet: [`set_line_confirmed_at`] fills it in later.
+pub async fn confirm_line(pool: &Pool, line_id: &str, height: u32, confirmed_at: Option<&str>) -> anyhow::Result<()> {
+    sqlx::query("UPDATE pay_lines SET status = 'confirmed', confirmed_height = ?, confirmed_at = ? WHERE id = ?")
         .bind(height as i64)
+        .bind(confirmed_at)
         .bind(line_id)
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Confirmed lines without a block time: (line id, confirmed height), of one run or of all.
+pub async fn lines_missing_confirmed_at(pool: &Pool, run_id: Option<&str>) -> anyhow::Result<Vec<(String, i64)>> {
+    Ok(sqlx::query_as(
+        "SELECT id, confirmed_height FROM pay_lines
+         WHERE confirmed_height IS NOT NULL AND confirmed_at IS NULL AND (? IS NULL OR run_id = ?)
+         ORDER BY confirmed_height",
+    )
+    .bind(run_id)
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+/// Records the block time of a line's confirmed height, once: only while the line is still
+/// confirmed at `height` and has none. Returns whether it was recorded.
+pub async fn set_line_confirmed_at(
+    pool: &Pool,
+    line_id: &str,
+    height: i64,
+    confirmed_at: &str,
+) -> anyhow::Result<bool> {
+    let r = sqlx::query(
+        "UPDATE pay_lines SET confirmed_at = ? WHERE id = ? AND confirmed_height = ? AND confirmed_at IS NULL",
+    )
+    .bind(confirmed_at)
+    .bind(line_id)
+    .bind(height)
+    .execute(pool)
+    .await?;
+    Ok(r.rows_affected() == 1)
 }
 
 pub async fn set_settlement(pool: &Pool, line_id: &str, state: &serde_json::Value) -> anyhow::Result<()> {
@@ -605,7 +740,7 @@ pub async fn set_settlement(pool: &Pool, line_id: &str, state: &serde_json::Valu
 }
 
 pub async fn unconfirm_line(pool: &Pool, line_id: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE pay_lines SET status = 'broadcast', confirmed_height = NULL WHERE id = ?")
+    sqlx::query("UPDATE pay_lines SET status = 'broadcast', confirmed_height = NULL, confirmed_at = NULL WHERE id = ?")
         .bind(line_id)
         .execute(pool)
         .await?;

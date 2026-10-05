@@ -224,6 +224,15 @@ impl Config {
         self.data_dir.join("wallet.db")
     }
 
+    /// The testnet venue's fixed rate in USD per ZEC: the rate `venue::build` gives the venue
+    /// and every testnet run is funded at, so a client can estimate a run before any fill.
+    /// None on mainnet (the testnet venue only exists on testnet), with another venue, and in
+    /// statements mode, which funds nothing.
+    pub fn simulated_rate_usd_per_zec(&self) -> Option<f64> {
+        (!self.statements_only && self.venue == VenueKind::TestnetFixedRate && self.network == ZcashNetwork::Testnet)
+            .then(|| self.testnet_rate_e6 as f64 / 1_000_000.0)
+    }
+
     pub fn app_db_path(&self) -> PathBuf {
         self.data_dir.join("payslip.db")
     }
@@ -264,11 +273,8 @@ pub const DEFAULT_TESTNET_RATE_E6: u64 = 1_350_000_000_000;
 mod tests {
     use super::*;
 
-    /// Audit JD-01: an unknown key starts at the earlier of the request's birthday and the
-    /// configured viewer birthday, else at Ironwood activation.
-    #[test]
-    fn unknown_keys_scan_from_the_earliest_known_start() {
-        let mut cfg = Config {
+    fn testnet_config() -> Config {
+        Config {
             network: ZcashNetwork::Testnet,
             lightwalletd_url: String::new(),
             data_dir: PathBuf::new(),
@@ -291,7 +297,14 @@ mod tests {
             allow_remote_payer: false,
             app_fee_bps: 0,
             app_fee_recipient: None,
-        };
+        }
+    }
+
+    /// Audit JD-01: an unknown key starts at the earlier of the request's birthday and the
+    /// configured viewer birthday, else at Ironwood activation.
+    #[test]
+    fn unknown_keys_scan_from_the_earliest_known_start() {
+        let mut cfg = testnet_config();
         assert_eq!(cfg.viewer_scan_start(None), 4_134_000);
         assert_eq!(cfg.viewer_scan_start(Some(4_466_858)), 4_466_858);
         cfg.viewer_birthday_height = Some(4_466_000);
@@ -299,5 +312,25 @@ mod tests {
         assert_eq!(cfg.viewer_scan_start(Some(4_466_858)), 4_466_000);
         assert_eq!(cfg.viewer_scan_start(Some(4_465_600)), 4_465_600);
         assert_eq!(cfg.viewer_birthday(), 4_466_000);
+    }
+
+    /// GET /api/health reports the testnet venue's fixed rate where that venue funds runs.
+    #[tokio::test]
+    async fn the_simulated_rate_is_the_testnet_venues_own() {
+        let mut cfg = testnet_config();
+        assert_eq!(cfg.simulated_rate_usd_per_zec(), Some(1_350_000.0));
+        cfg.testnet_rate_e6 = 42_500_000;
+        assert_eq!(cfg.simulated_rate_usd_per_zec(), Some(42.5));
+        // The executor's venue is built from the same config and funds runs at that rate.
+        let venue = crate::venue::build(&cfg).unwrap();
+        assert_eq!(venue.kind(), VenueKind::TestnetFixedRate);
+        assert_eq!(venue.indicative_rate_e6().await.unwrap(), 42_500_000);
+        cfg.statements_only = true;
+        assert_eq!(cfg.simulated_rate_usd_per_zec(), None);
+        cfg.statements_only = false;
+        cfg.venue = VenueKind::NearIntents;
+        assert_eq!(cfg.simulated_rate_usd_per_zec(), None);
+        cfg.network = ZcashNetwork::Mainnet;
+        assert_eq!(cfg.simulated_rate_usd_per_zec(), None);
     }
 }

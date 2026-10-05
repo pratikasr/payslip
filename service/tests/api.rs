@@ -1,12 +1,18 @@
-//! HTTP API behaviour that needs no chain: a statements-only service whose lightwalletd is
-//! unreachable, driven over a real socket. Every answer here must come before any scan.
+//! HTTP API behaviour that needs no chain, driven over a real socket: a statements-only service
+//! whose lightwalletd is unreachable (every answer must come before any scan), and a full-mode
+//! service with no payer wallet whose executor runs on a stub chain (endpoints that only read and
+//! write payslip.db).
 
-use std::{net::SocketAddr, path::Path};
+use std::{net::SocketAddr, path::Path, sync::Arc, time::Duration};
 
+use async_trait::async_trait;
 use payslip::{
-    api,
+    api::{self, AppState},
     config::{Config, VenueKind, ZcashNetwork},
+    db::{self, NewContractor, Pool},
+    runs::{ChainOps, Executor, Pay},
     viewer::{ViewerRegistry, ViewingKey},
+    wallet::SpendError,
 };
 use serde_json::{json, Value};
 use zcash_protocol::consensus::Network;
@@ -61,6 +67,129 @@ async fn start() -> Service {
     }
 }
 
+/// A chain that only knows block times (block h at 1,790,000,000 + 75 h); anything else fails.
+struct StubChain;
+
+const STUB_T0: i64 = 1_790_000_000;
+
+#[async_trait]
+impl ChainOps for StubChain {
+    async fn sync(&self) -> anyhow::Result<()> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn tip(&self) -> anyhow::Result<u32> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn spendable(&self, _: u32) -> anyhow::Result<u64> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn total(&self, _: u32) -> anyhow::Result<u64> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn account_address(&self, _: u32) -> anyhow::Result<String> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn transparent_address(&self, _: u32) -> anyhow::Result<String> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn create_transfer(
+        &self,
+        _: u32,
+        _: Vec<Pay>,
+        _: Option<String>,
+    ) -> anyhow::Result<Result<String, SpendError>> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn broadcast(&self, _: &str) -> anyhow::Result<()> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn mined_height(&self, _: &str) -> anyhow::Result<Option<u32>> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn expiry_height(&self, _: &str) -> anyhow::Result<Option<u32>> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn tx_fee(&self, _: &str) -> anyhow::Result<Option<u64>> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn received_in_tx(&self, _: &str, _: u32) -> anyhow::Result<u64> {
+        anyhow::bail!("no chain in this test")
+    }
+    async fn block_time(&self, height: u32) -> anyhow::Result<i64> {
+        Ok(STUB_T0 + 75 * i64::from(height))
+    }
+}
+
+/// A full-mode service (payer routes mounted) without a payer wallet: its executor drives the
+/// stub chain. Enough for endpoints that touch only payslip.db.
+async fn start_full() -> (Service, Pool) {
+    let dir = tempfile::tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut cfg = config(dir.path(), addr);
+    cfg.statements_only = false;
+    let db = db::open(&cfg.app_db_path()).await.unwrap();
+    let venue = payslip::venue::build(&cfg).unwrap();
+    let executor = Executor::with_chain(
+        cfg.network,
+        db.clone(),
+        Arc::new(StubChain),
+        venue.clone(),
+        Duration::from_millis(5),
+        1,
+    );
+    let state = Arc::new(AppState {
+        viewers: ViewerRegistry::new(&cfg),
+        db: db.clone(),
+        payer: None,
+        venue,
+        executor: Some(executor),
+        contractor_lock: tokio::sync::Mutex::new(()),
+        lwd: tokio::sync::Mutex::new(payslip::wallet::lwd::connect(&cfg.lightwalletd_url).unwrap()),
+        last_wallet: std::sync::Mutex::new(None),
+        prices: payslip::prices::Prices::new(None, None),
+        scan_slots: tokio::sync::Semaphore::new(3),
+        sse_slots: Arc::new(tokio::sync::Semaphore::new(api::MAX_EVENT_STREAMS)),
+        cfg: cfg.clone(),
+    });
+    tokio::spawn(async move { axum::serve(listener, api::router(state)).await.unwrap() });
+    let service = Service {
+        base: format!("http://{addr}"),
+        cfg,
+        http: reqwest::Client::new(),
+        _dir: dir,
+    };
+    (service, db)
+}
+
+async fn contractor(pool: &Pool, i: u32) -> String {
+    db::insert_contractor(
+        pool,
+        &NewContractor {
+            name: format!("Contractor {i}"),
+            email: None,
+            unified_address: format!("utest1contractor{i}"),
+            settlement_choice: "hold_zec".into(),
+            payout_chain: None,
+            payout_address: None,
+        },
+        i,
+        4_467_000,
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+fn run_body(start: &str, end: &str, lines: &[(&str, i64, &str)], key: &str) -> Value {
+    json!({
+        "period_start": start,
+        "period_end": end,
+        "lines": lines.iter().map(|(c, cents, inv)| json!({"contractor_id": c, "amount_usd_cents": cents, "invoice_ref": inv})).collect::<Vec<_>>(),
+        "idempotency_key": key,
+    })
+}
+
 fn testnet_ufvk(seed: u8) -> String {
     let params = Network::TestNetwork;
     zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[seed; 32], zip32::AccountId::ZERO)
@@ -91,6 +220,17 @@ impl Service {
 
     async fn get(&self, path: &str) -> (u16, Value) {
         let r = self.http.get(format!("{}{path}", self.base)).send().await.unwrap();
+        let s = r.status().as_u16();
+        (s, r.json().await.unwrap_or(Value::Null))
+    }
+
+    /// DELETE with an optional Content-Type and body, as a browser or a script would send it.
+    async fn delete(&self, path: &str, content_type: Option<&str>, body: &str) -> (u16, Value) {
+        let mut req = self.http.delete(format!("{}{path}", self.base)).body(body.to_string());
+        if let Some(ct) = content_type {
+            req = req.header("content-type", ct);
+        }
+        let r = req.send().await.unwrap();
         let s = r.status().as_u16();
         (s, r.json().await.unwrap_or(Value::Null))
     }
@@ -235,4 +375,260 @@ async fn forget_deletes_the_cached_scan_of_exactly_that_key_set() {
     assert_eq!((st, code(&v)), (400, "spending_key_rejected"));
     let (st, v) = s.post("/api/statements/forget", json!({"ufvks": []})).await;
     assert_eq!((st, code(&v)), (400, "invalid_viewing_key"));
+}
+
+/// Undo "Mark as shared": DELETE clears `fvk_shared_at` and returns the contractor. The web
+/// sends `{}` with the JSON header; an empty body with the header works too, no header is 415.
+#[tokio::test]
+async fn mark_as_shared_can_be_undone() {
+    let (s, pool) = start_full().await;
+    let id = contractor(&pool, 1).await;
+    let path = format!("/api/contractors/{id}/viewing-key/shared");
+    let (st, v) = s.post(&path, json!({})).await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v["fvk_shared_at"].is_string());
+    let (st, v) = s.delete(&path, Some("application/json"), "{}").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["id"], json!(id));
+    assert!(v["fvk_shared_at"].is_null(), "{v}");
+    let (_, v) = s.get(&format!("/api/contractors/{id}")).await;
+    assert!(v["fvk_shared_at"].is_null(), "stored: {v}");
+    // Again, with an empty body: still 200, still not shared.
+    let (st, v) = s.delete(&path, Some("application/json"), "").await;
+    assert_eq!((st, v["fvk_shared_at"].is_null()), (200, true), "{v}");
+    // Marking again records a new time.
+    let (st, v) = s.post(&path, json!({})).await;
+    assert_eq!((st, v["fvk_shared_at"].is_string()), (200, true), "{v}");
+    let (st, v) = s.delete(&path, None, "").await;
+    assert_eq!((st, code(&v)), (415, "json_required"), "{v}");
+    let (st, v) = s
+        .delete(
+            "/api/contractors/no-such-id/viewing-key/shared",
+            Some("application/json"),
+            "{}",
+        )
+        .await;
+    assert_eq!((st, code(&v)), (404, "not_found"), "{v}");
+}
+
+/// The same idempotency key with another period or other lines is a 409, not the earlier run.
+/// The same request (lines in any order) still returns the run; a run stored before request
+/// hashes keeps the old behaviour.
+#[tokio::test]
+async fn a_reused_idempotency_key_with_another_body_is_refused() {
+    let (s, pool) = start_full().await;
+    let (a, b) = (contractor(&pool, 1).await, contractor(&pool, 2).await);
+    let body = run_body(
+        "2026-09-01",
+        "2026-09-30",
+        &[(&a, 480_000, "INV-1"), (&b, 625_000, "INV-2")],
+        "key-1",
+    );
+    let (st, first) = s.post("/api/runs", body.clone()).await;
+    assert_eq!(st, 201, "{first}");
+    let id = first["id"].as_str().unwrap().to_string();
+    let (st, again) = s.post("/api/runs", body).await;
+    assert_eq!((st, again["id"].as_str()), (200, Some(id.as_str())));
+    // Lines in another order, invoice padded with spaces, allow_overlap added: the same request.
+    let mut same = run_body(
+        "2026-09-01",
+        "2026-09-30",
+        &[(&b, 625_000, " INV-2 "), (&a, 480_000, "INV-1")],
+        "key-1",
+    );
+    same["allow_overlap"] = json!(true);
+    let (st, v) = s.post("/api/runs", same).await;
+    assert_eq!((st, v["id"].as_str()), (200, Some(id.as_str())), "{v}");
+    for other in [
+        run_body(
+            "2026-09-01",
+            "2026-09-30",
+            &[(&a, 480_001, "INV-1"), (&b, 625_000, "INV-2")],
+            "key-1",
+        ),
+        run_body(
+            "2026-09-01",
+            "2026-09-29",
+            &[(&a, 480_000, "INV-1"), (&b, 625_000, "INV-2")],
+            "key-1",
+        ),
+        run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "key-1"),
+        run_body(
+            "2026-09-01",
+            "2026-09-30",
+            &[(&a, 480_000, "INV-9"), (&b, 625_000, "INV-2")],
+            "key-1",
+        ),
+    ] {
+        let (st, v) = s.post("/api/runs", other).await;
+        assert_eq!((st, code(&v)), (409, "idempotency_mismatch"), "{v}");
+        assert!(has_hint(&v));
+        assert_eq!(v["error"]["runs"], json!([id]));
+        assert!(v["error"]["message"].as_str().unwrap().contains(&id));
+    }
+    let (_, v) = s.get("/api/runs").await;
+    assert_eq!(v["runs"].as_array().unwrap().len(), 1, "no run was added");
+    // A run created before request hashes were stored: the key returns it, as before.
+    sqlx::query("UPDATE runs SET idempotency_hash = NULL WHERE id = ?")
+        .bind(&id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 1, "OTHER")], "key-1"),
+        )
+        .await;
+    assert_eq!((st, v["id"].as_str()), (200, Some(id.as_str())), "{v}");
+}
+
+/// A run whose period shares a day with a run that is not cancelled is a 409 naming that run,
+/// unless `allow_overlap` is true. Invalid requests still get their own 400 first.
+#[tokio::test]
+async fn an_overlapping_period_needs_allow_overlap() {
+    let (s, pool) = start_full().await;
+    let (a, b) = (contractor(&pool, 1).await, contractor(&pool, 2).await);
+    let (st, sept) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "k-sept"),
+        )
+        .await;
+    assert_eq!(st, 201, "{sept}");
+    let sept = sept["id"].as_str().unwrap().to_string();
+    // Shares 30 September with the September run.
+    let late = run_body("2026-09-30", "2026-10-15", &[(&b, 100_000, "BONUS-1")], "k-late");
+    let (st, v) = s.post("/api/runs", late.clone()).await;
+    assert_eq!((st, code(&v)), (409, "period_overlap"), "{v}");
+    assert_eq!(v["error"]["runs"], json!([sept]));
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(&sept) && message.contains("2026-09-01 to 2026-09-30"),
+        "{message}"
+    );
+    assert!(v["error"]["hint"].as_str().unwrap().contains("allow_overlap"));
+    // A request that is invalid anyway gets its own error, not the overlap.
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&b, 0, "X")], "k-bad"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_amount"), "{v}");
+    // An extra run on purpose.
+    let mut extra = late;
+    extra["allow_overlap"] = json!(true);
+    let (st, v) = s.post("/api/runs", extra).await;
+    assert_eq!(st, 201, "{v}");
+    let bonus = v["id"].as_str().unwrap().to_string();
+    // Two runs now cover 30 September; both are named.
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-30", "2026-09-30", &[(&a, 1_000, "FIX-1")], "k-fix"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "period_overlap"), "{v}");
+    assert_eq!(v["error"]["runs"], json!([sept, bonus]));
+    // The next month is no overlap.
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-10-16", "2026-10-31", &[(&a, 480_000, "INV-2")], "k-oct"),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+    // Cancelled runs do not count.
+    for id in [&sept, &bonus] {
+        let (st, v) = s.post(&format!("/api/runs/{id}/cancel"), json!({})).await;
+        assert_eq!((st, v["status"].as_str()), (200, Some("cancelled")), "{v}");
+    }
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "k-sept-2"),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+}
+
+/// Pay lines in run JSON carry `confirmed_at`: null until confirmed, then the block time of the
+/// confirmed height, filled in when the run is read if it was not recorded (as for lines
+/// confirmed before the field existed).
+#[tokio::test]
+async fn run_lines_carry_their_confirmation_time() {
+    let (s, pool) = start_full().await;
+    let a = contractor(&pool, 1).await;
+    let (st, run) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "k-1"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let line = &run["lines"][0];
+    assert!(line.as_object().unwrap().contains_key("confirmed_at") && line["confirmed_at"].is_null());
+    let id = run["id"].as_str().unwrap();
+    let line_id = line["id"].as_str().unwrap();
+    db::confirm_line(&pool, line_id, 4_470_000, None).await.unwrap();
+    let want = json!(payslip::statements::block_time_rfc3339(STUB_T0 + 75 * 4_470_000).unwrap());
+    let (st, v) = s.get(&format!("/api/runs/{id}")).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["lines"][0]["confirmed_height"], json!(4_470_000));
+    assert_eq!(v["lines"][0]["confirmed_at"], want);
+    let (_, v) = s.get("/api/runs").await;
+    assert_eq!(v["runs"][0]["lines"][0]["confirmed_at"], want);
+    let stored = db::lines(&pool, id).await.unwrap();
+    assert_eq!(stored[0].confirmed_at.as_ref().map(|t| json!(t)), Some(want));
+}
+
+/// GET /api/health reports the testnet venue's fixed rate in full mode; a statements-only
+/// deployment funds nothing and reports null.
+#[tokio::test]
+async fn health_reports_the_simulated_rate() {
+    let (full, _pool) = start_full().await;
+    let (st, v) = full.get("/api/health").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["simulated_rate_usd_per_zec"], json!(1_350_000.0));
+    assert_eq!(v["mode"], json!("full"));
+    let statements = start().await;
+    let (st, v) = statements.get("/api/health").await;
+    assert_eq!(st, 200, "{v}");
+    assert!(v.as_object().unwrap().contains_key("simulated_rate_usd_per_zec"));
+    assert!(v["simulated_rate_usd_per_zec"].is_null());
+}
+
+/// Requests at the same moment: the same key makes one run (the others get it back), and
+/// different keys for the same period make one run (the others get `period_overlap`). The
+/// overlap check is part of the insert, so two requests cannot both pass it.
+#[tokio::test]
+async fn simultaneous_requests_make_one_run() {
+    let (s, pool) = start_full().await;
+    let a = contractor(&pool, 1).await;
+    let same = run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "k-same");
+    let answers = futures_util::future::join_all((0..8).map(|_| s.post("/api/runs", same.clone()))).await;
+    let ids: std::collections::HashSet<_> = answers
+        .iter()
+        .map(|(_, v)| v["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids.len(), 1, "{answers:?}");
+    assert_eq!(answers.iter().filter(|(st, _)| *st == 201).count(), 1);
+    assert!(answers.iter().all(|(st, _)| *st == 201 || *st == 200));
+    let answers = futures_util::future::join_all((0..8).map(|i| {
+        s.post(
+            "/api/runs",
+            run_body(
+                "2026-10-01",
+                "2026-10-31",
+                &[(&a, 480_000, "INV-2")],
+                &format!("k-oct-{i}"),
+            ),
+        )
+    }))
+    .await;
+    assert_eq!(answers.iter().filter(|(st, _)| *st == 201).count(), 1, "{answers:?}");
+    for (st, v) in answers.iter().filter(|(st, _)| *st != 201) {
+        assert_eq!((*st, code(v)), (409, "period_overlap"), "{v}");
+    }
 }

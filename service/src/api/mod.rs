@@ -368,6 +368,15 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
     }
     if let Some(executor) = &state.executor {
         executor.resume_all().await;
+        // Pay lines confirmed before block times were recorded get theirs, in the background.
+        let executor = executor.clone();
+        tokio::spawn(async move {
+            match executor.backfill_confirmed_at(None).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("recorded the block time of {n} confirmed pay lines"),
+                Err(e) => tracing::warn!("could not record pay line block times: {e:#}"),
+            }
+        });
     }
     let listener = tokio::net::TcpListener::bind(bind)
         .await
@@ -412,6 +421,9 @@ struct Health {
     app_fee_bps: u32,
     /// Whether statements carry the market value of each payment at receipt.
     market_prices: bool,
+    /// The testnet venue's fixed rate in USD per ZEC, which runs are funded at; None on
+    /// mainnet and whenever that venue is not in use.
+    simulated_rate_usd_per_zec: Option<f64>,
 }
 
 /// Skew beyond which the server clock is reported as wrong (block times lag by minutes).
@@ -486,6 +498,7 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
             0
         },
         market_prices: s.prices.enabled(),
+        simulated_rate_usd_per_zec: s.cfg.simulated_rate_usd_per_zec(),
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,
         clock_skew_seconds: skew,

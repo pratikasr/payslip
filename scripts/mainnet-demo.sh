@@ -182,7 +182,9 @@ for p in people:
 # 2. Run (idempotent)
 key = hashlib.sha256((NET + json.dumps(spec, sort_keys=True) + os.environ.get("DEMO_RUN_SALT", "")).encode()).hexdigest()[:32]
 lines = [{"contractor_id": i, "amount_usd_cents": p["amount_usd_cents"], "invoice_ref": p["invoice_ref"]} for i, p in zip(ids, people)]
-st, run = call("POST", "/api/runs", {"period_start": spec["period_start"], "period_end": spec["period_end"], "lines": lines, "idempotency_key": key})
+# A new DEMO_RUN_SALT is a deliberate second run for the same period, so it may overlap the first.
+st, run = call("POST", "/api/runs", {"period_start": spec["period_start"], "period_end": spec["period_end"], "lines": lines, "idempotency_key": key,
+                                     "allow_overlap": bool(os.environ.get("DEMO_RUN_SALT"))})
 rid = run["id"]
 stamp(f"Run {rid} ({'created' if st == 201 else 'existing'}), status {run['status']}, payroll ${run['total_usd_cents']/100:,.2f}")
 

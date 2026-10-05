@@ -18,13 +18,23 @@ use async_trait::async_trait;
 use payslip::{
     config::{VenueKind, ZcashNetwork},
     db::{self, NewContractor, NewLine, Pool},
+    memo,
     runs::{ChainOps, Executor, Pay, LINE_FEE_ZAT},
+    statements::{self, KeyInfo},
     venue::{Funding, QuoteRequest, SwapVenue, TestnetVenue, VenueError},
+    viewer::ScanOutput,
     wallet::SpendError,
 };
+use serde_json::json;
 
 const RATE: u64 = 1_350_000_000_000;
 const EXPIRY_DELTA: u32 = 100;
+/// The fake chain's block times: block h was mined at BLOCK_T0 + 75 h (Zcash's target spacing).
+const BLOCK_T0: i64 = 1_790_000_000;
+
+fn block_time(h: i64) -> String {
+    statements::block_time_rfc3339(BLOCK_T0 + 75 * h).unwrap()
+}
 
 #[derive(Clone, Debug)]
 struct FakeTx {
@@ -66,6 +76,8 @@ struct Hooks {
     reject_broadcast_from: Option<u32>,
     /// Every payment from this account fails for lack of spendable funds.
     insufficient_from: Option<u32>,
+    /// Block time lookups fail, as when lightwalletd is unreachable.
+    block_time_fails: bool,
 }
 
 #[derive(Default, Clone)]
@@ -302,6 +314,12 @@ impl ChainOps for FakeChain {
     }
     async fn received_in_tx(&self, txid: &str, _account: u32) -> anyhow::Result<u64> {
         Ok(self.hooks.lock().unwrap().received.get(txid).copied().unwrap_or(0))
+    }
+    async fn block_time(&self, height: u32) -> anyhow::Result<i64> {
+        if self.hooks.lock().unwrap().block_time_fails {
+            anyhow::bail!("GetBlock at {height}: transport error");
+        }
+        Ok(BLOCK_T0 + 75 * i64::from(height))
     }
 }
 
@@ -712,7 +730,122 @@ async fn reorg_after_a_payment_is_mined_is_detected_and_reconfirmed() {
             l.confirmed_height,
             "recorded height matches the chain after the reorg"
         );
+        assert_eq!(
+            l.confirmed_at,
+            l.confirmed_height.map(block_time),
+            "the block time goes with the height"
+        );
     }
+}
+
+/// A confirmed pay line carries its block's time, formatted the way statements format it: the
+/// run and the contractor's statement show the same time and date for the same txid.
+#[tokio::test]
+async fn a_confirmed_line_carries_its_block_time_as_statements_show_it() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    let draft = exec.run_view(&run_id).await.unwrap();
+    for l in draft["lines"].as_array().unwrap() {
+        assert!(l.as_object().unwrap().contains_key("confirmed_at"));
+        assert!(l["confirmed_at"].is_null(), "null until confirmed");
+    }
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    let view = exec.run_view(&run_id).await.unwrap();
+    let lines = db::lines(&pool, &run_id).await.unwrap();
+    for (l, shown) in lines.iter().zip(view["lines"].as_array().unwrap()) {
+        let h = l.confirmed_height.unwrap();
+        let at = l.confirmed_at.clone().expect("recorded when the line confirmed");
+        assert_eq!(at, block_time(h));
+        assert_eq!(shown["confirmed_at"], json!(at));
+        // The contractor's statement, built from a scan of the same payment.
+        let scanned = ScanOutput {
+            txid: l.txid.clone().unwrap(),
+            mined_height: Some(h as u32),
+            block_time: Some(BLOCK_T0 + 75 * h),
+            expiry_height: Some(h as u32 + 40),
+            pool: 4,
+            output_index: 0,
+            from_account: Some("contractor-key".into()),
+            to_account: None,
+            to_address: Some(l.unified_address.clone()),
+            value_zat: l.amount_zec.unwrap() as u64,
+            is_change: false,
+            memo: Some(
+                memo::to_memo_bytes(l.memo.as_deref().unwrap())
+                    .unwrap()
+                    .as_slice()
+                    .to_vec(),
+            ),
+            fee_zat: Some(LINE_FEE_ZAT),
+        };
+        let keys = [KeyInfo {
+            fingerprint: "contractor-key".into(),
+            account_index: Some(l.account_index as u32),
+            label: Some(l.contractor_name.clone()),
+            role: "contractor".into(),
+        }];
+        let statement = statements::classify(ZcashNetwork::Testnet, &[scanned], &keys, h as u32 + 10, None);
+        assert_eq!(statement.lines.len(), 1, "{}", l.contractor_name);
+        let line = &statement.lines[0];
+        assert_eq!(Some(&line.txid), l.txid.as_ref());
+        assert_eq!(line.block_time.as_deref(), Some(at.as_str()));
+        assert_eq!(line.date.as_deref(), Some(&at[..10]));
+    }
+}
+
+/// A line confirmed while its block time could not be looked up (lightwalletd down), or before
+/// times were recorded, gets its time on a later read or at start-up; once recorded it is kept,
+/// and only a reorg that takes the payment out clears it, with the height.
+#[tokio::test]
+async fn a_missing_block_time_is_filled_in_later_and_then_kept() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().block_time_fails = true;
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    let lines = db::lines(&pool, &run_id).await.unwrap();
+    assert!(
+        lines
+            .iter()
+            .all(|l| l.confirmed_height.is_some() && l.confirmed_at.is_none()),
+        "confirmed without a time"
+    );
+    // Reading the run still answers while the lookup fails.
+    let view = exec.run_view(&run_id).await.unwrap();
+    assert!(view["lines"][0]["confirmed_at"].is_null());
+    // lightwalletd is back: the first read after the pause (six 5 ms polls) fills every line.
+    chain.hooks.lock().unwrap().block_time_fails = false;
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    let view = exec.run_view(&run_id).await.unwrap();
+    for (l, shown) in lines.iter().zip(view["lines"].as_array().unwrap()) {
+        assert_eq!(shown["confirmed_at"], json!(block_time(l.confirmed_height.unwrap())));
+    }
+    // A line from before the migration is filled in at start-up by a fresh executor.
+    let first = &lines[0];
+    let h = first.confirmed_height.unwrap();
+    sqlx::query("UPDATE pay_lines SET confirmed_at = NULL WHERE id = ?")
+        .bind(&first.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let restarted = executor(&pool, &chain, testnet_venue());
+    assert_eq!(restarted.backfill_confirmed_at(None).await.unwrap(), 1);
+    assert_eq!(restarted.backfill_confirmed_at(None).await.unwrap(), 0);
+    // Recorded once, never rewritten.
+    assert!(!db::set_line_confirmed_at(&pool, &first.id, h, "2000-01-01T00:00:00Z")
+        .await
+        .unwrap());
+    let kept = &db::lines(&pool, &run_id).await.unwrap()[0];
+    assert_eq!(kept.confirmed_at, Some(block_time(h)));
+    // A reorg that takes the payment out of the chain clears it together with the height.
+    db::unconfirm_line(&pool, &first.id).await.unwrap();
+    let reorged = &db::lines(&pool, &run_id).await.unwrap()[0];
+    assert!(reorged.confirmed_height.is_none() && reorged.confirmed_at.is_none());
 }
 
 async fn futures_all_mined(chain: &FakeChain, lines: &[db::LineRow]) -> bool {

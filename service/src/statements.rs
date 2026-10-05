@@ -117,13 +117,23 @@ pub struct Classified {
     pub allocations: Vec<AllocationOut>,
 }
 
+/// A block time (Unix seconds) as RFC 3339 UTC, such as `2026-10-05T11:42:10Z`. A run's pay
+/// lines show `confirmed_at` through this same function, so a payment's time is the same on the
+/// run and on every statement.
+pub fn block_time_rfc3339(unix: i64) -> Option<String> {
+    OffsetDateTime::from_unix_timestamp(unix)
+        .ok()?
+        .format(&time::format_description::well_known::Rfc3339)
+        .ok()
+}
+
 fn date_of(ts: Option<i64>) -> (Option<String>, Option<String>, Option<Date>) {
     match ts.and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok()) {
         Some(dt) => {
             let d = dt.date();
             (
                 Some(format!("{:04}-{:02}-{:02}", d.year(), u8::from(d.month()), d.day())),
-                dt.format(&time::format_description::well_known::Rfc3339).ok(),
+                ts.and_then(block_time_rfc3339),
                 Some(d),
             )
         }

@@ -11,12 +11,13 @@ use axum::{
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::sync::broadcast::error::RecvError;
 
 use super::AppStateRef;
 use crate::{
-    db::{self, NewLine},
+    db::{self, NewLine, NewRun, RunInsert, RunRow},
     error::{ApiError, ApiResult},
     memo,
     runs::validate_period,
@@ -52,6 +53,61 @@ struct CreateRun {
     period_end: String,
     lines: Vec<LineInput>,
     idempotency_key: Option<String>,
+    /// Create the run even when a run that is not cancelled covers part of its period (an extra
+    /// run, such as a bonus or a correction).
+    #[serde(default)]
+    allow_overlap: bool,
+}
+
+/// SHA-256 of a create request's canonical form: the period, and each line's contractor, amount
+/// and trimmed invoice reference, lines sorted, so the same payroll matches whatever the order
+/// of its lines. The idempotency key and `allow_overlap` are left out: they say how to create the
+/// run, not what it is.
+fn request_hash(input: &CreateRun) -> String {
+    let mut lines: Vec<String> = input
+        .lines
+        .iter()
+        .map(|l| json!([l.contractor_id, l.amount_usd_cents, l.invoice_ref.trim()]).to_string())
+        .collect();
+    lines.sort();
+    let canonical = json!([input.period_start, input.period_end, lines]).to_string();
+    hex::encode(Sha256::digest(canonical.as_bytes()))
+}
+
+/// The answer to a request whose idempotency key already created `existing`: that run (200)
+/// when the request is the same, else 409 `idempotency_mismatch`. A run created before request
+/// hashes were stored has none and is returned as before.
+async fn replay(s: &AppStateRef, existing: &RunRow, hash: &str) -> ApiResult<(StatusCode, Json<Value>)> {
+    if existing.idempotency_hash.as_deref().is_some_and(|h| h != hash) {
+        return Err(ApiError::conflict(
+            "idempotency_mismatch",
+            format!(
+                "This idempotency key already created run {} with a different period or different lines.",
+                existing.id
+            ),
+            "Send a new idempotency key to create another run. To get that run back, resend its original request unchanged.",
+        )
+        .with_runs(vec![existing.id.clone()]));
+    }
+    Ok((StatusCode::OK, Json(view(s, &existing.id).await?)))
+}
+
+fn overlap_error(start: &str, end: &str, runs: &[RunRow]) -> ApiError {
+    let listed = runs
+        .iter()
+        .map(|r| format!("{} ({} to {}, {})", r.id, r.period_start, r.period_end, r.status))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let count = match runs.len() {
+        1 => "a run that is".to_string(),
+        n => format!("{n} runs that are"),
+    };
+    ApiError::conflict(
+        "period_overlap",
+        format!("{start} to {end} overlaps {count} not cancelled: {listed}."),
+        "Paying a period twice pays these people twice. Finish, discard or cancel the other run, or choose another period. For an extra run (a bonus or a correction), send the request again with \"allow_overlap\": true.",
+    )
+    .with_runs(runs.iter().map(|r| r.id.clone()).collect())
 }
 
 async fn view(s: &AppStateRef, id: &str) -> ApiResult<Value> {
@@ -90,6 +146,7 @@ async fn discard(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
 }
 
 async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> ApiResult<(StatusCode, Json<Value>)> {
+    let hash = request_hash(&input);
     if let Some(key) = input.idempotency_key.as_deref() {
         if key.is_empty() || key.len() > 100 {
             return Err(ApiError::bad_request(
@@ -98,8 +155,10 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
                 "Send a fresh UUID per form submission.",
             ));
         }
+        // Before any other check: a retry gets its run back even if, say, a contractor on it was
+        // archived since, and never counts as overlapping the run it created.
         if let Some(existing) = db::get_run_by_key(&s.db, key).await? {
-            return Ok((StatusCode::OK, Json(view(&s, &existing.id).await?)));
+            return replay(&s, &existing, &hash).await;
         }
     }
     validate_period(&input.period_start, &input.period_end)?;
@@ -181,24 +240,18 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
             invoice_ref: invoice,
         });
     }
-    match db::insert_run(
-        &s.db,
-        input.idempotency_key.as_deref(),
-        &input.period_start,
-        &input.period_end,
-        &lines,
-    )
-    .await?
-    {
-        Some(id) => Ok((StatusCode::CREATED, Json(view(&s, &id).await?))),
-        None => {
-            // Lost a race with an identical submission.
-            let key = input.idempotency_key.unwrap_or_default();
-            let existing = db::get_run_by_key(&s.db, &key)
-                .await?
-                .ok_or_else(|| ApiError::internal("idempotency conflict"))?;
-            Ok((StatusCode::OK, Json(view(&s, &existing.id).await?)))
-        }
+    let run = NewRun {
+        idempotency_key: input.idempotency_key.as_deref(),
+        request_hash: Some(&hash),
+        period_start: &input.period_start,
+        period_end: &input.period_end,
+        allow_overlap: input.allow_overlap,
+    };
+    match db::create_run(&s.db, &run, &lines).await? {
+        RunInsert::Created(id) => Ok((StatusCode::CREATED, Json(view(&s, &id).await?))),
+        // Lost a race with a submission carrying the same key.
+        RunInsert::KeyExists(existing) => replay(&s, &existing, &hash).await,
+        RunInsert::Overlaps(runs) => Err(overlap_error(&input.period_start, &input.period_end, &runs)),
     }
 }
 

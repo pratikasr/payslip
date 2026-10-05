@@ -49,6 +49,9 @@ pub struct Payer {
     network: ZcashNetwork,
     params: Network,
     db_path: std::path::PathBuf,
+    /// A lightwalletd connection outside the wallet thread, for lookups that must not wait
+    /// behind a sync.
+    lwd: wallet::lwd::Client,
 }
 
 /// Encodes a unified address as ZIP 316 Revision 0 (`u1...` / `utest1...`), the form every
@@ -97,6 +100,7 @@ impl Payer {
             network: cfg.network,
             params,
             db_path: cfg.wallet_db_path(),
+            lwd: wallet::lwd::connect(&cfg.lightwalletd_url)?,
         };
         let configured_birthday = cfg.birthday_height;
         payer
@@ -291,6 +295,22 @@ impl Payer {
             &self.db_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?)
+    }
+
+    /// Unix time of the block at `height` (its header time): from the wallet's record of the
+    /// blocks it scanned (zcash_client_sqlite keeps one row per scanned block in `blocks`), else
+    /// from lightwalletd. Neither waits behind a wallet sync.
+    pub async fn block_time(&self, height: u32) -> anyhow::Result<i64> {
+        use rusqlite::OptionalExtension;
+        let recorded: Option<i64> = self
+            .read_conn()?
+            .query_row("SELECT time FROM blocks WHERE height = ?", [height], |r| r.get(0))
+            .optional()?;
+        if let Some(t) = recorded {
+            return Ok(t);
+        }
+        let mut client = self.lwd.clone();
+        wallet::lwd::block_time(&mut client, BlockHeight::from_u32(height)).await
     }
 
     /// The fee the wallet recorded for a transaction it knows, in zatoshis.

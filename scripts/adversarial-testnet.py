@@ -104,7 +104,8 @@ PERIOD = {"from": "2026-01-01", "to": TODAY}
 
 
 def run_body(lines, key=None, start="2026-09-01", end="2026-09-30"):
-    return {"period_start": start, "period_end": end, "lines": lines, "idempotency_key": key or str(uuid.uuid4())}
+    # Every scenario reuses one period on purpose, so overlaps with earlier runs are allowed.
+    return {"period_start": start, "period_end": end, "lines": lines, "idempotency_key": key or str(uuid.uuid4()), "allow_overlap": True}
 
 
 def line(c, cents=100_00, inv="INV-ADV-1"):

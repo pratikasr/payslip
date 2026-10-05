@@ -21,6 +21,7 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | 421 | `host_not_allowed` | the `Host` header is not the service's own address or one in `PAYSLIP_ALLOWED_HOSTS` |
   | 422 | `invalid_body` | a field is missing or has the wrong type; the message names the field |
 
+- An error about particular runs also names them in `error.runs`, a list of run ids (`period_overlap`, `idempotency_mismatch`); other errors have no `runs` field.
 - The payer endpoints (wallet, contractors, runs) are meant for the payer's own host. The statement endpoints take viewing keys only and never accept a spending key.
 
 ## Health and wallet
@@ -31,10 +32,10 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
 {"status": "ok", "network": "testnet", "lightwalletd": "https://testnet.zec.rocks:443",
  "chain_tip": 4465100, "wallet_synced_height": 4465100, "venue": "testnet-fixed-rate",
  "birthday_height": 4460000, "version": "0.1.0", "mode": "full" | "statements",
- "app_fee_bps": 0, "market_prices": true}
+ "app_fee_bps": 0, "market_prices": true, "simulated_rate_usd_per_zec": 1350000.0 | null}
 ```
 
-`mode` is `statements` when the service runs with `PAYSLIP_MODE=statements`: it holds no wallet, answers statements, payment proofs and health, and every payer endpoint (wallet, contractors, viewing keys and runs, reads included) returns 404 `statements_only`. Such a deployment is safe to host publicly for contractors, accountants and judges. `app_fee_bps` is Payslip's own fee on the USDC to ZEC funding swap (0 when none; ADR-020). `market_prices` says whether statements carry the market value of each payment at receipt (ADR-022).
+`mode` is `statements` when the service runs with `PAYSLIP_MODE=statements`: it holds no wallet, answers statements, payment proofs and health, and every payer endpoint (wallet, contractors, viewing keys and runs, reads included) returns 404 `statements_only`. Such a deployment is safe to host publicly for contractors, accountants and judges. `app_fee_bps` is Payslip's own fee on the USDC to ZEC funding swap (0 when none; ADR-020). `market_prices` says whether statements carry the market value of each payment at receipt (ADR-022). `simulated_rate_usd_per_zec` is the testnet venue's fixed rate in USD per ZEC (`PAYSLIP_TESTNET_RATE_USD`, default 1,350,000), the same value the run executor's venue funds every testnet run at, so a client can estimate a run's ZEC before any fill: `amount_usd_cents / 100 / simulated_rate_usd_per_zec` ZEC. It is `null` on mainnet, with any other venue, and in statements mode.
 
 `venue` is `near-intents-1click`, `maya` or `testnet-fixed-rate`. The testnet venue exists only when the service runs on testnet. `status` is `ok`, `degraded` (lightwalletd unreachable or a warning such as clock skew, listed in `warnings`) or `syncing` (the wallet is busy with a sync; heights come from the last snapshot). `clock_skew_seconds` is the server clock minus the tip block's time; blocks lag real time, so only a value past 15 minutes produces a warning. Health never waits for a wallet sync.
 
@@ -71,6 +72,7 @@ Contractor = {
 - `DELETE /api/contractors/{id}` archives the contractor. `409 contractor_in_active_run` if a run that includes them is in progress. A draft that includes an archived contractor cannot be funded (`409 contractor_archived`); discard it and create a new one.
 - `GET /api/contractors/{id}/viewing-key` returns `{"contractor_id", "account_index", "ufvk", "ufvk_wallet", "birthday_height", "network"}`. The `ufvk` string (ZIP 316 Revision 2, `uvf`/`uvftest`) is also the QR payload. `ufvk_wallet` is the same key in the Revision 0 form (`uview`/`uviewtest`) that released wallets such as Zingo and Zkool import; Payslip accepts either.
 - `POST /api/contractors/{id}/viewing-key/shared` records `fvk_shared_at` and returns the Contractor.
+- `DELETE /api/contractors/{id}/viewing-key/shared` undoes it: clears `fvk_shared_at` and returns `200` and the Contractor (also when it was not set). Like every write it needs `Content-Type: application/json`; the body may be `{}` or empty. It changes only the record: a key already handed over still reads the contractor's payments. `404 not_found` for an unknown or archived contractor.
 - `GET /api/viewing-keys` returns the accountant export: `{"network", "birthday_height", "keys": [{"label": "Treasury" | contractor name, "role": "treasury" | "contractor", "account_index", "ufvk", "contractor_id": "uuid" | null}]}`.
 
 ## Runs
@@ -104,12 +106,15 @@ PayLine = {
   "amount_usd_cents": 480000, "amount_zat": 354262000,
   "status": "pending" | "allocated" | "broadcast" | "confirmed" | "failed",
   "allocation_txid": "hex" | null, "txid": "hex" | null,
-  "confirmed_height": 4465123 | null, "explorer_url": "https://..." | null,
+  "confirmed_height": 4465123 | null, "confirmed_at": "2026-10-05T11:42:10Z" | null,
+  "explorer_url": "https://..." | null,
   "memo": "PS1|...", "error": null | {"code", "message", "hint"}
 }
 ```
 
 A line's `settlement_choice`, `payout_chain` and the address it pays are the contractor's as they were when the run was funded; a draft shows the current ones.
+
+`confirmed_at` is the block time (RFC 3339 UTC) of `confirmed_height`: `null` until the line is confirmed, set together with `confirmed_height`, and stored, so it does not change while the line stays confirmed. A reorg that takes the payment out of the chain clears both until it confirms again. The time is the block header's, the same time statements show as `block_time` for that txid, formatted the same way, so the date is the same on the run and on every statement. The service reads it from the payer wallet's record of the blocks it scanned, or else asks lightwalletd once. Lines confirmed before the service recorded block times, or while lightwalletd could not answer, get theirs at start-up or the next time their run is read (any of the run endpoints, the list, or the SSE snapshot); until then the field is `null` next to a `confirmed_height`.
 
 `fees_zat` is the network fees of the run's mined transactions: the allocation once it is mined and each confirmed payment. A transaction that expired unmined paid no fee and is not counted, so the figure grows as the run confirms.
 
@@ -118,7 +123,16 @@ A line's `settlement_choice`, `payout_chain` and the address it pays are the con
 A pay line's `error` can be set while the line is still in progress, as a warning: `broadcast_rejected` (the node refused the payment; it is rebuilt when it expires) or `waiting_for_funds` (the contractor account cannot cover the payment yet). A run stops with `failed` and one of these codes when the cause does not go away: `broadcast_rejected` (the node refused the same payment, or the allocation, three times), `line_underfunded` (a payment waited 120 blocks for funds), `treasury_insufficient` (the treasury no longer holds the allocation, for example because another run used it), or the funding codes below.
 
 - `GET /api/runs` returns `{"runs": [Run]}` newest first.
-- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid"}` returns `201` and the Run in `draft`. Repeating the same `idempotency_key` returns `200` and the existing Run. Errors: `invalid_amount` (zero or negative, or over $10,000,000 for one line), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long` (over 64 characters), `invalid_invoice_ref` (empty, or a character outside printable ASCII, or `|`, which separates memo fields). Every line needs an invoice reference because it is written into the encrypted memo.
+- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid", "allow_overlap": false}` returns `201` and the Run in `draft`. `idempotency_key` and `allow_overlap` are optional. Errors: `invalid_amount` (zero or negative, or over $10,000,000 for one line), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long` (over 64 characters), `invalid_invoice_ref` (empty, or a character outside printable ASCII, or `|`, which separates memo fields), `invalid_idempotency_key` (empty or over 100 characters), and the two `409`s below. Every line needs an invoice reference because it is written into the encrypted memo.
+  - Idempotency: the service stores a SHA-256 of the request's period and lines (each line's `contractor_id`, `amount_usd_cents` and trimmed `invoice_ref`; line order does not matter) with the key. Repeating the key with the same period and lines returns `200` and the existing Run, before any other check, so a retry never fails on validation or overlap. Repeating it with a different period or different lines is `409 idempotency_mismatch`, with the existing run's id in the message and in `error.runs`; use a new key for a new run. `allow_overlap` is not part of the comparison. A run created before the service stored request hashes keeps the old behaviour: its key returns it whatever the body.
+  - Overlap: a run whose period shares at least one day (inclusive) with a run that is not `cancelled` (drafts count) is `409 period_overlap`, after every other check passed. The message lists each overlapping run's id, period and status, and `error.runs` holds their ids, earliest period first. Send `"allow_overlap": true` to create the run anyway, for an extra run such as a bonus or a correction. The check is part of the insert, so two requests at once cannot both pass it.
+
+  ```json
+  {"error": {"code": "period_overlap",
+             "message": "2026-09-15 to 2026-10-15 overlaps a run that is not cancelled: 7c1e... (2026-09-01 to 2026-09-30, paid).",
+             "hint": "Paying a period twice pays these people twice. Finish, discard or cancel the other run, or choose another period. For an extra run (a bonus or a correction), send the request again with \"allow_overlap\": true.",
+             "runs": ["7c1e..."]}}
+  ```
 - `GET /api/runs/{id}` returns the Run.
 - `DELETE /api/runs/{id}` discards a run that is still a `draft` and returns `204`; any other status returns `409 run_not_draft`.
 - `POST /api/runs/{id}/fund` with `{"origin_chain": "base", "refund_address": "0x..."}` asks the venue for a quote and deposit address and returns the Run in `awaiting_funds`. The USD requested is the payroll plus 1.5 times the network fees and carried change the run needs (each converting line carries 25,000 zat, a held one 10,000), so the run is covered even if the fill comes in up to a third under the indicative price. On testnet with the testnet venue no deposit is needed: the run moves to `funded` at once if the treasury holds enough, otherwise `409 treasury_insufficient` with the treasury address in the hint. Funding again is allowed for a run that received no money (no fill, no allocation), in `awaiting_funds`, `funded` or `failed`, once its quote is closed: `expired` (including a deadline that passed), `refunded` or `failed`. The service asks the venue for the quote's current state first. Errors: `quote_still_open` (the deposit address is open until its deadline; pay it or wait), `deposit_in_progress` (the venue holds a deposit for the run, or a partial one: `incomplete`), `run_already_funded` (the run received its ZEC; execute it to resume), `run_cancelled`, `contractor_archived`.
