@@ -34,3 +34,7 @@ data/
 scripts/demo/mainnet.env
 scripts/demo/contractors.mainnet.json
 scripts/demo/out/
+
+# python
+__pycache__/
+*.pyc
