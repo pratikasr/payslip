@@ -31,11 +31,13 @@ The payer funds a run in USDC from any wallet. NEAR Intents swaps it to native Z
 
 Because each contractor has their own account, that account's viewing key shows their pay and nothing else. The contractor pastes it into Payslip and gets a period statement, ready for tax. The accountant holds every key and gets a reconciliation per run: funded USD against paid USD, with the variance explained to the cent by network fees and unspent ZEC. All of it is read straight from the chain. A block explorer sees shielded transactions with no amounts and no parties.
 
+Each statement line also carries the payment's market value when it arrived, in the contractor's own currency, and exports straight to Koinly or CoinTracker; the accountant's books export to Xero or QuickBooks. To prove a single payment to a landlord, bank or visa office, a contractor sends a link that opens that one payment, checked against the chain, and nothing else.
+
 Contractors who would rather have dollars can choose to have their pay converted to USDC on receipt, and Payslip states plainly what that leg reveals.
 
 Private to the world, transparent to your accountant.
 
-**How it uses Zcash.** Shielded payments into the Ironwood pool (NU6.3) in v6 transactions; one ZIP-32 account per contractor so a ZIP-316 unified full viewing key reveals exactly one person's payments; ZIP-302 memos as the pay line record; view-only wallets that scan with supplied keys to build statements; lightwalletd and `zcash_client_backend` 0.25.0-pre.0 for sync, note management, transaction building and proving.
+**How it uses Zcash.** Shielded payments into the Ironwood pool (NU6.3) in v6 transactions; single-payment proofs built from the output's outgoing cipher key, verified against the note commitment on chain; one ZIP-32 account per contractor so a ZIP-316 unified full viewing key reveals exactly one person's payments; ZIP-302 memos as the pay line record; view-only wallets that scan with supplied keys to build statements; lightwalletd and `zcash_client_backend` 0.25.0-pre.0 for sync, note management, transaction building and proving.
 
 **Technical stack.** Rust service (axum, `zcash_client_backend` and `zcash_client_sqlite`, SQLite), NEAR Intents 1Click for USDC to ZEC, Next.js 15 web app with wagmi and RainbowKit for the USDC deposit.
 
@@ -43,11 +45,11 @@ Private to the world, transparent to your accountant.
 
 **Demo video.** VERIFY: link after recording (docs/DEMO.md has the shot list).
 
-**Presentation video.** VERIFY: link after recording. Outline: the problem (payroll on public chains is public), the insight (one account per contractor makes a viewing key scoped to one person), the product (fund, pay, statement, reconciliation), proof on mainnet, business model, ask.
+**Presentation video.** VERIFY: link after recording. Word-for-word script in docs/LAUNCH.md.
 
-**Go-to-market.** Start with DAOs and remote-first crypto teams that already pay contractors in stablecoins and hand-assemble statements for tax: Zcash ecosystem grantees and teams, then teams paying through public-chain payroll tools today. Pricing: a monthly fee per active contractor seat plus a spread on the stablecoin to ZEC leg. Distribution through the Zcash community (Zcash Community Grants recipients, Zodl users) and accountants who serve crypto teams, since the accountant's reconciliation is the feature that replaces their manual work.
+**Go-to-market.** Start with DAOs and remote-first crypto teams that already pay contractors in stablecoins and hand-assemble statements for tax: Zcash ecosystem grantees and teams, then teams paying through public-chain payroll tools today. Pricing: 19 USD per active contractor per month hosted, plus 0.25% on the USDC to ZEC funding swap (collected through NEAR Intents app fees); self-hosting is free under MIT; contractors and accountants never pay. Deel and Rise list 49 USD per contractor per month for contractor payroll, and payroll through them is still public on chain when paid in crypto. Distribution through the Zcash community (Zcash Community Grants recipients, Zodl users) and accountants who serve crypto teams, since the accountant's reconciliation is the feature that replaces their manual work.
 
-**Demand validation.** Team: SPEC's plan is to run the team's own contractor payments through Payslip before submission and show the statements; add who was paid and any feedback from contractors or an accountant.
+**Demand validation.** Team: run the team's own contractor payments through Payslip before submission and show the statements; add who was paid and any feedback from contractors or an accountant. Outreach drafts for Zcash teams, grantees and an accountant are in docs/LAUNCH.md.
 
 **Pre-existing code.** None. Everything in the repository was written for this hackathon. Third-party libraries are dependencies listed in `service/Cargo.lock` and `web/pnpm-lock.yaml`. The `zcash/zcash-devtool` repository was read as a reference for how to call the wallet crates; no code was copied.
 

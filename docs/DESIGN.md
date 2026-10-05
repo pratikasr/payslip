@@ -496,3 +496,64 @@ Dark mode captured for every route at 375, 768 and 1440 px, plus the statement, 
 | No visible focus indicator on buttons, text inputs, text areas and tabs (Tailwind 4 `outline-none` zeroes the outline style that focus-visible reuses) | Buttons draw a solid 2 px accent outline on focus; inputs and text areas show their ring |
 | Date fields lost the ring while a date segment had focus | Inputs also show the ring on `:focus-within` |
 | Run activity printed block heights without separators | The service formats heights in activity messages (4,465,945) |
+
+## 14. Round 6: storytelling, first run, insights and demo polish
+
+Built 5 Oct 2026 for the four improvements the owner chose. Everything below reads from the service except the landing hero, which stays labelled as an illustration, and the testnet records on the landing page, which are copied from `docs/proof/` and were each checked on testnet.zecblock.com (all fifteen resolve at the recorded height as shielded transactions).
+
+### Landing (`/`)
+
+- **Unseal comparison** (`components/landing/unseal-demo.tsx`). The same pay line twice: the block explorer's copy stays sealed; on the accountant's copy a viewing key lifts each redaction bar in turn, left to right, and the pane edge turns gold. It plays once when it comes into view (about two seconds, so no pause control is needed under WCAG 2.2.2) and Replay runs it again. CSS keyframes only; reduced motion shows the opened state at once. This is the one deliberate exception to "no motion on load" in section 3. The memo is shown as its two real fields, period and invoice, so every row stays on one line.
+- **Three roles, three views** (`components/landing/roles.tsx`). Payer, contractor and accountant, each with the keys they hold (the payer's spending key drawn in gold, viewing keys in ink, seven for an accountant with six contractors), what they can see and what they cannot. An "Everyone else" strip states what an explorer sees. Replaces the old Who sees what table.
+- **See it on chain** (`components/landing/on-chain.tsx`, data in `testnet-proof.ts`). Both six-contractor rehearsals with every txid linked to the explorer, the allocation of each run, and the USDC-conversion example, badged Zcash testnet. No mainnet data is shown; the copy says the mainnet run is added to the README when it runs.
+- The pitch, Launch app and How it works are unchanged. A proof line under the buttons links to the on-chain section.
+
+### Payer first run (`components/payer/setup-guide.tsx`)
+
+Five steps, each ticked from API state, never by hand: fund the treasury (testnet: done when spendable is above zero or a run was funded; shows the full treasury address with Copy address, Open the testnet faucet and Check for funds, which syncs the wallet; mainnet: an information step saying USDC funding happens per run), add contractors (links to `/app/payer/contractors?add=1`, which opens the Add dialog), share viewing keys (done when every contractor has `fvk_shared_at`), create the first run, fund and execute it (links to the newest unfinished run). A segmented bar shows progress; done steps show one line of state ("6 contractors, accounts 1 to 6"). Hide guide is remembered in localStorage and applied before first paint by the boot script, so a hidden guide never flashes; Show setup guide in the page header brings it back while setup is incomplete. The guide disappears when every step is done. The faucet URL is a constant from Verified facts (the API does not return one).
+
+### Payroll insights (`components/insights/`, `lib/insights.ts`)
+
+- **Overview panel**: Paid to date (large), Not paid yet, Network fees paid (with the per-payment average; USD only on mainnet, because the testnet fixed rate is not a price), Contractors paid; a column chart of payroll by period (paid at the base, not paid yet stacked above in the lighter step, continuous months so gaps read as gaps, at least six and at most twelve); paid by contractor as horizontal bars, highest first, values at the tips, the tail past eight folded into "others"; runs by status as one part-to-whole bar in the status tones with a count beside each label. Shown once a run exists.
+- **Runs page strip**: Paid to date, Not paid yet (to fund and in progress counts), Network fees paid and a sparkline of paid USD by period (history in grey, latest period in the chart hue), linking to the full insights.
+- **Method** (dataviz skill): the data hue is violet, outside every status tone so a series never reads as a status; light `#4a3aa7` and dark `#9085e9` pass all six checks against the card surfaces `#ffffff` and `#151920` (contrast 8.56 and 5.64). The ordinal pair for "not paid yet", light `#a99fe0` and dark `#5a50a8`, passes the ordinal checks (2.41 and 2.64 against the card). Tokens `--viz` and `--viz-soft` in `globals.css`. Bars at most 24 px with a 4 px rounded data end and a square baseline, 2 px surface gaps between stacked segments, solid hairline grid, axis labels abbreviated ($30.4K) while tooltips and tables give full cents. Every chart has a text summary for screen readers, a Charts or Tables switch that swaps all three for real tables with totals, and the period chart takes focus and reads each month with the arrow keys (announced in a live region) as well as on hover.
+
+### Demo polish
+
+- **Live run progress** (`components/payer/run-progress.tsx`). One segment per pay line that fills in stages as SSE snapshots arrive (allocated a third, broadcast two thirds with a slow pulse, confirmed full), in the same tones as the line badges, names under each segment for runs of eight or fewer, counts per stage in words, the confirmed count in large type and the allocation transaction with its height. Shown while executing and kept, complete, on the Paid step. Rows whose status, txid or height changed flash once (1.6 s) and the new badge, txid and height rise in; nothing animates on page load.
+- **Bigger key numbers.** `Stat size="lg"` (28 to 32 px, proportional figures, smaller unit): run summary (total owed and total paid), statement totals (USD basis, received, payments), reconciliation totals (funded, paid, variance) under a new verdict banner ("Reconciled", "All N runs reconciled" or "N of M runs reconciled" with a count per other status; icon and words carry the state).
+- **Presenter mode** (`lib/presenter.ts`, `components/app/presenter-mode.tsx`). `?present=1` or Alt+P (Option+P on a Mac; a modifier so a stray key never triggers it) sets `data-present` on the root, scales the root size to 118.75 percent (type and spacing together; breakpoints unchanged), and hides `data-secondary` chrome: panel descriptions, the theme toggle, the landing footer. It lasts for the browser tab (sessionStorage), survives reloads without a flash, and `?present=0` or Alt+P turns it off.
+
+### Performance work
+
+The first Lighthouse pass after these changes scored the payer overview 74 (CLS 0.279) and the runs page 88 (CLS 0.154): the guide and the summary strip arrived after the client fetch and pushed content down. Fixes: the overview now renders wallet, contractors and runs on the server for its first paint (`lib/server-api.ts`, the same pattern as the run page) with the client refreshing on mount, and both pages swap their body in one step once all their data has answered.
+
+### Lighthouse 13.5.0, mobile, production build, 5 Oct 2026
+
+| Route | Performance | Accessibility | Best practices |
+| --- | --- | --- | --- |
+| `/` | 97 | 100 | 100 |
+| `/app` | 96 | 100 | 100 |
+| `/app/payer` | 95 | 100 | 100 |
+| `/app/payer/contractors` | 94 | 100 | 100 |
+| `/app/payer/runs` | 95 | 100 | 100 |
+| `/app/payer/runs/new` | 95 | 100 | 100 |
+| `/app/payer/runs/[id]` | 95 | 100 | 100 |
+| `/app/contractor` | 94 | 100 | 100 |
+| `/app/accountant` | 94 | 100 | 100 |
+
+CLS is 0 on every route except the new run form (0.005). Landing first-load JavaScript is 127 kB; no new dependencies were added (charts are HTML and CSS).
+
+### Pass 4 screenshot review
+
+Captured with `screenshots.mjs`, `screenshots-states.mjs` (now also insights as tables, dark run page, presenter mode at 1280x720 and, with `EMPTY_API_URL` pointing at a service on an empty testnet wallet, the first-run payer pages) and the new `screenshots-live.mjs`, which replays a paid run's own lines through their earlier statuses in the browser only (nothing is sent to the chain; files are named `-replay`). Both scripts now scroll each page before capture so in-view animations have played. No page was wider than its viewport.
+
+| Finding | Fix |
+| --- | --- |
+| Contractor bars subtracted a fixed label width from each percentage, so at 375 px a $3,950 bar drew 2 px wide | The label space is reserved outside the scale; bars are proportional; on phones the name sits above its bar |
+| First period label truncated ("Apr 20...") at 375 px | Month and year on two lines; the year only on the first month and on January |
+| Testnet txids wrapped onto two lines in the on-chain tables at 375 px | Links never wrap; tighter cell padding on phones |
+| Memo value truncated, then wrapped, in the accountant pane | Split into its real fields, Period and Invoice |
+| Run summary left a lone figure on a second row | Five columns at desktop width |
+| Empty workspace showed three "Create a run" actions | Insights appear once a run exists; the guide and the runs panel cover the first run |
+| "6of 6" read as one word by screen readers | A real space between the count and its label |

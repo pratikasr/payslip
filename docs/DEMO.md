@@ -89,13 +89,4 @@ After recording, generated contractor wallets can be swept back: `cd service && 
 
 ### Recording (product demo, three minutes at most)
 
-| Time | Show | Say |
-| --- | --- | --- |
-| 0:00 | Landing page, explorer versus accountant cards | Payroll on a public chain is a public document. Payslip pays contractors on Zcash, shielded, and gives each person a key to exactly their slice. |
-| 0:15 | Payer, contractors, Share viewing key | One account per contractor, so a contractor's key shows their pay and nothing else. |
-| 0:30 | The run with six lines, Fund step, wallet confirmation | Fund in USDC from any wallet; NEAR Intents swaps it to ZEC straight into the shielded pool. The fill rate is the USD basis. |
-| 0:55 | Execute run, rows turning Confirmed | One allocation, then six shielded payments, each with an encrypted memo: run, period, invoice, USD basis. |
-| 1:20 | Click a txid into zecblock.com | The explorer sees a shielded transaction. No amount, no sender, no recipient. |
-| 1:35 | Contractor page, paste key, statement; Priya's converted line | The contractor reads their own statement from the chain with their key, ready for tax. Priya chose USDC; the venue delivered it. |
-| 2:05 | Accountant page, import keys, Reconciled, Export CSV | The accountant holds every key: every run reconciled, funded against paid, the difference explained to the cent. |
-| 2:40 | Back to the landing headline | Private to the world, transparent to your accountant. |
+The word-for-word narration, timed against this click path, is in [LAUNCH.md](LAUNCH.md), along with the presentation video script. It adds two steps after the contractor statement: Prove this payment, opening the `/verify` link, and the Koinly and Xero exports.

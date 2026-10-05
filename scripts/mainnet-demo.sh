@@ -17,7 +17,8 @@
 #      USDC deposit address and waits for the deposit (pay it from the web app's Fund step
 #      or any wallet; set DEMO_DEPOSIT_TX to report the hash)
 #   6. executes it and streams progress until every line is confirmed
-#   7. writes scripts/demo/out/proof-<network>-<run>.md and the statement CSVs
+#   7. writes scripts/demo/out/proof-<network>-<run>.md, the statement CSVs and a judge kit
+#      (judge-kit-<network>.json: every viewing key plus one payment proof)
 #
 # Mainnet spends real money: the script stops before funding unless run with --yes or
 # confirmed interactively.
@@ -216,6 +217,28 @@ _, rec = call("POST", "/api/statements/accountant", {"ufvks": [k["ufvk"] for k i
 _, csv2 = call("POST", "/api/statements/accountant.csv", {"ufvks": [k["ufvk"] for k in keys], **period}, raw=True)
 open(os.path.join(OUT, f"reconciliation-{NET}.csv"), "wb").write(csv2)
 mine = next((r for r in rec["runs"] if r["run_id"] == rid), None)
+
+# 6. Judge kit: the viewing keys (no spending power) and one payment proof, so anyone can check
+# the run from the chain with a statements-only Payslip deployment.
+kit = {"network": NET, "run_id": rid, "keys": keys}
+first_line = next((l for l in run["lines"] if l["contractor_id"] == ids[0]), None)
+if first_line and first_line.get("txid"):
+    try:
+        code, pr = call("POST", "/api/proofs", {"ufvk": first["ufvk"], "txid": first_line["txid"]})
+    except SystemExit as e:  # the run is paid; a missing proof must not hide that
+        stamp(f"Payment proof not created: {e}")
+        code, pr = 0, {}
+    if code == 200 and pr.get("proofs"):
+        kit["payment_proof"] = {"contractor": first_line["contractor_name"], "txid": first_line["txid"],
+                                "token": pr["proofs"][0]["token"]}
+        md += ["", f"Payment proof for {first_line['contractor_name']} (discloses that one payment only): "
+               f"open `/verify#{pr['proofs'][0]['token']}` on any Payslip web app serving {NET}."]
+kit_path = os.path.join(OUT, f"judge-kit-{NET}.json")
+open(kit_path, "w").write(json.dumps(kit, indent=2) + "\n")
+md += ["", f"Judge kit (viewing keys and payment proof): `{os.path.basename(kit_path)}`. "
+       "Copy it to docs/judge/ to publish; viewing keys reveal these demo accounts' payments and cannot spend."]
+open(proof, "w").write("\n".join(md) + "\n")
+stamp(f"Judge kit written to {kit_path}")
 stamp(f"Accountant reconciliation for this run: {mine['status'] if mine else 'not found'}"
       + (f", variance ${mine['variance_usd_cents']/100:,.2f}, explained ${mine['explained_usd_cents']/100:,.2f}" if mine and mine.get('variance_usd_cents') is not None else ""))
 print("\n".join(md))

@@ -43,6 +43,23 @@ The same flow, run on Zcash testnet (NU7) through the API and the web app. Open 
 
 Round-by-round results: [docs/TEST-REPORT.md](docs/TEST-REPORT.md). The demo click path and timings: [docs/DEMO.md](docs/DEMO.md).
 
+## Check it yourself (for judges)
+
+Payslip's claim is "private to the world, transparent to your accountant". Each half can be checked without trusting us:
+
+1. **Private to the world.** Open any txid above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient.
+2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). In Payslip, Accountant, import that file and reconcile: every run, every line, funded against paid, read from the chain. Contractor, paste one key: that person's statement and nothing else. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
+3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
+
+Hosted statements page: VERIFY: URL after deploying the service with `PAYSLIP_MODE=statements` and the web app (needs a hosting account). To run the same thing locally, with no seed and no wallet:
+
+```
+cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4465600 cargo run --release -- serve
+cd web && pnpm install && pnpm build && pnpm start      # http://localhost:3000/app/accountant
+```
+
+`PAYSLIP_VIEWER_BIRTHDAY_HEIGHT` is where scans of unknown keys start; the kit's `birthday_height` keeps the first scan short. A statements-only service holds nothing that can spend. It scans the chain with the keys you paste and answers statements, reconciliations and payment proofs.
+
 ## Why Zcash, why now
 
 - Ironwood shielded pool (NU6.3, live on mainnet since 28 Jul 2026): every payment lands in it. No new value may enter Orchard; payments to a unified address's Orchard receiver are delivered into Ironwood in v6 transactions.
@@ -140,7 +157,7 @@ cd service && cargo test                                   # unit and executor t
 cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet
 cd service && cargo clippy --all-targets -- -D warnings && cargo audit
 cd web && pnpm lint && pnpm typecheck && pnpm build
-cd web && pnpm e2e                                         # browser tests: demo script, keyboard, camera QR, wallet funding
+cd web && pnpm e2e                                         # browser tests: demo script, payment proofs, keyboard, camera QR, wallet funding, setup guide
 python3 scripts/adversarial-testnet.py                      # adversarial scenarios against a testnet service
 ```
 
@@ -178,7 +195,17 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | Novelty | Per-contractor viewing keys plus a statement engine that reconciles funded USD against paid USD from the chain alone |
 | UX | Fund from a USDC wallet, pay in one click, statements by pasting a key; the user never handles a z-address |
 | Open source | This repo, MIT |
-| Business plan | Per-seat monthly fee per contractor plus a spread on the stablecoin to ZEC leg |
+| Business plan | Per-seat monthly fee per contractor plus an optional fee on the stablecoin to ZEC leg (`PAYSLIP_APP_FEE_BPS`, paid through NEAR Intents app fees); see Pricing |
+
+## Pricing
+
+| Plan | Price | For |
+| --- | --- | --- |
+| Self-hosted | Free, MIT | Teams that run their own service |
+| Hosted | 19 USD per active contractor per month, plus 0.25% on USDC to ZEC funding | Teams paying 5 to 50 contractors |
+| Accountant | Free | Statement and reconciliation access with the keys a client shares |
+
+For scale: Deel ("Hire contractors") and Rise ("Global Contractor", fiat and crypto) both list 49 USD per contractor per month (their pricing pages, 5 Oct 2026), and neither keeps salaries private on chain. Contractors and accountants never pay. The swap fee is set with `PAYSLIP_APP_FEE_BPS` and goes to a NEAR account through 1Click's app fees, folded into the run's fill rate so the books stay exact.
 
 ## Disclosures
 

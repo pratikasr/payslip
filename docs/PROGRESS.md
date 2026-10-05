@@ -2,6 +2,19 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 5 Oct 2026, judge-ready features and frontend polish
+
+- Payment proofs (ADR-021): a contractor creates a link that discloses one payment and nothing else; `GET /api/proofs/{token}` verifies it against the chain with no key. Live testnet test: Amara's payment 3c5513c5... opens with the proof, a one-bit change or the other action opens nothing, the treasury key has nothing to prove. Web: Prove on each statement line, public `/verify#pp1...` page that prints as a payslip with a QR code.
+- Market value at receipt (ADR-022): statement lines carry the CoinGecko ZEC price nearest the block time in 44 currencies; shown on mainnet only because testnet runs use a fixed rate.
+- Exports (ADR-023): Koinly and CoinTracker for contractors, Xero and QuickBooks for the accountant. Statements-only mode (`PAYSLIP_MODE=statements`) for a public judge deployment; viewing keys also shown in the Revision 0 form wallets import.
+- Swap fee (ADR-020): optional 1Click app fee on the funding swap, off by default; a dry quote confirmed 1Click accepts it.
+- Repeat a run: the new run form copies the last run's amounts.
+- Frontend: richer landing page (unseal animation, roles, every testnet txid, pricing), first-run setup guide, payroll insights charts, live run progress, presenter mode for recordings. Lighthouse mobile on all nine routes: performance 94 to 97, accessibility and best practices 100.
+- Judge kit: docs/judge/judge-kit-testnet.json (testnet viewing keys and a payment proof); `scripts/mainnet-demo.sh` writes the mainnet kit. README "Check it yourself" section, pricing (Deel and Rise list 49 USD per contractor per month, verified). docs/LAUNCH.md: presentation and demo video scripts, outreach drafts.
+- Checks: service fmt, clippy, 44 unit, 11 executor and 5 live testnet tests; web format, lint, typecheck, build; browser suite 13 of 13 (proof, keyboard, wallet funding, camera QR, payer guide). No testnet coins spent.
+- Next: the human steps below, then the mainnet run and recording.
+- Blocked: mainnet funds and DEMO_REFUND_ADDRESS; a hosting account for the public statements page; a NEAR account to receive the swap fee (optional); the Colosseum account and videos (human).
+
 ## 5 Oct 2026, frontend gaps closed
 
 - Wallet funding path verified short of signing: a stand-in wallet proves the Fund step switches to Base and requests exactly the quoted USDC transfer to the 1Click deposit address, reports the hash, and handles a rejection (web/e2e/wallet-fund.spec.ts).
