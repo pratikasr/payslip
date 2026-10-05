@@ -1008,7 +1008,10 @@ impl Executor {
                         db::transition(db, &run.id, &["allocating"], "swapped").await?;
                         self.log(
                             &run.id,
-                            format!("Allocation {txid} expired unmined at {exp}; rebuilding"),
+                            format!(
+                                "Allocation {txid} expired unmined at {}; rebuilding",
+                                money::format_count(exp.into())
+                            ),
                         )
                         .await;
                         return Ok(Outcome::Continue);
@@ -1020,7 +1023,11 @@ impl Executor {
             Some(h) => {
                 if run.allocation_height.is_none() {
                     db::set_allocation(db, &run.id, Some(&txid), Some(h)).await?;
-                    self.log(&run.id, format!("Allocation confirmed at height {h}")).await;
+                    self.log(
+                        &run.id,
+                        format!("Allocation confirmed at height {}", money::format_count(h.into())),
+                    )
+                    .await;
                 }
                 chain.sync().await?;
                 let lines = db::lines(db, &run.id).await?;
@@ -1193,8 +1200,15 @@ impl Executor {
                         if t + 1 >= h + self.inner.confirm_depth {
                             db::confirm_line(db, &l.id, h).await?;
                             pending -= 1;
-                            self.log(&run.id, format!("{} confirmed at height {h}", l.contractor_name))
-                                .await;
+                            self.log(
+                                &run.id,
+                                format!(
+                                    "{} confirmed at height {}",
+                                    l.contractor_name,
+                                    money::format_count(h.into())
+                                ),
+                            )
+                            .await;
                         }
                     }
                     None => {

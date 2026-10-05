@@ -46,6 +46,22 @@ Result (docs/proof/e2e-round2-85ea4bdc.json): run 85ea4bdc, allocation 892d24141
 
 Two earlier attempts failed on test code, not the app: a lookup matched the hidden mobile copy of a list, and the reconciliation table's accessible name sits on its scroll region. Both locators were fixed.
 
+### Browser tests added after Round 5
+
+`cd web && pnpm e2e` now runs four specs. On 5 Oct 2026 the whole suite passed in one run from a clean database (`scripts/fresh-testnet-env.sh final-check-2`): 8 tests in 6.5 minutes, demo run 99bb4eca (allocation at 4,466,042, six payments at 4,466,044, docs/proof/final-check-2.json).
+
+| Spec | What it proves |
+| --- | --- |
+| `e2e/demo.spec.ts` | The demo script through the browser on testnet (Round 2 above) |
+| `e2e/wallet-fund.spec.ts` | The mainnet Fund step with a stand-in EIP-1193 wallet and a fixture of a real 1Click quote: Connect Wallet from an unauthorised wallet, the wallet is switched to Base (0x2105) before anything is sent, and the only transaction requested is `transfer(0x992f...b8467, 32,510,000)` on the Base USDC contract from the payer with no ETH value; the hash is reported to the service. A rejection in the wallet shows "Nothing was sent" and reports nothing. No traffic leaves the machine |
+| `e2e/qr-scan.spec.ts` | The QR the payer's Share viewing key dialog renders is captured, converted to a video file and played to the Contractor page as its camera (Chromium fake capture); the page decodes exactly that key and loads the statement from the testnet service |
+| `e2e/keyboard.spec.ts` | Keyboard only: skip link, Launch app, a contractor statement, the Add contractor dialog (focus moves in, stays in, Escape closes, focus returns) and the new run form's announced errors; every Tab stop must show a visible outline or ring |
+
+Bugs these tests found and fixed:
+
+- Buttons, text inputs, text areas and tabs showed no focus indicator. In Tailwind 4, `outline-none` sets the outline style variable to `none`, and the focus-visible outline reused it, so a 2 px outline was drawn with style `none`. Buttons now set `focus-visible:outline-solid`; inputs and text areas use their focus ring.
+- Date fields lost their focus ring while a day, month or year segment had focus, because Chrome does not match `:focus-visible` on the input then. Inputs also show the ring on `:focus-within`.
+
 ## Round 3: adversarial
 
 Run: `python3 scripts/adversarial-testnet.py` against the testnet service (2026-10-05, 20 passed, 0 failed), plus the executor tests above and a real disk-full check.

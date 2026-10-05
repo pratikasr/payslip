@@ -140,7 +140,7 @@ cd service && cargo test                                   # unit and executor t
 cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet
 cd service && cargo clippy --all-targets -- -D warnings && cargo audit
 cd web && pnpm lint && pnpm typecheck && pnpm build
-cd web && pnpm e2e                                         # the demo script through the UI, on testnet
+cd web && pnpm e2e                                         # browser tests: demo script, keyboard, camera QR, wallet funding
 python3 scripts/adversarial-testnet.py                      # adversarial scenarios against a testnet service
 ```
 

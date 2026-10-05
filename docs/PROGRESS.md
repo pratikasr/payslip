@@ -2,6 +2,15 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 5 Oct 2026, frontend gaps closed
+
+- Wallet funding path verified short of signing: a stand-in wallet proves the Fund step switches to Base and requests exactly the quoted USDC transfer to the 1Click deposit address, reports the hash, and handles a rejection (web/e2e/wallet-fund.spec.ts).
+- Camera QR verified: a viewing key QR from the share dialog is decoded from a fake camera into a statement (web/e2e/qr-scan.spec.ts).
+- Keyboard-only flows verified (web/e2e/keyboard.spec.ts). Found and fixed: no visible focus indicator on buttons, inputs, text areas and tabs; date fields losing their ring.
+- Dark mode screenshots for every screen; activity heights formatted.
+- Full browser suite (8 tests) passed from a clean database; Lighthouse unchanged or better (performance 94 to 96, accessibility and best practices 100).
+- Remaining frontend item: WalletConnect (phone wallets) needs a project id in NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID; browser extension wallets work without it.
+
 ## 5 Oct 2026, M1 and M5 done; all five test rounds passed; M6 and M7 prepared
 
 - M1 Scaffold: done. Service, web and CI; CI green on main from 0bc26dc (web job needed pnpm pinned through packageManager). The workflow was then disabled at the operator's request and is re-enabled by the final commit of this session.

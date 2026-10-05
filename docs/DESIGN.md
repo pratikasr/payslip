@@ -441,7 +441,7 @@ A short page with Open the app and Home.
 | `/app/payer/contractors` | 94 | 100 | 100 |
 | `/app/payer/runs` | 95 | 100 | 100 |
 | `/app/payer/runs/new` | 95 | 100 | 100 |
-| `/app/payer/runs/[id]` | 93 | 100 | 100 |
+| `/app/payer/runs/[id]` | 94 | 100 | 100 |
 | `/app/contractor` | 94 | 100 | 100 |
 | `/app/accountant` | 94 | 100 | 100 |
 
@@ -486,3 +486,13 @@ Screens are captured by `web/scripts/screenshots.mjs` (every route) and `web/scr
 | Unit labels | TAZ throughout on testnet |
 | Long unlabelled list on testnet | Kept: faucet and fund-recycling deposits carry no Payslip memo and nothing is hidden. Recycling transfers now carry a descriptive memo |
 | Sticky header shown mid-page in full-page captures | Capture artifact of a sticky header in a scrolled page, not a layout defect |
+
+### Pass 3, 5 Oct 2026
+
+Dark mode captured for every route at 375, 768 and 1440 px, plus the statement, reconciliation and share-key states. Keyboard-only flows automated in `web/e2e/keyboard.spec.ts`.
+
+| Finding | Fix |
+| --- | --- |
+| No visible focus indicator on buttons, text inputs, text areas and tabs (Tailwind 4 `outline-none` zeroes the outline style that focus-visible reuses) | Buttons draw a solid 2 px accent outline on focus; inputs and text areas show their ring |
+| Date fields lost the ring while a date segment had focus | Inputs also show the ring on `:focus-within` |
+| Run activity printed block heights without separators | The service formats heights in activity messages (4,465,945) |

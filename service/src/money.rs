@@ -43,6 +43,19 @@ pub fn format_zec_signed(zat: i128) -> String {
     format!("{sign}{}", format_zec(zat.unsigned_abs() as u64))
 }
 
+/// `4,465,945` style, for block heights and counts in human-readable messages.
+pub fn format_count(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// `1234.56` style, always 2 decimals, no separators (for CSV).
 pub fn format_usd(cents: u64) -> String {
     format!("{}.{:02}", cents / 100, cents % 100)
@@ -117,6 +130,10 @@ mod tests {
         assert_eq!(format_usd(5), "0.05");
         assert_eq!(format_usd_signed(-1215), "-12.15");
         assert_eq!(format_rate(1_354_930_000), "1354.930000");
+        assert_eq!(format_count(4_465_945), "4,465,945");
+        assert_eq!(format_count(999), "999");
+        assert_eq!(format_count(1_000), "1,000");
+        assert_eq!(format_count(0), "0");
     }
 
     #[test]
