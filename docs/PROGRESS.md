@@ -11,6 +11,7 @@ Newest entry first. One entry per session: what moved, commit hashes, what is ne
 - Repeat a run: the new run form copies the last run's amounts.
 - Frontend: richer landing page (unseal animation, roles, every testnet txid, pricing), first-run setup guide, payroll insights charts, live run progress, presenter mode for recordings. Lighthouse mobile on all nine routes: performance 94 to 97, accessibility and best practices 100.
 - Judge kit: docs/judge/judge-kit-testnet.json (testnet viewing keys and a payment proof); `scripts/mainnet-demo.sh` writes the mainnet kit. README "Check it yourself" section, pricing (Deel and Rise list 49 USD per contractor per month, verified). docs/LAUNCH.md: presentation and demo video scripts, outreach drafts.
+- Commits: 421a520 (service), 9cba25b (web), 3153429 (docs), 4834748 (screenshots).
 - Checks: service fmt, clippy, 44 unit, 11 executor and 5 live testnet tests; web format, lint, typecheck, build; browser suite 13 of 13 (proof, keyboard, wallet funding, camera QR, payer guide). No testnet coins spent.
 - Next: the human steps below, then the mainnet run and recording.
 - Blocked: mainnet funds and DEMO_REFUND_ADDRESS; a hosting account for the public statements page; a NEAR account to receive the swap fee (optional); the Colosseum account and videos (human).
