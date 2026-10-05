@@ -54,9 +54,9 @@ struct CreateRun {
 }
 
 async fn view(s: &AppStateRef, id: &str) -> ApiResult<Value> {
-    let mut v = s.executor.run_view(id).await?;
+    let mut v = s.executor()?.run_view(id).await?;
     if let Some(o) = v.as_object_mut() {
-        o.insert("executing".into(), Value::Bool(s.executor.is_running(id)));
+        o.insert("executing".into(), Value::Bool(s.executor()?.is_running(id)));
         o.insert("network".into(), Value::String(s.cfg.network.as_str().into()));
     }
     Ok(v)
@@ -71,7 +71,7 @@ async fn list(State(s): State<AppStateRef>) -> ApiResult<Json<Value>> {
 }
 
 async fn get_one(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
-    let _ = s.executor.refresh_conversions(&id).await;
+    let _ = s.executor()?.refresh_conversions(&id).await;
     Ok(Json(view(&s, &id).await?))
 }
 
@@ -213,12 +213,14 @@ async fn fund(
     body: Option<Json<FundInput>>,
 ) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
-    s.executor.fund(&id, input.origin_chain, input.refund_address).await?;
+    s.executor()?
+        .fund(&id, input.origin_chain, input.refund_address)
+        .await?;
     Ok(Json(view(&s, &id).await?))
 }
 
 async fn funding(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
-    s.executor.refresh_funding(&id).await?;
+    s.executor()?.refresh_funding(&id).await?;
     Ok(Json(view(&s, &id).await?))
 }
 
@@ -240,12 +242,12 @@ async fn deposit_tx(
             "Paste the hash your wallet showed after sending the USDC.",
         ));
     }
-    s.executor.submit_deposit(&id, h).await?;
+    s.executor()?.submit_deposit(&id, h).await?;
     Ok(Json(view(&s, &id).await?))
 }
 
 async fn execute(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<(StatusCode, Json<Value>)> {
-    s.executor.start(&id).await?;
+    s.executor()?.start(&id).await?;
     Ok((StatusCode::ACCEPTED, Json(view(&s, &id).await?)))
 }
 
@@ -259,7 +261,7 @@ async fn events(
     Path(id): Path<String>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     view(&s, &id).await?;
-    let rx = s.executor.subscribe();
+    let rx = s.executor()?.subscribe();
     let stream = futures_util::stream::unfold((s, id, rx, 0i64, true), |(s, id, mut rx, last, first)| async move {
         if !first {
             loop {

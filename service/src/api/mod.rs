@@ -1,6 +1,7 @@
 //! HTTP API (docs/API.md).
 
 mod contractors;
+mod proofs;
 mod runs;
 mod statements;
 
@@ -19,7 +20,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use crate::{
     config::Config,
     db::{self, Pool},
-    error::ApiResult,
+    error::{ApiError, ApiResult},
     payer::{Payer, WalletInfo},
     runs::Executor,
     venue::{self, SwapVenue},
@@ -29,18 +30,41 @@ use crate::{
 pub struct AppState {
     pub cfg: Config,
     pub db: Pool,
-    pub payer: Payer,
+    /// None in statements-only mode.
+    pub payer: Option<Payer>,
     pub viewers: ViewerRegistry,
     pub venue: Arc<dyn SwapVenue>,
-    pub executor: Executor,
+    /// None in statements-only mode.
+    pub executor: Option<Executor>,
     pub contractor_lock: tokio::sync::Mutex<()>,
     /// A lightwalletd connection of its own, so health never waits behind a wallet sync.
     pub lwd: tokio::sync::Mutex<crate::wallet::lwd::Client>,
     /// The last wallet snapshot, served by health while the wallet thread is busy syncing.
     pub last_wallet: std::sync::Mutex<Option<WalletInfo>>,
+    /// ZEC market prices for the value of a payment at receipt.
+    pub prices: crate::prices::Prices,
 }
 
 pub type AppStateRef = Arc<AppState>;
+
+fn statements_only() -> ApiError {
+    ApiError::new(
+        axum::http::StatusCode::NOT_FOUND,
+        "statements_only",
+        "This Payslip deployment serves statements and payment proofs only; it holds no wallet.",
+        "To pay contractors, run your own Payslip service: see the Quick start in the README.",
+    )
+}
+
+impl AppState {
+    pub fn payer(&self) -> ApiResult<&Payer> {
+        self.payer.as_ref().ok_or_else(statements_only)
+    }
+
+    pub fn executor(&self) -> ApiResult<&Executor> {
+        self.executor.as_ref().ok_or_else(statements_only)
+    }
+}
 
 /// Builds the state: opens databases, unlocks the payer wallet, refuses to mix networks.
 pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
@@ -56,11 +80,18 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         Some(_) => {}
         None => db::set_setting(&db, "network", cfg.network.as_str()).await?,
     }
-    let payer = Payer::open(&cfg).await.context("opening the payer wallet")?;
     let venue = venue::build(&cfg)?;
-    let executor = Executor::new(cfg.clone(), db.clone(), payer.clone(), venue.clone());
+    let (payer, executor) = if cfg.statements_only {
+        (None, None)
+    } else {
+        let payer = Payer::open(&cfg).await.context("opening the payer wallet")?;
+        let executor = Executor::new(cfg.clone(), db.clone(), payer.clone(), venue.clone());
+        (Some(payer), Some(executor))
+    };
     let lightwalletd_url = cfg.lightwalletd_url.clone();
+    let prices = crate::prices::Prices::new(cfg.price_api_url.clone(), cfg.price_api_key.clone());
     Ok(Arc::new(AppState {
+        prices,
         viewers: ViewerRegistry::new(&cfg),
         cfg,
         db,
@@ -83,7 +114,9 @@ pub fn router(state: AppStateRef) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
-        .allow_headers([axum::http::header::CONTENT_TYPE]);
+        .allow_headers([axum::http::header::CONTENT_TYPE])
+        // Lets the web app name downloaded files the way the service does (per export format).
+        .expose_headers([axum::http::header::CONTENT_DISPOSITION]);
     Router::new()
         .route("/api/health", get(health))
         .route("/api/wallet", get(wallet))
@@ -91,6 +124,7 @@ pub fn router(state: AppStateRef) -> Router {
         .merge(contractors::routes())
         .merge(runs::routes())
         .merge(statements::routes())
+        .merge(proofs::routes())
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
@@ -100,28 +134,36 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
     let bind = cfg.bind;
     let state = build_state(cfg).await?;
     // Keep the payer wallet near the tip so funding and balances are current.
-    let bg = state.clone();
-    tokio::spawn(async move {
-        loop {
-            if let Err(e) = bg.payer.sync().await {
-                tracing::warn!("background sync failed: {e:#}");
-            }
-            if let Ok(info) = bg.payer.wallet_info().await {
-                if let Ok(mut last) = bg.last_wallet.lock() {
-                    *last = Some(info);
+    if let Some(payer) = state.payer.clone() {
+        let bg = state.clone();
+        tokio::spawn(async move {
+            loop {
+                if let Err(e) = payer.sync().await {
+                    tracing::warn!("background sync failed: {e:#}");
                 }
+                if let Ok(info) = payer.wallet_info().await {
+                    if let Ok(mut last) = bg.last_wallet.lock() {
+                        *last = Some(info);
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(30)).await;
             }
-            tokio::time::sleep(Duration::from_secs(30)).await;
-        }
-    });
-    state.executor.resume_all().await;
+        });
+    }
+    if let Some(executor) = &state.executor {
+        executor.resume_all().await;
+    }
     let listener = tokio::net::TcpListener::bind(bind)
         .await
         .with_context(|| format!("binding {bind}"))?;
     tracing::info!(
-        "Payslip service on http://{bind} ({}, venue {})",
+        "Payslip service on http://{bind} ({}, {})",
         state.cfg.network.as_str(),
-        state.venue.kind().as_str()
+        if state.cfg.statements_only {
+            "statements only".to_string()
+        } else {
+            format!("venue {}", state.venue.kind().as_str())
+        }
     );
     axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown())
@@ -148,6 +190,12 @@ struct Health {
     /// block intervals, so only a large value means the server clock is wrong.
     clock_skew_seconds: Option<i64>,
     warnings: Vec<String>,
+    /// full, or statements (no wallet; statements and payment proofs only)
+    mode: &'static str,
+    /// Payslip's fee on the funding swap in basis points, 0 when none (NEAR Intents only).
+    app_fee_bps: u32,
+    /// Whether statements carry the market value of each payment at receipt.
+    market_prices: bool,
 }
 
 /// Skew beyond which the server clock is reported as wrong (block times lag by minutes).
@@ -166,15 +214,18 @@ pub fn clock_warning(skew: i64) -> Option<String> {
 async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
     // The wallet thread may be busy with a long sync; answer from the last snapshot rather than
     // keep the caller waiting.
-    let (info, syncing) = match tokio::time::timeout(Duration::from_secs(3), s.payer.wallet_info()).await {
-        Ok(Ok(info)) => {
-            if let Ok(mut last) = s.last_wallet.lock() {
-                *last = Some(info.clone());
+    let (info, syncing) = match &s.payer {
+        None => (None, false),
+        Some(payer) => match tokio::time::timeout(Duration::from_secs(3), payer.wallet_info()).await {
+            Ok(Ok(info)) => {
+                if let Ok(mut last) = s.last_wallet.lock() {
+                    *last = Some(info.clone());
+                }
+                (Some(info), false)
             }
-            (Some(info), false)
-        }
-        Ok(Err(e)) => return Err(e.into()),
-        Err(_) => (s.last_wallet.lock().ok().and_then(|l| l.clone()), true),
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => (s.last_wallet.lock().ok().and_then(|l| l.clone()), true),
+        },
     };
     let tip = tokio::time::timeout(Duration::from_secs(10), async {
         let mut client = s.lwd.lock().await;
@@ -203,8 +254,22 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         lightwalletd: s.cfg.lightwalletd_url.clone(),
         chain_tip,
         wallet_synced_height: info.as_ref().map(|i| i.synced_height).unwrap_or(0),
-        birthday_height: info.as_ref().map(|i| i.birthday_height).unwrap_or(0),
-        venue: s.venue.kind().as_str(),
+        birthday_height: info
+            .as_ref()
+            .map(|i| i.birthday_height)
+            .unwrap_or(s.cfg.viewer_birthday_height),
+        venue: if s.cfg.statements_only {
+            "none"
+        } else {
+            s.venue.kind().as_str()
+        },
+        mode: if s.cfg.statements_only { "statements" } else { "full" },
+        app_fee_bps: if s.cfg.venue == crate::config::VenueKind::NearIntents && s.cfg.app_fee_recipient.is_some() {
+            s.cfg.app_fee_bps
+        } else {
+            0
+        },
+        market_prices: s.prices.enabled(),
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,
         clock_skew_seconds: skew,
@@ -213,12 +278,12 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
 }
 
 async fn wallet(State(s): State<AppStateRef>) -> ApiResult<Json<WalletInfo>> {
-    Ok(Json(s.payer.wallet_info().await?))
+    Ok(Json(s.payer()?.wallet_info().await?))
 }
 
 async fn wallet_sync(State(s): State<AppStateRef>) -> ApiResult<Json<WalletInfo>> {
-    s.payer.sync().await?;
-    Ok(Json(s.payer.wallet_info().await?))
+    s.payer()?.sync().await?;
+    Ok(Json(s.payer()?.wallet_info().await?))
 }
 
 #[cfg(test)]

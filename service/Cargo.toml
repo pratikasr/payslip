@@ -26,6 +26,8 @@ zcash_protocol = "=0.11.0-pre.0"
 zcash_address = "=0.14.0-pre.0"
 zip321 = "=0.10.0-pre.0"
 zip32 = "0.3"
+orchard = "0.16"
+zcash_note_encryption = "0.5"
 zcash_transparent = { version = "=0.11.0-pre.0", features = ["transparent-inputs"] }
 tonic = { version = "0.14", features = ["tls-webpki-roots", "transport"] }
 rand = "0.10"
@@ -62,6 +64,7 @@ anyhow = "1"
 thiserror = "2"
 sha2 = "0.11"
 hex = "0.4"
+base64 = "0.22"
 csv = "1.4"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }

@@ -75,6 +75,19 @@ pub async fn tip_time(client: &mut Client) -> anyhow::Result<(u32, i64)> {
     Ok((u32::from(tip), i64::from(block.time)))
 }
 
+/// Timestamp (Unix seconds) of the block at `height`.
+pub async fn block_time(client: &mut Client, height: BlockHeight) -> anyhow::Result<i64> {
+    let block = client
+        .get_block(BlockId {
+            height: u64::from(height),
+            hash: vec![],
+        })
+        .await
+        .with_context(|| format!("GetBlock at {height}"))?
+        .into_inner();
+    Ok(i64::from(block.time))
+}
+
 pub async fn tree_state(client: &mut Client, height: BlockHeight) -> anyhow::Result<service::TreeState> {
     Ok(client
         .get_tree_state(BlockId {

@@ -42,6 +42,14 @@ impl ZcashNetwork {
         }
     }
 
+    /// NU6.3 (Ironwood) activation height (Verified facts, 5 Oct 2026): payments start here.
+    pub fn ironwood_activation_height(&self) -> u32 {
+        match self {
+            ZcashNetwork::Mainnet => 3_428_143,
+            ZcashNetwork::Testnet => 4_134_000,
+        }
+    }
+
     /// Explorer link for a transaction.
     pub fn explorer_tx_url(&self, txid: &str) -> String {
         match self {
@@ -83,6 +91,19 @@ pub struct Config {
     pub maya_api_url: String,
     pub min_confirmations: u32,
     pub birthday_height: Option<u32>,
+    /// `statements`: no wallet and no seed; serves statements and payment proofs only, so it is
+    /// safe to host publicly for judges and contractors.
+    pub statements_only: bool,
+    /// Where view-only scans start for keys this deployment does not know.
+    pub viewer_birthday_height: u32,
+    /// ZEC market price API (CoinGecko v3 base URL); None when PAYSLIP_PRICE_API_URL=off.
+    pub price_api_url: Option<String>,
+    /// Optional CoinGecko demo API key, for higher rate limits.
+    pub price_api_key: Option<String>,
+    /// Payslip's fee on the USDC to ZEC funding swap, in basis points (0 = none).
+    pub app_fee_bps: u32,
+    /// NEAR account that receives the fee (required when `app_fee_bps` > 0).
+    pub app_fee_recipient: Option<String>,
 }
 
 fn var(name: &str) -> Option<String> {
@@ -112,6 +133,20 @@ impl Config {
                 .context("PAYSLIP_TESTNET_RATE_USD must be a positive decimal such as 1350000.00")?,
             None => DEFAULT_TESTNET_RATE_E6,
         };
+        let app_fee_bps = match var("PAYSLIP_APP_FEE_BPS") {
+            Some(s) => s
+                .parse::<u32>()
+                .ok()
+                .filter(|v| *v <= 300)
+                .context("PAYSLIP_APP_FEE_BPS must be a whole number of basis points from 0 to 300")?,
+            None => 0,
+        };
+        let app_fee_recipient = var("PAYSLIP_APP_FEE_RECIPIENT");
+        if app_fee_bps > 0 && app_fee_recipient.is_none() {
+            bail!(
+                "PAYSLIP_APP_FEE_BPS is set, so PAYSLIP_APP_FEE_RECIPIENT must name the NEAR account that receives it"
+            );
+        }
         let min_confirmations = match var("PAYSLIP_MIN_CONFIRMATIONS") {
             Some(s) => s
                 .parse::<u32>()
@@ -138,6 +173,25 @@ impl Config {
             near_intents_jwt: var("NEAR_INTENTS_JWT"),
             maya_api_url: var("MAYA_API_URL").unwrap_or_else(|| "https://mayanode.mayachain.info".into()),
             min_confirmations,
+            statements_only: match var("PAYSLIP_MODE").as_deref() {
+                None | Some("full") => false,
+                Some("statements") => true,
+                Some(other) => bail!("PAYSLIP_MODE must be full or statements, got {other:?}"),
+            },
+            viewer_birthday_height: match var("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT") {
+                Some(s) => s
+                    .parse()
+                    .context("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT must be a block height")?,
+                None => network.ironwood_activation_height(),
+            },
+            price_api_url: match var("PAYSLIP_PRICE_API_URL").as_deref() {
+                Some("off") => None,
+                Some(url) => Some(url.to_string()),
+                None => Some("https://api.coingecko.com/api/v3".into()),
+            },
+            price_api_key: var("PAYSLIP_PRICE_API_KEY"),
+            app_fee_bps,
+            app_fee_recipient,
             birthday_height: var("PAYSLIP_BIRTHDAY_HEIGHT")
                 .map(|s| s.parse())
                 .transpose()

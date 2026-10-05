@@ -33,6 +33,23 @@ fn looks_like_seed_phrase(s: &str) -> bool {
     words.len() >= 12 && words.iter().all(|w| w.chars().all(|c| c.is_ascii_lowercase()))
 }
 
+/// The same key encoded as ZIP 316 Revision 0 (`uview1` / `uviewtest1`), the form released
+/// wallets such as Zingo and Zkool import today. Payslip's own pages accept either form.
+pub fn encode_ufvk_r0(params: &Network, ufvk: &UnifiedFullViewingKey) -> anyhow::Result<String> {
+    use zcash_address::unified::{self, Container as _, Encoding as _};
+    use zcash_protocol::consensus::Parameters;
+    let (net, _, parsed) = unified::Ufvk::decode(&ufvk.encode(params)).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let items: Vec<_> = parsed
+        .items()
+        .into_iter()
+        .filter(|i| !matches!(i, unified::Fvk::Unknown { .. }))
+        .map(unified::Uitem::Data)
+        .collect();
+    let r0 = unified::Ufvk::try_from_items(unified::Revision::R0, items).map_err(|e| anyhow::anyhow!("{e}"))?;
+    debug_assert_eq!(net, params.network_type());
+    Ok(r0.encode(&net))
+}
+
 pub fn fingerprint_of(params: &Network, ufvk: &UnifiedFullViewingKey) -> String {
     let digest = Sha256::digest(ufvk.encode(params).as_bytes());
     hex::encode(&digest[..8])
@@ -306,6 +323,20 @@ fn read_outputs(path: &PathBuf, by_uuid: &HashMap<uuid::Uuid, String>) -> anyhow
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revision_0_encoding_is_the_same_key() {
+        let params = Network::TestNetwork;
+        let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[7u8; 32], zip32::AccountId::ZERO).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let r0 = encode_ufvk_r0(&params, &ufvk).unwrap();
+        assert!(r0.starts_with("uviewtest1"), "{r0}");
+        let r2 = ufvk.encode(&params);
+        assert!(r2.starts_with("uvftest1"), "{r2}");
+        let a = ViewingKey::parse(&ZcashNetwork::Testnet, &r0).unwrap();
+        let b = ViewingKey::parse(&ZcashNetwork::Testnet, &r2).unwrap();
+        assert_eq!(a.fingerprint, b.fingerprint);
+    }
 
     #[test]
     fn a_mainnet_key_on_testnet_names_the_mismatch() {

@@ -149,10 +149,10 @@ pub trait SwapVenue: Send + Sync {
 
 pub fn build(cfg: &Config) -> anyhow::Result<Arc<dyn SwapVenue>> {
     Ok(match cfg.venue {
-        VenueKind::NearIntents => Arc::new(NearIntents1Click::new(
-            cfg.near_intents_api_url.clone(),
-            cfg.near_intents_jwt.clone(),
-        )?),
+        VenueKind::NearIntents => Arc::new(
+            NearIntents1Click::new(cfg.near_intents_api_url.clone(), cfg.near_intents_jwt.clone())?
+                .with_app_fee(cfg.app_fee_recipient.clone(), cfg.app_fee_bps),
+        ),
         VenueKind::Maya => Arc::new(Maya::new(cfg.maya_api_url.clone())?),
         VenueKind::TestnetFixedRate => {
             anyhow::ensure!(
@@ -292,6 +292,8 @@ pub struct NearIntents1Click {
     base: String,
     jwt: Option<String>,
     http: reqwest::Client,
+    /// Payslip's own fee on the funding swap: NEAR account and basis points (ADR-020).
+    app_fee: Option<(String, u32)>,
 }
 
 impl NearIntents1Click {
@@ -304,7 +306,23 @@ impl NearIntents1Click {
             base: base.trim_end_matches('/').to_string(),
             jwt,
             http,
+            app_fee: None,
         })
+    }
+
+    /// Adds an application fee to every funding quote. 1Click deducts it from the deposit, so it
+    /// lands in the run's fill rate and USD basis like the venue's own fee.
+    pub fn with_app_fee(mut self, recipient: Option<String>, bps: u32) -> Self {
+        self.app_fee = recipient.filter(|_| bps > 0).map(|r| (r, bps));
+        self
+    }
+
+    /// The `appFees` field of a quote request.
+    pub fn app_fees_json(&self) -> Value {
+        match &self.app_fee {
+            Some((recipient, bps)) => json!([{ "recipient": recipient, "fee": bps }]),
+            None => json!([]),
+        }
     }
 
     fn req(&self, b: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
@@ -432,6 +450,7 @@ impl SwapVenue for NearIntents1Click {
             "recipient": req.recipient,
             "recipientType": "DESTINATION_CHAIN",
             "deadline": deadline,
+            "appFees": self.app_fees_json(),
         });
         let resp = self
             .send(self.http.post(format!("{}/v0/quote", self.base)).json(&body))
@@ -713,6 +732,18 @@ impl SwapVenue for Maya {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn app_fee_goes_into_the_quote_only_when_configured() {
+        let v = NearIntents1Click::new("https://x".into(), None).unwrap();
+        assert_eq!(v.app_fees_json(), json!([]));
+        let v = v.with_app_fee(Some("payslip.near".into()), 50);
+        assert_eq!(v.app_fees_json(), json!([{"recipient": "payslip.near", "fee": 50}]));
+        let v = NearIntents1Click::new("https://x".into(), None)
+            .unwrap()
+            .with_app_fee(Some("payslip.near".into()), 0);
+        assert_eq!(v.app_fees_json(), json!([]));
+    }
 
     #[test]
     fn near_status_mapping_covers_every_documented_value() {

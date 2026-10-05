@@ -210,7 +210,7 @@ async fn create(
         ));
     }
     let index = db::next_account_index(&s.db).await?;
-    let (_ufvk, birthday) = s.payer.ensure_account(index, new.name.clone()).await?;
+    let (_ufvk, birthday) = s.payer()?.ensure_account(index, new.name.clone()).await?;
     let c = db::insert_contractor(&s.db, &new, index, birthday).await?;
     Ok((StatusCode::CREATED, Json(c)))
 }
@@ -262,17 +262,21 @@ struct ViewingKeyOut {
     contractor_id: String,
     account_index: i64,
     ufvk: String,
+    /// The same key in the older Revision 0 form (`uview`), for wallets such as Zingo and Zkool.
+    ufvk_wallet: String,
     birthday_height: i64,
     network: &'static str,
 }
 
 async fn viewing_key(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<ViewingKeyOut>> {
     let c = get_contractor(&s, &id).await?;
-    let ufvk = s.payer.ufvk(c.account_index as u32).await?;
+    let ufvk = s.payer()?.ufvk(c.account_index as u32).await?;
+    let ufvk_wallet = wallet_form(&s, &ufvk)?;
     Ok(Json(ViewingKeyOut {
         contractor_id: c.id,
         account_index: c.account_index,
         ufvk,
+        ufvk_wallet,
         birthday_height: c.account_birthday_height,
         network: s.cfg.network.as_str(),
     }))
@@ -290,27 +294,32 @@ struct ExportKey {
     role: &'static str,
     account_index: u32,
     ufvk: String,
+    ufvk_wallet: String,
     contractor_id: Option<String>,
     birthday_height: u32,
 }
 
 async fn all_viewing_keys(State(s): State<AppStateRef>) -> ApiResult<Json<serde_json::Value>> {
-    let info = s.payer.wallet_info().await?;
+    let info = s.payer()?.wallet_info().await?;
+    let treasury = s.payer()?.ufvk(TREASURY_INDEX).await?;
     let mut keys = vec![ExportKey {
         label: "Treasury".into(),
         role: "treasury",
         account_index: TREASURY_INDEX,
-        ufvk: s.payer.ufvk(TREASURY_INDEX).await?,
+        ufvk_wallet: wallet_form(&s, &treasury)?,
+        ufvk: treasury,
         contractor_id: None,
         birthday_height: info.birthday_height,
     }];
     // Archived contractors stay in the export: their history is still part of the books.
     for c in db::all_contractors(&s.db).await? {
+        let ufvk = s.payer()?.ufvk(c.account_index as u32).await?;
         keys.push(ExportKey {
             label: c.name.clone(),
             role: "contractor",
             account_index: c.account_index as u32,
-            ufvk: s.payer.ufvk(c.account_index as u32).await?,
+            ufvk_wallet: wallet_form(&s, &ufvk)?,
+            ufvk,
             contractor_id: Some(c.id.clone()),
             birthday_height: c.account_birthday_height as u32,
         });
@@ -320,4 +329,11 @@ async fn all_viewing_keys(State(s): State<AppStateRef>) -> ApiResult<Json<serde_
         "birthday_height": info.birthday_height,
         "keys": keys,
     })))
+}
+
+/// The Revision 0 (`uview`) form of a key, for wallets that do not read Revision 2 yet.
+fn wallet_form(s: &AppStateRef, ufvk: &str) -> ApiResult<String> {
+    let params = s.cfg.network.params();
+    let key = zcash_keys::keys::UnifiedFullViewingKey::decode(&params, ufvk).map_err(ApiError::internal)?;
+    Ok(crate::viewer::encode_ufvk_r0(&params, &key)?)
 }

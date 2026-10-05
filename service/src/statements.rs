@@ -45,6 +45,8 @@ pub struct Line {
     /// deposit address for conversion to USDC (ADR-018), memo on the change output.
     pub settlement: &'static str,
     pub to_address: Option<String>,
+    /// Market value of the payment when it was mined, filled in by the API when prices are on.
+    pub market: Option<crate::prices::MarketValue>,
     #[serde(skip)]
     pub fee_zat: Option<u64>,
     #[serde(skip)]
@@ -230,6 +232,7 @@ pub fn classify(
                     account,
                     settlement,
                     to_address: o.to_address.clone(),
+                    market: None,
                     fee_zat: o.fee_zat,
                     sort_key: (
                         o.mined_height.unwrap_or(u32::MAX),
@@ -419,16 +422,32 @@ pub fn contractor_csv(c: &Classified) -> String {
         "invoice_ref",
         "running_zec",
         "running_usd",
+        "market_value_at_receipt",
+        "market_currency",
+        "market_price_per_zec",
     ]);
     for l in &c.lines {
-        let _ = w.write_record(line_record(l));
+        let _ = w.write_record(contractor_record(l));
     }
     let _ = w.write_record(["# pending"]);
     for l in &c.pending {
-        let _ = w.write_record(line_record(l));
+        let _ = w.write_record(contractor_record(l));
     }
     write_unlabelled(&mut w, &c.unlabelled);
     String::from_utf8(w.into_inner().unwrap_or_default()).unwrap_or_default()
+}
+
+fn contractor_record(l: &Line) -> Vec<String> {
+    let mut r = line_record(l);
+    match &l.market {
+        Some(m) => r.extend([
+            money::format_usd(m.value_cents),
+            m.currency.clone(),
+            money::format_usd(m.price_cents),
+        ]),
+        None => r.extend([String::new(), String::new(), String::new()]),
+    }
+    r
 }
 
 fn line_record(l: &Line) -> Vec<String> {
@@ -542,6 +561,198 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
         ]);
     }
     write_unlabelled(&mut w, &c.unlabelled);
+    String::from_utf8(w.into_inner().unwrap_or_default()).unwrap_or_default()
+}
+
+/// Export formats for tax and bookkeeping tools (verified 5 Oct 2026, see Verified facts).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExportFormat {
+    /// Payslip's own statement CSV (all sections).
+    Payslip,
+    /// Koinly universal template; income lines with USD net worth and the txid.
+    Koinly,
+    /// CoinTracker template; exact headers, UTC dates as MM/DD/YYYY HH:MM:SS.
+    CoinTracker,
+    /// Xero bank statement CSV for a "ZEC wallet (USD)" account: money out negative.
+    Xero,
+    /// QuickBooks Online bank upload, three columns: Date, Description, Amount.
+    QuickBooks,
+}
+
+impl ExportFormat {
+    pub fn parse(s: Option<&str>) -> Option<Self> {
+        match s.unwrap_or("payslip") {
+            "payslip" => Some(ExportFormat::Payslip),
+            "koinly" => Some(ExportFormat::Koinly),
+            "cointracker" => Some(ExportFormat::CoinTracker),
+            "xero" => Some(ExportFormat::Xero),
+            "quickbooks" => Some(ExportFormat::QuickBooks),
+            _ => None,
+        }
+    }
+
+    pub fn slug(&self) -> &'static str {
+        match self {
+            ExportFormat::Payslip => "payslip",
+            ExportFormat::Koinly => "koinly",
+            ExportFormat::CoinTracker => "cointracker",
+            ExportFormat::Xero => "xero",
+            ExportFormat::QuickBooks => "quickbooks",
+        }
+    }
+}
+
+fn utc(ts: Option<&str>) -> Option<OffsetDateTime> {
+    ts.and_then(|t| OffsetDateTime::parse(t, &time::format_description::well_known::Rfc3339).ok())
+}
+
+fn fmt_ts(t: OffsetDateTime, pattern: &str) -> String {
+    let d = t.date();
+    let (y, m, day) = (d.year(), u8::from(d.month()), d.day());
+    let (hh, mm, ss) = (t.hour(), t.minute(), t.second());
+    match pattern {
+        "iso" => format!("{y:04}-{m:02}-{day:02} {hh:02}:{mm:02}:{ss:02}"),
+        "us" => format!("{m:02}/{day:02}/{y:04} {hh:02}:{mm:02}:{ss:02}"),
+        _ => format!("{day:02}/{m:02}/{y:04}"),
+    }
+}
+
+/// A contractor's income lines for Koinly or CoinTracker. Only mined payments are exported.
+pub fn contractor_tool_csv(c: &Classified, format: ExportFormat) -> String {
+    let mut w = csv::WriterBuilder::new().from_writer(vec![]);
+    match format {
+        ExportFormat::Koinly => {
+            let _ = w.write_record([
+                "Date",
+                "Sent Amount",
+                "Sent Currency",
+                "Received Amount",
+                "Received Currency",
+                "Fee Amount",
+                "Fee Currency",
+                "Net Worth Amount",
+                "Net Worth Currency",
+                "Tag",
+                "Description",
+                "TxHash",
+            ]);
+            for l in &c.lines {
+                let Some(t) = utc(l.block_time.as_deref()) else {
+                    continue;
+                };
+                let _ = w.write_record([
+                    fmt_ts(t, "iso"),
+                    String::new(),
+                    String::new(),
+                    money::format_zec(l.amount_zat),
+                    "ZEC".into(),
+                    String::new(),
+                    String::new(),
+                    // Income at its market value when received, else the USD basis the payer
+                    // wrote on chain.
+                    l.market
+                        .as_ref()
+                        .map(|m| money::format_usd(m.value_cents))
+                        .unwrap_or_else(|| money::format_usd(l.usd_basis_cents)),
+                    l.market
+                        .as_ref()
+                        .map(|m| m.currency.clone())
+                        .unwrap_or_else(|| "USD".into()),
+                    "other income".into(),
+                    csv_safe(&format!("Payslip {} invoice {}", l.period, l.invoice_ref)),
+                    l.txid.clone(),
+                ]);
+            }
+        }
+        _ => {
+            let _ = w.write_record([
+                "Date",
+                "Received Quantity",
+                "Received Currency",
+                "Sent Quantity",
+                "Sent Currency",
+                "Fee Amount",
+                "Fee Currency",
+                "Tag",
+            ]);
+            for l in &c.lines {
+                let Some(t) = utc(l.block_time.as_deref()) else {
+                    continue;
+                };
+                let _ = w.write_record([
+                    fmt_ts(t, "us"),
+                    money::format_zec(l.amount_zat),
+                    "ZEC".into(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    "payment".into(),
+                ]);
+            }
+        }
+    }
+    String::from_utf8(w.into_inner().unwrap_or_default()).unwrap_or_default()
+}
+
+/// The payer's books for Xero or QuickBooks, in USD (neither holds crypto): each run's funding
+/// as money in and each pay line as money out, at the USD basis written on chain.
+pub fn accountant_tool_csv(c: &Classified, format: ExportFormat) -> String {
+    let mut rows: Vec<(OffsetDateTime, String, i64, String, String)> = vec![];
+    for r in &c.run_records {
+        let Some(t) = c
+            .lines
+            .iter()
+            .filter(|l| l.run_id == r.run_id)
+            .filter_map(|l| utc(l.block_time.as_deref()))
+            .min()
+            .or_else(|| r.date.as_deref().and_then(|d| utc(Some(&format!("{d}T00:00:00Z")))))
+        else {
+            continue;
+        };
+        rows.push((
+            t,
+            "Payslip treasury".into(),
+            r.funded_usd_cents as i64,
+            format!("Payroll funding {}", r.period),
+            r.run_id.chars().take(8).collect(),
+        ));
+    }
+    for l in &c.lines {
+        let Some(t) = utc(l.block_time.as_deref()) else {
+            continue;
+        };
+        rows.push((
+            t,
+            l.label.clone().unwrap_or_else(|| "Contractor".into()),
+            -(l.usd_basis_cents as i64),
+            format!("Payroll {} {}", l.period, l.invoice_ref),
+            l.invoice_ref.clone(),
+        ));
+    }
+    rows.sort_by_key(|r| r.0);
+    let mut w = csv::WriterBuilder::new().from_writer(vec![]);
+    if format == ExportFormat::Xero {
+        let _ = w.write_record(["Date", "Amount", "Payee", "Description", "Reference"]);
+        for (t, payee, cents, desc, reference) in rows {
+            let _ = w.write_record([
+                fmt_ts(t, "dmy"),
+                money::format_usd_signed(cents as i128),
+                csv_safe(&payee),
+                csv_safe(&desc),
+                csv_safe(&reference),
+            ]);
+        }
+    } else {
+        let _ = w.write_record(["Date", "Description", "Amount"]);
+        for (t, payee, cents, desc, _) in rows {
+            let _ = w.write_record([
+                fmt_ts(t, "dmy"),
+                csv_safe(&format!("{payee}: {desc}")),
+                money::format_usd_signed(cents as i128),
+            ]);
+        }
+    }
     String::from_utf8(w.into_inner().unwrap_or_default()).unwrap_or_default()
 }
 
@@ -932,6 +1143,45 @@ pub(crate) mod tests {
         assert_eq!(l.to_address.as_deref(), Some("t1JjCEbkvYSfZvQLM1P8C6eXtQLawVox9PR"));
         assert_eq!(c.unlabelled.len(), 1);
         assert_eq!(c.unlabelled[0].txid, "zz");
+    }
+
+    #[test]
+    fn tool_exports_use_each_tools_exact_layout() {
+        let c = classify(ZcashNetwork::Testnet, &accountant_outputs(), &keys(), 200, None);
+        let koinly = contractor_tool_csv(&c, ExportFormat::Koinly);
+        let mut lines = koinly.lines();
+        assert_eq!(
+            lines.next().unwrap(),
+            "Date,Sent Amount,Sent Currency,Received Amount,Received Currency,Fee Amount,Fee Currency,Net Worth Amount,Net Worth Currency,Tag,Description,TxHash"
+        );
+        let first = lines.next().unwrap();
+        assert!(first.starts_with("2026-10-05 11:43:10,,,"), "{first}");
+        assert!(first.contains(",ZEC,,,4800.00,USD,other income,"), "{first}");
+        let ct = contractor_tool_csv(&c, ExportFormat::CoinTracker);
+        let mut lines = ct.lines();
+        assert_eq!(
+            lines.next().unwrap(),
+            "Date,Received Quantity,Received Currency,Sent Quantity,Sent Currency,Fee Amount,Fee Currency,Tag"
+        );
+        assert!(lines.next().unwrap().starts_with("10/05/2026 11:43:10,"));
+        let xero = accountant_tool_csv(&c, ExportFormat::Xero);
+        let mut lines = xero.lines();
+        assert_eq!(lines.next().unwrap(), "Date,Amount,Payee,Description,Reference");
+        assert_eq!(
+            lines.next().unwrap(),
+            "05/10/2026,8053.00,Payslip treasury,Payroll funding 2026-09,6f1c2d3e"
+        );
+        assert_eq!(
+            lines.next().unwrap(),
+            "05/10/2026,-4800.00,Amara,Payroll 2026-09 INV-14,INV-14"
+        );
+        let qb = accountant_tool_csv(&c, ExportFormat::QuickBooks);
+        assert_eq!(qb.lines().next().unwrap(), "Date,Description,Amount");
+        assert!(
+            qb.lines().all(|l| l.split(',').count() == 3),
+            "QuickBooks needs exactly three columns"
+        );
+        assert_eq!(ExportFormat::parse(Some("excel")), None);
     }
 
     #[test]

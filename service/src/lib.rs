@@ -8,6 +8,8 @@ pub mod error;
 pub mod memo;
 pub mod money;
 pub mod payer;
+pub mod prices;
+pub mod proof;
 pub mod runs;
 pub mod seed;
 pub mod statements;
