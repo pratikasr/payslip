@@ -2,6 +2,18 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 5 Oct 2026, M1 and M5 done; all five test rounds passed; M6 and M7 prepared
+
+- M1 Scaffold: done. Service, web and CI; CI green on main from 0bc26dc (web job needed pnpm pinned through packageManager). The workflow was then disabled at the operator's request and is re-enabled by the final commit of this session.
+- M5 Web: done (778c7cc, 6200163, fa8de28). docs/DESIGN.md research and design system; landing page and the three role apps; USDC funding from a connected EVM wallet (wagmi 2, viem, RainbowKit, loaded only on the Fund step); viewing keys by paste, file or QR; live SSE progress; statements with CSV and print to PDF. Two screenshot reviews at 375, 768 and 1440 px (docs/screenshots, findings in DESIGN.md section 13). Lighthouse mobile on all nine routes: performance 93 to 96, accessibility 100, best practices 100. The demo script runs through the browser on testnet without a terminal.
+- Contractor auto-convert to USDC (ADR-018): built and verified on testnet (run d9248c70, tx 118c665f..., memo on the change output, reconciled); on mainnet it runs through 1Click (minimum ZEC input 132,000 zat, about 7.6 minutes per conversion).
+- Test rounds (docs/TEST-REPORT.md): Round 1 unit, executor and live testnet integration tests, clippy, audit, web checks, all green. Round 2 Playwright demo script on testnet, passed (run 85ea4bdc). Round 3 28 adversarial scenarios, 20 against the live service including hostile memos on chain and SIGKILL mid-run; three bugs found and fixed with regression tests. Round 4 fresh clone into an empty directory following the README, passed; README gaps fixed. Round 5 two rehearsals from clean databases, 160 s and 185 s, passed (docs/DEMO.md). A last clean-database run after the final web change passed: run 8e8211f1, allocation at 4,465,943, six payments at 4,465,945.
+- M6 Mainnet: prepared. scripts/mainnet-demo.sh rehearsed on testnet (run 284c2421) and dry-run on mainnet with a throwaway data directory up to the 1Click deposit address (32.51 USDC on Base for the small example payroll); no funds moved and the throwaway data was deleted. `scripts/demo/mainnet.env` (git-ignored, with a fresh mainnet passphrase and generated demo wallets) and `scripts/demo/contractors.mainnet.json` are ready on this machine. Needs: the USDC deposit and the payer's EVM refund address (DEMO_REFUND_ADDRESS), then the recording.
+- M7 Submission: prepared in docs/SUBMISSION.md. Needs: Colosseum registration of every team member, team fields, the two videos, the repo visibility decision (private today).
+- Testnet funds: about 0.11 TAZ in the testnet treasury after recycling; enough for several more six-contractor runs.
+- Next: the human steps above, then copy the mainnet proof into the README and flip M6 and M7.
+- Blocked: mainnet funds and the Colosseum account (human).
+
 ## 5 Oct 2026, M2 to M4 on testnet
 
 - M2 Wallet core: done (ddb3004). Seed to ZIP-32 accounts, per-account UFVK export, sync with memo enhancement, shielded send with memo, memo codec with tests. Evidence: service-built tx fe28107b172e6891a21375047515ae691d5725b22f7c876dea18fc767c07b068 (testnet height 4,465,646, v6, two Ironwood actions, fee 10,000 zat) was recovered by `payslip-service scan` with only the exported treasury UFVK, memo decoded as a PS1 pay line.

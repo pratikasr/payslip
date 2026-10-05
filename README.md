@@ -166,8 +166,8 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
 | M5 Web dashboards | done, verified on testnet |
-| M6 Mainnet demo run | scripted and rehearsed on testnet; needs mainnet funds |
-| M7 Submission | prepared; needs the team's Colosseum account |
+| M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; needs the USDC deposit |
+| M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account |
 
 ## How it is judged (Rules §8 and FAQ)
 
