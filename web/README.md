@@ -36,7 +36,7 @@ Both are read at build time (`NEXT_PUBLIC_`), so rebuild after changing them.
 | `pnpm lint`                         | ESLint (Next.js core web vitals and TypeScript rules), zero warnings allowed.       |
 | `pnpm typecheck`                    | `tsc --noEmit` in strict mode.                                                      |
 | `pnpm format` / `pnpm format:check` | Prettier.                                                                           |
-| `pnpm screenshots`                  | Captures every route at 375, 768 and 1440 px into `docs/screenshots/` (see below).  |
+| `pnpm screenshots`                  | Captures every route at 375, 768 and 1440 px into `web/screenshots/` (see below).   |
 
 ## Structure
 
@@ -66,7 +66,7 @@ The dark demo bar's "Viewing as" menu switches between Company, Contractor and A
 
 ## Screenshots
 
-`scripts/screenshots.mjs` captures every screen at 375, 768 and 1440 px into `docs/screenshots/` from live data and flags any page that scrolls horizontally. The contractor portal is opened with the first contractor's invite link and the books with "Load this company's keys", both from the running service; the run page uses the latest pay period's run, and the public payslip uses the payment proof in `docs/judge/judge-kit-testnet.json`.
+`scripts/screenshots.mjs` captures every screen at 375, 768 and 1440 px into `web/screenshots/` (git-ignored; screenshots are not kept in the repo) from live data and flags any page that scrolls horizontally. The contractor portal is opened with the first contractor's invite link and the books with "Load this company's keys", both from the running service; the run page uses the latest pay period's run, and the public payslip uses the payment proof in `docs/judge/judge-kit-testnet.json`.
 
 ```
 pnpm exec playwright install chromium     # once

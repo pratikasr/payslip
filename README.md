@@ -19,16 +19,6 @@ A DAO or remote-first team pays 5 to 50 contractors on-chain. Today every salary
 
 There is no smart contract. Zcash has none. Payslip is a service plus a wallet library: the chain holds shielded payments and memos; the service holds keys and renders statements.
 
-### What it looks like
-
-The demo company on Zcash testnet, as the company, the contractor and the accountant see it (every screen at 375, 768 and 1440 px, light and dark, is in [docs/screenshots](docs/screenshots)).
-
-![The run page for the September 2026 payroll: six pay lines, each confirmed with its txid and block. The Privacy view tab beside Pay lines compares what a public chain would show with what the explorer shows.](docs/screenshots/console-run-1440.png)
-
-![A contractor's payslip, read from the chain with their own viewing key: amount, period, invoice, rate, txid and block height, with Share proof to disclose this one payment.](docs/screenshots/portal-payslip-1440.png)
-
-![The accountant's Books: every run reconciled, funded against paid, with the variance explained by fees and unspent coin.](docs/screenshots/books-reconciliation-1440.png)
-
 ## Proof
 
 ### Testnet runs (already on chain)

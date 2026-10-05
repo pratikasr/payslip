@@ -15,6 +15,7 @@ service/target/
 node_modules/
 web/.next/
 web/out/
+web/screenshots/
 *.tsbuildinfo
 .pnpm-store/
 

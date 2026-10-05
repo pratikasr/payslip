@@ -1,4 +1,5 @@
-// Captures every screen at 375, 768 and 1440 px wide into docs/screenshots/, from live data.
+// Captures every screen at 375, 768 and 1440 px wide into web/screenshots/ (git-ignored, never
+// committed), from live data.
 //
 // Usage (from web/):
 //   pnpm exec playwright install chromium   # once
@@ -19,7 +20,7 @@ const BASE_URL = (process.env.BASE_URL ?? "http://localhost:3000").replace(/\/+$
 const API_URL = (process.env.API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const THEME = process.env.THEME === "dark" ? "dark" : "light";
 const HERE = dirname(fileURLToPath(import.meta.url));
-const OUT = join(HERE, "..", "..", "docs", "screenshots");
+const OUT = join(HERE, "..", "screenshots");
 const widths = (process.env.WIDTHS ?? "375,768,1440").split(",").map(Number);
 
 async function get(path) {
