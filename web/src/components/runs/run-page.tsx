@@ -213,7 +213,12 @@ function SummaryStrip({ run }: { run: Run }) {
         <Usd cents={run.total_usd_cents} />
       </Figure>
       <Figure label={run.status === "paid" ? "Paid" : "To pay"}>
-        {run.total_zat ? (
+        {run.status === "paid" && run.total_zat ? (
+          <span className="grid">
+            <Usd cents={run.lines.reduce((s, l) => s + (l.status === "confirmed" ? l.amount_usd_cents : 0), 0)} />
+            <Zec zat={run.total_zat} short className="text-xs text-muted-foreground" />
+          </span>
+        ) : run.total_zat ? (
           <Zec zat={run.total_zat} short />
         ) : estimate !== null ? (
           <span>

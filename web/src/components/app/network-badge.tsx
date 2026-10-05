@@ -13,9 +13,8 @@ export function NetworkBadge({ className, compact }: { className?: string; compa
   if (health && !error) {
     const degraded = health.status === "degraded" || (health.warnings?.length ?? 0) > 0;
     dot = degraded ? "bg-warning" : health.network === "mainnet" ? "bg-success" : "bg-primary";
-    text = compact
-      ? networkLabel(health.network)
-      : `${networkLabel(health.network)}, tip ${formatHeight(health.chain_tip)}`;
+    // The block height is for operators: it lives in the tooltip, not the label.
+    text = networkLabel(health.network);
     title = degraded
       ? `Degraded: ${(health.warnings ?? []).join(" ") || "lightwalletd is unreachable."}`
       : `Zcash ${health.network}. Chain tip ${formatHeight(health.chain_tip)}, wallet synced to ${formatHeight(health.wallet_synced_height)}.`;

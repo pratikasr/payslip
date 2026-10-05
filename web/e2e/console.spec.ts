@@ -64,7 +64,10 @@ test("home renders on the server from the live service and matches its figures",
     .reduce((s, l) => s + (l.status === "confirmed" ? l.amount_usd_cents : 0), 0);
   const card = page.getByRole("region", { name: /Paid to contractors/ });
   await expect(card.getByText(usd(total), { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("region", { name: "Payroll movement" })).toBeVisible();
+  // The three cards under the hero: treasury, next payroll and the to-do list.
+  await expect(page.getByRole("region", { name: "Treasury" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Next payroll" })).toBeVisible();
+  await expect(page.getByRole("region", { name: /^To do/ })).toBeVisible();
 
   // Payment filters are client side; Recent lists the confirmed lines.
   const payments = page.getByRole("region", { name: "Payments" });
@@ -72,7 +75,8 @@ test("home renders on the server from the live service and matches its figures",
   await payments.getByRole("button", { name: /^Failed/ }).click();
   await expect(payments.getByRole("button", { name: /^Failed/ })).toHaveAttribute("aria-pressed", "true");
   await payments.getByRole("button", { name: "Recent" }).click();
-  await expect(payments.getByText("Shielded").first()).toBeVisible();
+  await expect(payments.getByText("Every payment is shielded on Zcash")).toBeVisible();
+  await expect(payments.getByText("Paid", { exact: true }).first()).toBeVisible();
 });
 
 test("people: a row opens the detail drawer and Escape closes it", async ({ page }) => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Usd, Zec } from "@/components/app/amount";
+import { Usd } from "@/components/app/amount";
 import { Initials } from "@/components/ds/avatar";
 import { SectionHeader } from "@/components/ds/page";
 import { Tag, type TagTone } from "@/components/ds/tag";
@@ -41,7 +41,9 @@ interface Row {
 
 function buildRows(runs: Run[]): Row[] {
   const rows: Row[] = [];
-  for (const run of newestFirst(runs)) {
+  // Latest pay period first, so a back-dated run sits under the newer payrolls.
+  const ordered = newestFirst(runs).sort((a, b) => b.period_label.localeCompare(a.period_label));
+  for (const run of ordered) {
     for (const line of run.lines) {
       rows.push({
         key: line.id,
@@ -105,6 +107,10 @@ export function PaymentsTable({ runs }: { runs: Run[] }) {
     <section aria-labelledby="payments-title">
       <SectionHeader id="payments-title" title="Payments">
         <ArrowLink href="/console/runs">View all</ArrowLink>
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-primary-edge" />
+          Every payment is shielded on Zcash
+        </span>
       </SectionHeader>
       <FilterChips
         label="Filter payments"
@@ -166,7 +172,6 @@ export function PaymentsTable({ runs }: { runs: Run[] }) {
                 </td>
                 <td className="py-1.5 pr-0 text-right sm:pr-[22px]">
                   <Usd cents={r.cents} className={cn("block", r.incoming && "text-success")} />
-                  <Zec zat={r.zat} short className="block text-xs text-muted-foreground" />
                 </td>
                 <td className="hidden pr-2 whitespace-nowrap text-strong sm:table-cell">
                   <Link href={`/console/runs/${r.run.id}`} className="rounded-sm text-sm hover:underline">

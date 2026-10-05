@@ -10,7 +10,9 @@ import { NetworkBadge } from "@/components/app/network-badge";
 import { AppShell, Bookmark, SidebarBrand, type ShellConfig } from "@/components/shell/app-shell";
 import { Button } from "@/components/ui/button";
 import { useResource } from "@/hooks/use-resource";
-import { api } from "@/lib/api";
+import { api, type Run } from "@/lib/api";
+import { Usd } from "@/components/app/amount";
+import { latestFillRate, zatToCents } from "@/components/console/lib";
 import { formatPeriodLabel, networkLabel } from "@/lib/format";
 
 /** The company console (today's payer pages): sidebar, Payroll | Books switch, treasury bookmark. */
@@ -19,7 +21,9 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   const { health } = useHealth();
   const wallet = useResource((s) => api.wallet(s), "shell-wallet");
   const runs = useResource((s) => api.runs(s), "shell-runs");
-  const latest = runs.data?.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+  const latest = runs.data
+    ?.slice()
+    .sort((a, b) => b.period_label.localeCompare(a.period_label) || b.created_at.localeCompare(a.created_at))[0];
   const open = runs.data?.filter((r) => !["paid", "failed"].includes(r.status)).length ?? 0;
   const config: ShellConfig = {
     brand: (
@@ -51,7 +55,9 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
           href="/console/treasury"
           icon={BookmarkIcon}
           label="Treasury"
-          detail={wallet.data ? <TreasuryDetail zat={wallet.data.treasury.total_zat} /> : "Loading"}
+          detail={
+            wallet.data ? <TreasuryDetail zat={wallet.data.treasury.total_zat} runs={runs.data ?? []} /> : "Loading"
+          }
         />
         {latest ? (
           <Bookmark
@@ -76,9 +82,12 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   return <AppShell config={config}>{children}</AppShell>;
 }
 
-function TreasuryDetail({ zat }: { zat: number }) {
+/** The treasury in dollars at the latest fill rate (Mercury's bookmark balances), else in coin. */
+function TreasuryDetail({ zat, runs }: { zat: number; runs: Run[] }) {
   const { health } = useHealth();
   const unit = health?.network === "testnet" ? "TAZ" : "ZEC";
+  const rate = latestFillRate(runs);
+  if (rate) return <Usd cents={zatToCents(zat, rate)} />;
   return (
     <span className="money">
       {(zat / 1e8).toFixed(4)} {unit}

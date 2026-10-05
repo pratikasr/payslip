@@ -72,8 +72,11 @@ export function newestFirst(runs: Run[]): Run[] {
   return runs.slice().sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
 
+/** Paid runs, latest pay period first (a back-dated run is not the latest payroll). */
 export function paidRuns(runs: Run[]): Run[] {
-  return newestFirst(runs).filter((r) => r.status === "paid");
+  return newestFirst(runs)
+    .filter((r) => r.status === "paid")
+    .sort((a, b) => b.period_label.localeCompare(a.period_label));
 }
 
 /** The newest run that has not been paid: a draft, one waiting for funds, one in progress or failed. */
@@ -190,13 +193,14 @@ export function isConverted(line: PayLine): boolean {
   return line.settlement_choice === "convert_usdc" || !!line.settlement;
 }
 
-/** The status of one pay line as a tag: gold for a confirmed shielded payment, neutral otherwise. */
+/**
+ * The status of one pay line as a calm tag (Mercury keeps tables neutral). Every payment is
+ * shielded, so that is said once above the table rather than on every row.
+ */
 export function lineTag(line: PayLine, run: Run): { label: string; tone: TagTone } {
   if (line.status === "failed") return { label: "Failed", tone: "danger" };
   if (line.status === "confirmed") {
-    return isConverted(line)
-      ? { label: "Converted to USDC", tone: "neutral" }
-      : { label: "Shielded", tone: "shielded" };
+    return isConverted(line) ? { label: "Paid in USDC", tone: "neutral" } : { label: "Paid", tone: "neutral" };
   }
   if (line.status === "broadcast") return { label: "Sending", tone: "neutral" };
   if (line.status === "allocated") return { label: "Allocated", tone: "neutral" };

@@ -39,7 +39,7 @@ const LINE_TAGS: Record<PayLineStatus, { label: string; tone: TagTone; dot?: boo
   pending: { label: "Waiting", tone: "neutral", help: "Not started yet." },
   allocated: { label: "Ready to send", tone: "neutral", help: "Funds are in this contractor's account." },
   broadcast: { label: "Sent", tone: "neutral", dot: true, help: "Sent to the network, waiting to be mined." },
-  confirmed: { label: "Confirmed", tone: "shielded", help: "A shielded payment, mined in a block." },
+  confirmed: { label: "Confirmed", tone: "neutral", help: "A shielded payment, mined in a block." },
   failed: { label: "Failed", tone: "danger", help: "This payment did not go through. Resume the run to retry it." },
 };
 

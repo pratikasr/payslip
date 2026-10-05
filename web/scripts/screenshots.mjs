@@ -8,7 +8,7 @@
 //
 // The contractor portal is opened with the first contractor's invite link and the accountant's
 // books with "Load this company's keys", both from the running service (API_URL, default
-// http://127.0.0.1:8080). The run page uses the newest run; the public payslip uses the payment
+// http://127.0.0.1:8080). The run page uses the latest pay period's run; the public payslip uses the payment
 // proof in docs/judge/judge-kit-testnet.json unless PROOF_TOKEN is set.
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -28,7 +28,9 @@ async function get(path) {
   return r.json();
 }
 
-const runs = (await get("/api/runs")).runs.sort((a, b) => b.created_at.localeCompare(a.created_at));
+const runs = (await get("/api/runs")).runs.sort(
+  (a, b) => b.period_label.localeCompare(a.period_label) || b.created_at.localeCompare(a.created_at),
+);
 const keys = (await get("/api/viewing-keys")).keys;
 const contractorKey = keys.find((k) => k.role === "contractor");
 let token = process.env.PROOF_TOKEN;
@@ -114,7 +116,8 @@ try {
       await slip.waitFor({ timeout: 120_000 }).catch(() => undefined);
       if (await slip.count()) {
         await slip.click();
-        await page.getByRole("button", { name: "Share proof" }).waitFor({ timeout: 120_000 });
+        await page.waitForURL(/\/portal\/payslips\/[0-9a-f]{64}/, { timeout: 120_000 });
+        await page.getByRole("button", { name: "Share proof" }).first().waitFor({ timeout: 120_000 });
         await shoot(page, "portal-payslip", width);
       }
       await visit(page, "portal-tax", "/portal/tax", width);

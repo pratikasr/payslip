@@ -174,11 +174,11 @@ export function payslipHref(line: Pick<StatementLine, "txid">): string {
   return `/portal/payslips/${line.txid}`;
 }
 
-/** Payments newest first: by block time, then by date for lines still waiting to be mined. */
+/** Payslips newest pay period first, then by block time (a back-dated payroll sits under newer ones). */
 export function newestFirst<T extends Pick<StatementLine, "block_time" | "date" | "period">>(lines: T[]): T[] {
   return lines
     .slice()
-    .sort((a, b) => (b.block_time ?? b.date).localeCompare(a.block_time ?? a.date) || b.period.localeCompare(a.period));
+    .sort((a, b) => b.period.localeCompare(a.period) || (b.block_time ?? b.date).localeCompare(a.block_time ?? a.date));
 }
 
 /** The name the statement carries for this key, or a neutral fallback. */

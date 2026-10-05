@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ListChecks, Send, UsersRound } from "lucide-react";
-import { Usd, Zec } from "@/components/app/amount";
+import { Usd } from "@/components/app/amount";
 import { PageTitle } from "@/components/ds/page";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,7 +21,10 @@ export function RunsList({ initial }: { initial?: Run[] }) {
   const [filter, setFilter] = useState<RunFilterId>("all");
 
   const all = useMemo(
-    () => [...(runs.data ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    () =>
+      [...(runs.data ?? [])].sort(
+        (a, b) => b.period_label.localeCompare(a.period_label) || b.created_at.localeCompare(a.created_at),
+      ),
     [runs.data],
   );
   const counts = useMemo(
@@ -130,9 +133,9 @@ function RunsTable({ runs }: { runs: Run[] }) {
               </td>
               <td className="py-2 pr-3 text-right sm:pr-6">
                 <Usd cents={r.total_usd_cents} />
-                <span className="block text-[0.8125rem] text-muted-foreground">
-                  {r.total_zat ? <Zec zat={r.total_zat} short /> : "Not funded yet"}
-                </span>
+                {r.total_zat ? null : (
+                  <span className="block text-[0.8125rem] text-muted-foreground">Not funded yet</span>
+                )}
               </td>
               <td className="py-2 pr-3">
                 <RunTag status={r.status} />

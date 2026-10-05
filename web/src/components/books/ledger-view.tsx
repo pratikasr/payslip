@@ -146,7 +146,7 @@ export function LedgerView({ r }: { r: BooksResult }) {
 function StatusTags({ l }: { l: LedgerLine }) {
   return (
     <span className="inline-flex flex-wrap gap-1">
-      {l.pending ? <Tag>Pending</Tag> : l.settlement === "converted" ? null : <Tag tone="shielded">Shielded</Tag>}
+      {l.pending ? <Tag>Pending</Tag> : l.settlement === "converted" ? null : <Tag>Paid</Tag>}
       {l.settlement === "converted" ? <Tag>Converted to USDC</Tag> : null}
     </span>
   );

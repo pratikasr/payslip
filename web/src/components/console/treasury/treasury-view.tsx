@@ -73,7 +73,8 @@ export function TreasuryView({ initial }: { initial: { wallet?: Wallet; runs?: R
 
 function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; onSynced: (w: Wallet) => void }) {
   const t = wallet.treasury;
-  const rate = wallet.network === "mainnet" ? latestFillRate(runs) : null;
+  // On testnet this is the simulated rate, labelled as such, so the treasury reads in the same dollars as payroll.
+  const rate = latestFillRate(runs);
   const [syncing, setSyncing] = useState(false);
   const [progress, setProgress] = useState<{ synced: number; tip: number } | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -114,12 +115,18 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
           <h2 id="balance-title" className="text-[0.8125rem] text-muted-foreground">
             Balance
           </h2>
+          {/* Dollars lead, as on Home; the coin balance is the exact figure under it. */}
           <div className="mt-1.5 text-[1.75rem] leading-tight font-[380] sm:text-[2rem]">
-            <Zec zat={t.total_zat} className="[&_[data-unit]]:text-[0.55em]" />
+            {rate ? (
+              <Usd cents={zatToCents(t.total_zat, rate)} />
+            ) : (
+              <Zec zat={t.total_zat} className="[&_[data-unit]]:text-[0.55em]" />
+            )}
           </div>
           {rate ? (
             <div className="mt-1 text-sm text-muted-foreground">
-              About <Usd cents={zatToCents(t.total_zat, rate)} className="text-strong" /> at the latest fill rate
+              <Zec zat={t.total_zat} className="text-strong" />{" "}
+              {wallet.network === "testnet" ? "at the simulated testnet rate" : "at the latest fill rate"}
             </div>
           ) : null}
         </div>
