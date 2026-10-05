@@ -106,4 +106,11 @@ Gaps found and fixed:
 
 ## Round 5: demo rehearsal
 
-Pending. The driver script already passed one testnet rehearsal: run 284c2421 paid six contractors in 301 seconds from execute and reconciled (docs/proof/testnet-rehearsal-284c2421.md).
+2026-10-05. The demo script run end to end on testnet twice in a row, each from a clean database (`scripts/fresh-testnet-env.sh rehearsal-1`, then `rehearsal-2`), driving the browser along the click path in `docs/DEMO.md` with `pnpm e2e`.
+
+| Rehearsal | Run | Allocation height | Payment heights | Wall clock | Outcome |
+| --- | --- | ---: | --- | ---: | --- |
+| 1 | 61e7687c-51b4-49c3-8836-b86570e9c8f8 | 4,465,896 | 4,465,898 to 4,465,899 | 160 s | passed |
+| 2 | 2c3c69da-45f1-4a8c-92ef-6f61f0d991f4 | 4,465,907 | 4,465,909 to 4,465,911 | 185 s | passed |
+
+Step timings, every txid and the click path are in `docs/DEMO.md`; the raw records are `docs/proof/rehearsal-1.json` and `docs/proof/rehearsal-2.json`. The driver script `scripts/mainnet-demo.sh` was also rehearsed on testnet (run 284c2421, 392 s including a release build, reconciled).
