@@ -25,6 +25,22 @@ const nextConfig: NextConfig = {
     // Import only the Radix primitives used, not the whole radix-ui barrel.
     optimizePackageImports: ["radix-ui"],
   },
+  // Security headers on every page: no framing by other sites (clickjacking on Run payroll or the
+  // key file download), no MIME sniffing, no referrer leaks, camera only for this origin's QR scan.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
+  },
   // The app moved from /app/<role> to one product per role (docs/DESIGN.md section 15); old
   // links and bookmarks keep working.
   async redirects() {

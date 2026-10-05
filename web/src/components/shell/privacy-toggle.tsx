@@ -3,31 +3,37 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-
-const KEY = "payslip.private";
+import { PRIVATE_ATTR, PRIVATE_KEY } from "@/lib/privacy";
 
 /**
  * Mercury's privacy mode: blurs every amount on screen (html[data-private] .money) for screen
- * sharing. Kept for the tab only.
+ * sharing. Kept for the tab only. The console layout applies a stored choice before first paint
+ * (src/lib/privacy.ts); this button reads it back and changes it.
  */
 export function PrivacyToggle() {
   const [on, setOn] = useState(false);
   useEffect(() => {
+    // Layouts without the boot script (portal, books) apply the stored choice here, after paint.
+    let stored = document.documentElement.hasAttribute(PRIVATE_ATTR);
     try {
-      setOn(sessionStorage.getItem(KEY) === "1");
+      stored = stored || sessionStorage.getItem(PRIVATE_KEY) === "1";
     } catch {
-      /* storage blocked: start visible */
+      /* storage blocked: keep what the page shows */
     }
+    if (stored) document.documentElement.setAttribute(PRIVATE_ATTR, "");
+    setOn(stored);
   }, []);
-  useEffect(() => {
-    document.documentElement.toggleAttribute("data-private", on);
+  const toggle = () => {
+    const next = !on;
+    setOn(next);
+    document.documentElement.toggleAttribute(PRIVATE_ATTR, next);
     try {
-      if (on) sessionStorage.setItem(KEY, "1");
-      else sessionStorage.removeItem(KEY);
+      if (next) sessionStorage.setItem(PRIVATE_KEY, "1");
+      else sessionStorage.removeItem(PRIVATE_KEY);
     } catch {
-      /* ignore */
+      /* storage blocked: the choice holds for this page only */
     }
-  }, [on]);
+  };
   return (
     <Button
       variant="ghost"
@@ -35,7 +41,7 @@ export function PrivacyToggle() {
       aria-pressed={on}
       aria-label={on ? "Show amounts" : "Hide amounts"}
       title={on ? "Show amounts" : "Hide amounts while sharing your screen"}
-      onClick={() => setOn((v) => !v)}
+      onClick={toggle}
     >
       {on ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
     </Button>

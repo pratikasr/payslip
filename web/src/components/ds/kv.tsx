@@ -16,7 +16,7 @@ export function KeyValues({
           <dt className="text-strong">{it.label}</dt>
           <dd className="mb-2 min-w-0 sm:mb-0">
             <div className="text-foreground">{it.value}</div>
-            {it.hint ? <div className="text-sm text-muted-foreground">{it.hint}</div> : null}
+            {it.hint ? <div className="text-[0.8125rem] text-muted-foreground">{it.hint}</div> : null}
           </dd>
         </div>
       ))}

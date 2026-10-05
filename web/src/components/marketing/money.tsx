@@ -26,7 +26,7 @@ export function TazFigure({ zat, className }: { zat: number; className?: string 
     <span className={cn("money", className)} title={`${full} TAZ`}>
       {full.slice(0, -4)}
       <span className="money-tail">{full.slice(-4)}</span>
-      <span className="ml-1 tracking-normal opacity-70">TAZ</span>
+      <span className="ml-1 tracking-normal text-muted-foreground">TAZ</span>
     </span>
   );
 }

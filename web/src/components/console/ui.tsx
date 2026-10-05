@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode } from "react";
 import { ChevronRight, X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
+import { useFocusReturn } from "@/components/ui/dialog";
 import { cn } from "cn";
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
@@ -18,7 +19,7 @@ export function IconChip({ icon: Icon, href, label }: { icon: Icon; href?: strin
         href={href}
         aria-label={label}
         title={label}
-        className="grid size-[30px] place-items-center rounded-full bg-chip text-strong transition-colors hover:bg-[color-mix(in_oklch,var(--chip),var(--foreground)_6%)]"
+        className="relative grid size-[30px] place-items-center rounded-full bg-chip text-strong transition-colors hover:bg-[color-mix(in_oklch,var(--chip),var(--foreground)_6%)] pointer-coarse:after:absolute pointer-coarse:after:-inset-[7px] pointer-coarse:after:content-['']"
       >
         {body}
       </Link>
@@ -125,13 +126,13 @@ export function FilterChips<T extends string>({
             aria-pressed={on}
             onClick={() => onChange(o.id)}
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-sm text-strong transition-colors hover:bg-muted",
+              "relative inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[0.8125rem] text-strong transition-colors hover:bg-muted pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:content-['']",
               on && "border-transparent bg-chip text-foreground hover:bg-chip",
             )}
           >
             {o.label}
             {o.count !== undefined && o.count > 0 ? (
-              <span className="num text-xs text-muted-foreground">{o.count}</span>
+              <span className="num text-[0.8125rem] text-muted-foreground">{o.count}</span>
             ) : null}
           </button>
         );
@@ -139,6 +140,9 @@ export function FilterChips<T extends string>({
     </div>
   );
 }
+
+/** The visible heading of a drawer, which also names it for screen readers (one heading, not two). */
+export const DrawerTitle = DialogPrimitive.Title;
 
 /**
  * Mercury's detail drawer: a panel that slides in from the right over the page, full width on
@@ -150,13 +154,26 @@ export function Drawer({
   title,
   eyebrow,
   children,
+  returnFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  title: string;
+  /** The drawer's accessible name, or null when the body shows it in a <DrawerTitle>. */
+  title: string | null;
   eyebrow?: ReactNode;
   children: ReactNode;
+  /** Where focus goes on close when whatever opened the drawer is gone. */
+  returnFocus?: () => HTMLElement | null;
 }) {
+  // Closing (Escape, Close, a click outside, the browser's Back) returns focus to the opener.
+  const focus = useFocusReturn({
+    fallback: returnFocus,
+    onOpenAutoFocus: (e) => {
+      // Focus the panel itself so a screen reader starts at the top, without a ring on Close.
+      e.preventDefault();
+      (e.currentTarget as HTMLElement).focus();
+    },
+  });
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
@@ -164,11 +181,8 @@ export function Drawer({
         <DialogPrimitive.Content
           aria-describedby={undefined}
           tabIndex={-1}
-          onOpenAutoFocus={(e) => {
-            // Focus the panel itself so a screen reader starts at the top, without a ring on Close.
-            e.preventDefault();
-            (e.currentTarget as HTMLElement).focus();
-          }}
+          onOpenAutoFocus={focus.onOpenAutoFocus}
+          onCloseAutoFocus={focus.onCloseAutoFocus}
           className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card text-card-foreground shadow-[0_0_48px_-12px_rgba(14,14,45,0.25)] outline-none data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right sm:inset-y-2 sm:right-2 sm:w-[440px] sm:rounded-xl sm:border"
         >
           <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2 sm:px-6">
@@ -179,7 +193,7 @@ export function Drawer({
               </Button>
             </DialogPrimitive.Close>
           </div>
-          <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title>
+          {title !== null ? <DialogPrimitive.Title className="sr-only">{title}</DialogPrimitive.Title> : null}
           <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 sm:px-6">{children}</div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

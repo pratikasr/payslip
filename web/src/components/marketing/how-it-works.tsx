@@ -2,12 +2,12 @@ import type { ReactNode } from "react";
 import { ArrowDown, KeyRound } from "lucide-react";
 import { cn } from "cn";
 import { Tag } from "@/components/ds/tag";
-import { RUN_284C, payLineMemo } from "@/components/marketing/data";
+import { SEP_RUN, payLineMemo } from "@/components/marketing/data";
 import { TazFigure, UsdFigure } from "@/components/marketing/money";
 import { Container, SectionHeading } from "@/components/marketing/parts";
 import { lp } from "@/components/marketing/classes";
 
-const run = RUN_284C;
+const run = SEP_RUN;
 const line = run.lines[0];
 
 const STEPS: { title: string; body: string; art: ReactNode }[] = [
@@ -48,7 +48,8 @@ export function HowItWorks() {
           ))}
         </ol>
         <p className="mt-8 text-[13px] text-muted-foreground">
-          Figures from run {run.short} on Zcash testnet, where a fixed-rate testnet venue stands in for NEAR Intents.
+          Figures from run {run.short}, the demo company&apos;s September payroll on Zcash testnet (open it in Books
+          with the judge kit), where a fixed-rate testnet venue stands in for NEAR Intents.
         </p>
       </Container>
     </section>

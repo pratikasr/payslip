@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { KeyRound } from "lucide-react";
 import { BooksShell } from "@/components/shell/books-shell";
 import { BooksSetup } from "@/components/books/books-setup";
@@ -12,17 +12,28 @@ import { describeKeys, exceptionsOf, keySetSummary } from "@/components/books/bo
 export function BooksFrame({ children }: { children: ReactNode }) {
   const books = useBooks();
   const [manageOpen, setManageOpen] = useState(false);
+  // The control that opened Manage, so closing the dialog puts focus back on it.
+  const opener = useRef<HTMLElement | null>(null);
   const exceptions = books.scan.result ? exceptionsOf(books.scan.result).total : undefined;
   const hasKeys = books.keys.length > 0;
   return (
     <>
       <BooksShell
         exceptions={exceptions}
-        bookmarks={hasKeys ? <KeySetChip onManage={() => setManageOpen(true)} /> : undefined}
+        bookmarks={
+          hasKeys ? (
+            <KeySetChip
+              onManage={() => {
+                opener.current = document.activeElement as HTMLElement | null;
+                setManageOpen(true);
+              }}
+            />
+          ) : undefined
+        }
       >
         {!books.ready ? null : hasKeys ? children : <BooksSetup />}
       </BooksShell>
-      {hasKeys ? <ManageKeysDialog open={manageOpen} onOpenChange={setManageOpen} /> : null}
+      {hasKeys ? <ManageKeysDialog open={manageOpen} onOpenChange={setManageOpen} returnFocus={opener} /> : null}
     </>
   );
 }

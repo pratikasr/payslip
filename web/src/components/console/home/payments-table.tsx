@@ -5,187 +5,195 @@ import { useState } from "react";
 import { Usd } from "@/components/app/amount";
 import { Initials } from "@/components/ds/avatar";
 import { SectionHeader } from "@/components/ds/page";
-import { Tag, type TagTone } from "@/components/ds/tag";
-import type { Run } from "@/lib/api";
-import { venueLabel, formatPeriodLabel } from "@/lib/format";
+import { SHIELDED_HELP } from "@/components/ds/status";
+import type { PayLine, Run } from "@/lib/api";
+import { formatShortDate, venueLabel } from "@/lib/format";
+import { latestPeriodFirst, lineConfirmedAt } from "@/lib/payroll";
 import { cn } from "cn";
-import {
-  fundingSource,
-  isConverted,
-  isPendingLine,
-  isSimulated,
-  lineTag,
-  newestFirst,
-  shortDate,
-} from "@/components/console/lib";
+import { fundingSource, isPendingLine, isSimulated } from "@/components/console/lib";
 import { ArrowLink, FilterChips } from "@/components/console/ui";
+import { isConverted, LineStatus, pastFunding, plural, runTitle } from "@/components/runs/run-meta";
 
 type Filter = "recent" | "pending" | "converted" | "failed";
 
-interface Row {
-  key: string;
-  date: string;
-  name: string;
-  initials?: string;
-  cents: number | null;
-  zat: number | null;
-  incoming: boolean;
+/** Recent shows whole runs until at least this many payments are listed. */
+const RECENT_ROWS = 10;
+
+interface Group {
   run: Run;
-  tag: { label: string; tone: TagTone };
-  kind: "line" | "funding";
-  pending: boolean;
-  converted: boolean;
-  failed: boolean;
-  personId?: string;
+  lines: PayLine[];
+  /** Mainnet funding that arrived for the run: money in, shown above its payments. */
+  inflow: boolean;
 }
 
-function buildRows(runs: Run[]): Row[] {
-  const rows: Row[] = [];
-  // Latest pay period first, so a back-dated run sits under the newer payrolls.
-  const ordered = newestFirst(runs).sort((a, b) => b.period_label.localeCompare(a.period_label));
-  for (const run of ordered) {
-    for (const line of run.lines) {
-      rows.push({
-        key: line.id,
-        date: run.updated_at,
-        name: line.contractor_name,
-        cents: -line.amount_usd_cents,
-        zat: line.amount_zat,
-        incoming: false,
-        run,
-        tag: lineTag(line, run),
-        kind: "line",
-        pending: isPendingLine(line) && run.status !== "draft",
-        converted: isConverted(line),
-        failed: line.status === "failed",
-        personId: line.contractor_id,
-      });
-    }
-    const f = run.funding;
-    if (f && f.status === "success") {
-      rows.push({
-        key: `${run.id}-funding`,
-        date: run.created_at,
-        name: isSimulated(run) ? "Testnet funding" : `${fundingSource(run)} via ${venueLabel(f.venue)}`,
-        initials: isSimulated(run) ? "T" : "US",
-        cents: f.funded_usd_cents,
-        zat: f.zec_acquired_zat,
-        incoming: true,
-        run,
-        tag: { label: "Treasury", tone: "neutral" },
-        kind: "funding",
-        pending: false,
-        converted: false,
-        failed: false,
-      });
-    }
-  }
-  return rows;
-}
+const matches: Record<Exclude<Filter, "recent">, (l: PayLine) => boolean> = {
+  pending: isPendingLine,
+  converted: isConverted,
+  failed: (l) => l.status === "failed",
+};
 
-/** Recent pay lines and fundings across runs, as Mercury's transactions table straight on the page. */
+/**
+ * Payments, latest pay period first, grouped under their run ("Sep 2026 payroll · 6 payments ·
+ * $30,375.50"), as Mercury groups transactions. Only runs that were funded appear: a draft has
+ * paid nobody. A confirmed payment shows the gold Shielded mark instead of a grey status; a
+ * payment that needs attention shows its tag. Testnet funding is not listed: on testnet nothing
+ * arrives (coins already in the treasury are set aside); Treasury lists it.
+ */
 export function PaymentsTable({ runs }: { runs: Run[] }) {
   const [filter, setFilter] = useState<Filter>("recent");
-  const all = buildRows(runs);
+  const funded = latestPeriodFirst(runs.filter(pastFunding));
+  const all = funded.flatMap((r) => r.lines);
   const counts = {
-    pending: all.filter((r) => r.pending).length,
-    converted: all.filter((r) => r.converted).length,
-    failed: all.filter((r) => r.failed).length,
+    pending: all.filter(matches.pending).length,
+    converted: all.filter(matches.converted).length,
+    failed: all.filter(matches.failed).length,
   };
-  const rows =
-    filter === "recent"
-      ? all.slice(0, 10)
-      : all.filter((r) => (filter === "pending" ? r.pending : filter === "converted" ? r.converted : r.failed));
+  let groups: Group[];
+  if (filter === "recent") {
+    groups = [];
+    let rows = 0;
+    for (const run of funded) {
+      if (rows >= RECENT_ROWS) break;
+      groups.push({ run, lines: run.lines, inflow: run.funding?.status === "success" && !isSimulated(run) });
+      rows += run.lines.length;
+    }
+  } else {
+    groups = funded
+      .map((run) => ({ run, lines: run.lines.filter(matches[filter]), inflow: false }))
+      .filter((g) => g.lines.length > 0);
+  }
   const empty = {
     recent: "No payments yet.",
     pending: "No payments waiting to be sent or confirmed.",
     converted: "No payments converted to USDC.",
     failed: "No failed payments.",
   }[filter];
+  // Only filters with something in them (Mercury shows counts where there is work).
+  const options = [
+    { id: "recent" as const, label: "Recent" },
+    { id: "pending" as const, label: "Pending", count: counts.pending },
+    { id: "converted" as const, label: "Converted to USDC", count: counts.converted },
+    { id: "failed" as const, label: "Failed", count: counts.failed },
+  ].filter((o) => o.id === "recent" || o.id === filter || (o.count ?? 0) > 0);
 
   return (
     <section aria-labelledby="payments-title">
       <SectionHeader id="payments-title" title="Payments">
-        <ArrowLink href="/console/runs">View all</ArrowLink>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-primary-edge" />
-          Every payment is shielded on Zcash
-        </span>
+        <ArrowLink href="/console/runs">All runs</ArrowLink>
       </SectionHeader>
-      <FilterChips
-        label="Filter payments"
-        value={filter}
-        onChange={setFilter}
-        options={[
-          { id: "recent", label: "Recent" },
-          { id: "pending", label: "Pending", count: counts.pending },
-          { id: "converted", label: "Converted to USDC", count: counts.converted },
-          { id: "failed", label: "Failed", count: counts.failed },
-        ]}
-      />
-      <table className="w-full border-collapse text-[0.9375rem]">
-        <caption className="sr-only">Payments, {filter === "recent" ? "most recent first" : filter}</caption>
+      {options.length > 1 ? (
+        <FilterChips label="Filter payments" value={filter} onChange={setFilter} options={options} />
+      ) : null}
+      <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+        <caption className="sr-only">
+          Payments by payroll run, latest pay period first. Shielded: {SHIELDED_HELP.toLowerCase()}.
+        </caption>
         <thead>
           <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-            <th scope="col" className="w-[4.5rem] py-3 pr-2 font-normal">
+            <th scope="col" className="w-[4.25rem] py-3 pr-2 font-normal">
               Date
             </th>
             <th scope="col" className="py-3 pr-2 font-normal">
               To
             </th>
-            <th scope="col" className="py-3 pr-0 text-right font-normal sm:pr-[22px]">
+            <th scope="col" className="w-[7.5rem] py-3 pr-0 text-right font-normal sm:w-[9.5rem] sm:pr-[22px]">
               Amount
             </th>
-            <th scope="col" className="hidden py-3 pr-2 font-normal sm:table-cell">
-              Run
-            </th>
-            <th scope="col" className="hidden py-3 font-normal sm:table-cell">
+            <th scope="col" className="hidden w-[9rem] py-3 font-normal sm:table-cell">
               Status
             </th>
           </tr>
         </thead>
-        <tbody>
-          {rows.length === 0 ? (
+        {groups.length === 0 ? (
+          <tbody>
             <tr className="border-b border-hairline">
-              <td colSpan={5} className="h-[50px] text-sm text-muted-foreground">
+              <td colSpan={3} className="h-[50px] text-[0.8125rem] text-muted-foreground">
                 {empty}
               </td>
             </tr>
-          ) : (
-            rows.map((r) => (
-              <tr key={r.key} className="border-b border-hairline">
-                <td className="h-[52px] pr-2 whitespace-nowrap">{shortDate(r.date)}</td>
-                <td className="pr-2">
-                  <span className="flex min-w-0 items-center gap-3">
-                    <Initials name={r.name} text={r.initials} />
-                    {r.personId ? (
-                      <Link
-                        href={`/console/people?person=${r.personId}`}
-                        className="min-w-0 truncate rounded-sm hover:underline"
-                      >
-                        {r.name}
-                      </Link>
-                    ) : (
-                      <span className="min-w-0 truncate">{r.name}</span>
-                    )}
-                  </span>
-                </td>
-                <td className="py-1.5 pr-0 text-right sm:pr-[22px]">
-                  <Usd cents={r.cents} className={cn("block", r.incoming && "text-success")} />
-                </td>
-                <td className="hidden pr-2 whitespace-nowrap text-strong sm:table-cell">
-                  <Link href={`/console/runs/${r.run.id}`} className="rounded-sm text-sm hover:underline">
-                    {formatPeriodLabel(r.run.period_label)}
-                  </Link>
-                </td>
-                <td className="hidden sm:table-cell">
-                  <Tag tone={r.tag.tone}>{r.tag.label}</Tag>
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
+          </tbody>
+        ) : (
+          groups.map((g) => <RunGroup key={g.run.id} group={g} />)
+        )}
       </table>
     </section>
+  );
+}
+
+function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
+  const total = lines.reduce((s, l) => s + l.amount_usd_cents, 0);
+  const f = run.funding;
+  return (
+    <tbody>
+      <tr className="border-b border-hairline bg-raised/60">
+        {/* Three columns on phones (Status is hidden there), so the header spans three and an
+            empty cell takes the fourth from tablet width up; a span of four would add a phantom
+            column on phones and squeeze the names. */}
+        <th scope="colgroup" colSpan={3} className="h-9 px-0 text-left font-normal">
+          <span className="flex min-w-0 items-baseline gap-2 pr-1 text-[0.8125rem]">
+            <Link
+              href={`/console/runs/${run.id}`}
+              className="truncate rounded-sm pl-2 text-foreground hover:underline sm:pl-3"
+            >
+              {runTitle(run)} payroll
+            </Link>
+            <span className="shrink-0 text-muted-foreground">
+              {plural(lines.length, "payment")} · <Usd cents={total} />
+            </span>
+          </span>
+        </th>
+        <td className="hidden sm:table-cell" />
+      </tr>
+      {inflow && f ? (
+        <tr className="border-b border-hairline">
+          <td className="h-[52px] pr-2 whitespace-nowrap text-strong">{formatShortDate(run.created_at)}</td>
+          <td className="pr-2">
+            <span className="flex min-w-0 items-center gap-3">
+              <Initials text="US" />
+              <span className="block min-w-0 truncate">
+                {fundingSource(run)} via {venueLabel(f.venue)}
+              </span>
+            </span>
+          </td>
+          <td className="py-1.5 pr-0 text-right sm:pr-[22px]">
+            <Usd cents={f.funded_usd_cents} signed className="block text-success" />
+          </td>
+          <td className="hidden text-[0.8125rem] text-muted-foreground sm:table-cell">Into treasury</td>
+        </tr>
+      ) : null}
+      {lines.map((line) => {
+        const at = lineConfirmedAt(line, run);
+        return (
+          <tr key={line.id} className="border-b border-hairline">
+            <td className="h-[52px] pr-2 whitespace-nowrap text-strong">
+              {at ? formatShortDate(at) : <span className="text-muted-foreground">Not yet</span>}
+            </td>
+            <td className="pr-2">
+              <span className="flex min-w-0 items-center gap-3">
+                <Initials name={line.contractor_name} />
+                <span className="min-w-0">
+                  <Link
+                    href={`/console/people?person=${line.contractor_id}`}
+                    className="block truncate rounded-sm hover:underline"
+                  >
+                    {line.contractor_name}
+                  </Link>
+                  {/* Phones hide the Status column: the mark moves under the name. */}
+                  <span className="block sm:hidden">
+                    <LineStatus line={line} run={run} />
+                  </span>
+                </span>
+              </span>
+            </td>
+            <td className={cn("py-1.5 pr-0 text-right sm:pr-[22px]", line.status === "failed" && "line-through")}>
+              <Usd cents={-line.amount_usd_cents} className="block" />
+            </td>
+            <td className="hidden sm:table-cell">
+              <LineStatus line={line} run={run} />
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
   );
 }

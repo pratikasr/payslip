@@ -1,5 +1,5 @@
 /*
-  The public payslip, after Mercury's public invoice page: one card on a soft gradient with a
+  The public payslip, its layout informed by Mercury's public invoice page: one card on a soft gradient with a
   few fine grid lines. No app chrome. Colours for the ground are local to this page; the card
   uses the app's tokens.
 */
@@ -88,7 +88,12 @@
   color: var(--muted-foreground);
 }
 
-/* The payslip thumbnail is always paper: white with dark ink in both themes. */
+/* The payslip thumbnail is paper: white with dark ink. A white sheet glares on the dark card, so the
+   dark theme leaves it out. */
+:global(.dark) .thumb {
+  display: none;
+}
+
 .thumb {
   width: 200px;
   margin: 22px auto 0;

@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { GITHUB_URL } from "@/components/marketing/data";
+import { DemoLink } from "@/components/marketing/demo-link";
 import { Container, SectionHeading } from "@/components/marketing/parts";
 
 /* Pricing as decided in docs/LAUNCH.md and the README. */
@@ -22,7 +23,7 @@ const PLANS = [
     who: "Teams paying 5 to 50 contractors.",
     points: ["Runs, statements and proofs, hosted", "0.25% on the USDC to ZEC funding swap", "Contractors never pay"],
     featured: true,
-    cta: { label: "Try the live demo", href: "/console" },
+    cta: { label: "Try the live demo", href: "/console", demo: true },
   },
   {
     name: "Accountant",
@@ -67,7 +68,9 @@ export function Pricing() {
                 ))}
               </ul>
               <Button asChild variant="secondary" className="mt-7 self-start">
-                {p.cta.external ? (
+                {"demo" in p.cta ? (
+                  <DemoLink />
+                ) : p.cta.external ? (
                   <a href={p.cta.href} target="_blank" rel="noreferrer">
                     {p.cta.label}
                     <span className="sr-only"> (opens in a new tab)</span>

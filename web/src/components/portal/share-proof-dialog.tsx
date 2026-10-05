@@ -27,9 +27,22 @@ export function ShareProofDialog({
   onOpenChange: (open: boolean) => void;
   onCreated?: (proof: CreatedProof) => void;
 }) {
+  // The control that opened the dialog (a row's Share proof), so closing it returns focus there.
+  const opener = useRef<HTMLElement | null>(null);
+  const open = !!line;
+  useEffect(() => {
+    if (open) opener.current = document.activeElement as HTMLElement | null;
+  }, [open]);
   return (
-    <Dialog open={!!line} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-5 p-6 sm:max-w-[500px]">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] gap-5 overflow-y-auto p-6 sm:max-w-[500px]"
+        onCloseAutoFocus={(e) => {
+          if (!opener.current?.isConnected) return;
+          e.preventDefault();
+          opener.current.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-[1.1875rem] leading-snug font-normal tracking-[-0.01em]">
             Share proof of this payment
@@ -77,7 +90,8 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
     return () => clearTimeout(t);
   }, [copied]);
 
-  const link = proof ? proofLink(proof.token) : "";
+  const [note, setNote] = useState("");
+  const link = proof ? proofLink(proof.token, note) : "";
   const copy = async () => {
     if (await copyText(link)) {
       setCopied(true);
@@ -127,7 +141,7 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
               {copied ? "Copied" : "Copy link"}
             </Button>
             <Button asChild variant="secondary">
-              <a href={`/verify#${proof.token}`} target="_blank" rel="noreferrer">
+              <a href={link} target="_blank" rel="noreferrer">
                 <SquareArrowOutUpRight aria-hidden="true" />
                 Open
               </a>
@@ -136,22 +150,44 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
         </div>
       ) : null}
 
-      <dl className="grid gap-3 border-t border-hairline pt-4 text-sm sm:grid-cols-2">
-        <div className="flex items-start gap-2.5">
-          <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div>
-            <dt className="text-foreground">What it shows</dt>
-            <dd className="text-muted-foreground">
-              This payment: amount, date, the address it was paid to, period and invoice.
-            </dd>
-          </div>
+      {proof ? (
+        <div className="space-y-1.5">
+          <label htmlFor="proof-note" className="text-[0.8125rem] text-muted-foreground">
+            Note for the reader (optional)
+          </label>
+          <input
+            id="proof-note"
+            value={note}
+            maxLength={120}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Paid by Acme Labs for design work"
+            className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+          />
+          <p className="text-xs text-muted-foreground">
+            Rides in the link and is shown as your note, marked as not checked. Payslip never stores it.
+          </p>
         </div>
-        <div className="flex items-start gap-2.5">
-          <EyeOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div>
-            <dt className="text-foreground">What stays private</dt>
-            <dd className="text-muted-foreground">Your viewing key, your other payments and who paid you.</dd>
-          </div>
+      ) : null}
+
+      {/* Each term and its description are direct children of one group, the icon inside the term. */}
+      <dl className="grid gap-3 border-t border-hairline pt-4 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="flex items-start gap-2.5 text-foreground">
+            <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            What it shows
+          </dt>
+          <dd className="pl-[26px] text-muted-foreground">
+            This payment: amount, date, the address it was paid to, period and invoice.
+          </dd>
+        </div>
+        <div>
+          <dt className="flex items-start gap-2.5 text-foreground">
+            <EyeOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            What stays private
+          </dt>
+          <dd className="pl-[26px] text-muted-foreground">
+            Your viewing key, your other payments and who paid you, unless your note says so.
+          </dd>
         </div>
       </dl>
     </div>

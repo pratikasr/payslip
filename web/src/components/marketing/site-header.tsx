@@ -2,6 +2,7 @@ import Link from "next/link";
 import { LogoMark } from "@/components/app/logo";
 import { Button } from "@/components/ui/button";
 import { GITHUB_URL } from "@/components/marketing/data";
+import { DemoLink } from "@/components/marketing/demo-link";
 import { MobileMenu, type NavLink } from "@/components/marketing/mobile-menu";
 
 const LINKS: NavLink[] = [
@@ -12,10 +13,13 @@ const LINKS: NavLink[] = [
   { href: GITHUB_URL, label: "GitHub", external: true },
 ];
 
-/** Mercury's bar: the letter-spaced wordmark, centred links, one gold pill. It sits on the hero. */
+/**
+ * Mercury's bar: the letter-spaced wordmark, centred links, one gold pill. It sits on the hero. On
+ * phones it stays at the top as a dark glass bar, so the menu is never out of reach.
+ */
 export function SiteHeader() {
   return (
-    <header className="dark absolute inset-x-0 top-0 z-30 text-[#ededf3]">
+    <header className="dark fixed inset-x-0 top-0 z-30 text-[#ededf3] max-md:border-b max-md:border-white/[0.06] max-md:bg-[rgba(23,23,33,0.82)] max-md:backdrop-blur-md md:absolute">
       <div className="mx-auto flex h-16 max-w-[90rem] items-center gap-4 px-4 sm:h-[72px] sm:px-7">
         <Link
           href="/"
@@ -51,7 +55,7 @@ export function SiteHeader() {
 
         <div className="ml-auto flex items-center gap-2 md:ml-0">
           <Button asChild className="hidden h-9 px-[18px] text-[15px] sm:inline-flex">
-            <Link href="/console">Try the live demo</Link>
+            <DemoLink />
           </Button>
           <MobileMenu links={LINKS} />
         </div>

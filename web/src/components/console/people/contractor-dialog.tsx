@@ -3,7 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { toast } from "sonner";
 import { describedBy, Field } from "@/components/app/field";
-import { useHealth } from "@/components/app/health-provider";
+import { useCoinUnit, useHealth } from "@/components/app/health-provider";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,7 +18,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { checkEvmAddress, checkUnifiedAddress, PAYOUT_CHAINS } from "@/lib/addresses";
+import { checkPayoutAddress, checkUnifiedAddress, normaliseUnifiedAddress, PAYOUT_CHAINS } from "@/lib/addresses";
 import {
   api,
   toDisplayError,
@@ -35,6 +35,7 @@ const FIELD_FOR_CODE: Record<string, keyof Errors> = {
   address_without_shielded_receiver: "unified_address",
   duplicate_address: "unified_address",
   payout_address_required: "payout_address",
+  invalid_payout_address: "payout_address",
 };
 
 /**
@@ -54,7 +55,8 @@ export function ContractorDialog({
   onSaved: (c: Contractor) => void;
 }) {
   const uid = useId();
-  const { health } = useHealth();
+  const { network } = useHealth();
+  const coin = useCoinUnit();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
@@ -78,13 +80,14 @@ export function ContractorDialog({
   const validate = (): Errors => {
     const e: Errors = {};
     if (!name.trim()) e.name = "Enter the contractor's name as it should appear on payslips.";
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+    // The same rule as the service: something on each side of one "@". It is only a label.
+    if (email.trim() && !/^[^\s@]+@[^\s@]+$/.test(email.trim()))
       e.email = "Enter a valid email address, or leave it empty.";
-    const ua = checkUnifiedAddress(address, health?.network);
+    const ua = checkUnifiedAddress(address, network);
     if (ua) e.unified_address = ua;
     if (settlement === "convert_usdc") {
-      const evm = checkEvmAddress(payoutAddress);
-      if (evm) e.payout_address = evm;
+      const payout = checkPayoutAddress(payoutAddress, payoutChain);
+      if (payout) e.payout_address = payout;
     }
     return e;
   };
@@ -99,9 +102,10 @@ export function ContractorDialog({
     }
     const body: NewContractor = {
       name: name.trim(),
-      unified_address: address.trim(),
+      unified_address: normaliseUnifiedAddress(address),
       settlement_choice: settlement,
-      ...(email.trim() ? { email: email.trim() } : {}),
+      // Editing always sends the email: an empty one clears it (the service stores none).
+      ...(email.trim() || contractor ? { email: email.trim() } : {}),
       ...(settlement === "convert_usdc" ? { payout_chain: payoutChain, payout_address: payoutAddress.trim() } : {}),
     };
     setSubmitting(true);
@@ -122,7 +126,7 @@ export function ContractorDialog({
 
   const id = (f: string) => `${uid}-${f}`;
   const uaHelp =
-    health?.network === "mainnet"
+    network === "mainnet"
       ? "Starts with u1. Copy it from the contractor's Zcash wallet."
       : "Starts with utest1 on testnet. Copy it from the contractor's Zcash wallet.";
 
@@ -131,12 +135,12 @@ export function ContractorDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[520px]">
         <form onSubmit={onSubmit} noValidate className="grid">
           <DialogHeader className="gap-1.5 px-6 pt-6 pb-2">
-            <DialogTitle className="text-[1.375rem] leading-tight font-[380] tracking-[-0.01em]">
+            <DialogTitle className="text-[1.1875rem] leading-tight font-[380] tracking-[-0.01em] [overflow-wrap:anywhere]">
               {contractor ? `Edit ${contractor.name}` : "Add contractor"}
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
               {contractor
-                ? `Account ${contractor.account_index} stays the same, so their viewing key does not change.`
+                ? "Their private account stays the same, so their viewing key does not change."
                 : "Payslip opens a private account for this person. Its viewing key shows their payments and nothing else."}
             </DialogDescription>
           </DialogHeader>
@@ -182,14 +186,14 @@ export function ContractorDialog({
                 rows={3}
                 spellCheck={false}
                 autoComplete="off"
-                className="font-mono text-xs break-all"
+                className="font-mono text-[0.8125rem] break-all"
                 aria-invalid={!!errors.unified_address}
                 aria-describedby={describedBy(id("unified_address"), errors.unified_address, true)}
               />
             </Field>
 
             <fieldset className="grid gap-2">
-              <legend className="mb-2 text-sm font-medium">Settlement</legend>
+              <legend className="mb-2 text-[0.8125rem] font-medium">Settlement</legend>
               <RadioGroup
                 value={settlement}
                 onValueChange={(v) => setSettlement(v as SettlementChoice)}
@@ -201,9 +205,9 @@ export function ContractorDialog({
                 >
                   <RadioGroupItem id={id("hold")} value="hold_zec" className="mt-0.5" />
                   <span className="grid gap-0.5">
-                    <span className="text-[0.9375rem]">Hold ZEC</span>
+                    <span className="text-[0.9375rem]">Hold {coin}</span>
                     <span className="text-[0.8125rem] text-muted-foreground">
-                      Paid in shielded ZEC to their own wallet. Most private.
+                      Paid in shielded {coin} to their own wallet. Most private.
                     </span>
                   </span>
                 </label>
@@ -245,10 +249,10 @@ export function ContractorDialog({
                     id={id("payout_address")}
                     value={payoutAddress}
                     onChange={(e) => setPayoutAddress(e.target.value)}
-                    placeholder="0x"
+                    placeholder={payoutChain === "sol" ? "Solana address" : "0x"}
                     spellCheck={false}
                     autoComplete="off"
-                    className="h-10 font-mono text-xs"
+                    className="h-10 font-mono text-[0.8125rem]"
                     aria-invalid={!!errors.payout_address}
                     aria-describedby={describedBy(id("payout_address"), errors.payout_address)}
                   />
@@ -257,7 +261,7 @@ export function ContractorDialog({
             ) : null}
 
             {errors.form ? (
-              <p role="alert" className="rounded-lg bg-danger-bg p-3 text-sm text-danger">
+              <p role="alert" className="rounded-lg bg-danger-bg p-3 text-[0.8125rem] text-danger">
                 {errors.form}
               </p>
             ) : null}

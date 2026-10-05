@@ -11,26 +11,28 @@ import { AppShell, Bookmark, SidebarBrand, type ShellConfig } from "@/components
 import { Button } from "@/components/ui/button";
 import { useResource } from "@/hooks/use-resource";
 import { api, type Run } from "@/lib/api";
-import { Usd } from "@/components/app/amount";
-import { latestFillRate, zatToCents } from "@/components/console/lib";
-import { formatPeriodLabel, networkLabel } from "@/lib/format";
+import { Usd, Zec } from "@/components/app/amount";
+import { latestFillRate, runStateLabel, zatToCents } from "@/components/console/lib";
+import { ConsoleSearch } from "@/components/console/search";
+import { plural, runTitle } from "@/components/runs/run-meta";
+import { networkLabel } from "@/lib/format";
+import { isCancelled, latestPeriodFirst } from "@/lib/payroll";
 
 /** The company console (today's payer pages): sidebar, Payroll | Books switch, treasury bookmark. */
 export function ConsoleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { health } = useHealth();
+  const { network } = useHealth();
   const wallet = useResource((s) => api.wallet(s), "shell-wallet");
   const runs = useResource((s) => api.runs(s), "shell-runs");
-  const latest = runs.data
-    ?.slice()
-    .sort((a, b) => b.period_label.localeCompare(a.period_label) || b.created_at.localeCompare(a.created_at))[0];
-  const open = runs.data?.filter((r) => !["paid", "failed"].includes(r.status)).length ?? 0;
+  // The bookmark is the latest pay period's run (cancelled ones are closed and skipped).
+  const latest = runs.data ? latestPeriodFirst(runs.data.filter((r) => !isCancelled(r)))[0] : undefined;
+  const open = runs.data?.filter((r) => !["paid", "failed", "cancelled"].includes(r.status)).length ?? 0;
   const config: ShellConfig = {
     brand: (
       <SidebarBrand
         mark={<LogoMark className="size-[22px]" />}
         name="Payslip"
-        chip={health ? networkLabel(health.network) : undefined}
+        chip={network ? networkLabel(network) : undefined}
       />
     ),
     segments: [
@@ -50,28 +52,39 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
     ],
     bookmarks: (
       <div className="grid gap-0.5">
-        <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">Bookmarks</p>
+        <p className="px-2 pt-1 pb-1 text-[0.8125rem] text-muted-foreground">Bookmarks</p>
         <Bookmark
           href="/console/treasury"
           icon={BookmarkIcon}
           label="Treasury"
           detail={
-            wallet.data ? <TreasuryDetail zat={wallet.data.treasury.total_zat} runs={runs.data ?? []} /> : "Loading"
+            wallet.data ? (
+              <TreasuryDetail zat={wallet.data.treasury.total_zat} runs={runs.data ?? []} />
+            ) : wallet.error ? (
+              "Unavailable"
+            ) : (
+              "Loading"
+            )
           }
         />
         {latest ? (
           <Bookmark
             href={`/console/runs/${latest.id}`}
             icon={BookmarkIcon}
-            label={`Run for ${formatPeriodLabel(latest.period_label)}`}
-            detail={`${latest.status.charAt(0).toUpperCase()}${latest.status.slice(1).replace(/_/g, " ")} · ${latest.lines.length} people`}
+            label={`${runTitle(latest)} payroll`}
+            detail={`${runStateLabel(latest)} · ${plural(latest.lines.length, "person", "people")}`}
           />
         ) : null}
       </div>
     ),
-    topLeft: <NetworkBadge className="hidden sm:inline-flex" />,
-    topActions: (
-      <Button asChild size="sm" variant="secondary" className="hidden sm:inline-flex">
+    topLeft: (
+      <>
+        <NetworkBadge className="hidden sm:inline-flex" />
+        <ConsoleSearch />
+      </>
+    ),
+    menuAction: (
+      <Button asChild size="sm" className="w-full">
         <Link href="/console/runs/new">
           <Plus aria-hidden="true" />
           Run payroll
@@ -82,15 +95,14 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   return <AppShell config={config}>{children}</AppShell>;
 }
 
-/** The treasury in dollars at the latest fill rate (Mercury's bookmark balances), else in coin. */
+/**
+ * The treasury under its bookmark. Mainnet: dollars at the latest fill rate (a real price at the
+ * time), as Mercury's bookmarks show balances. Testnet: the coin itself, because the only rate
+ * there is simulated and is not a price.
+ */
 function TreasuryDetail({ zat, runs }: { zat: number; runs: Run[] }) {
-  const { health } = useHealth();
-  const unit = health?.network === "testnet" ? "TAZ" : "ZEC";
-  const rate = latestFillRate(runs);
+  const { network } = useHealth();
+  const rate = network === "mainnet" ? latestFillRate(runs) : null;
   if (rate) return <Usd cents={zatToCents(zat, rate)} />;
-  return (
-    <span className="money">
-      {(zat / 1e8).toFixed(4)} {unit}
-    </span>
-  );
+  return <Zec zat={zat} short />;
 }

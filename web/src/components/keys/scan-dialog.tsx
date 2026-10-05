@@ -22,7 +22,9 @@ export function ScanDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* The base DialogContent caps its height at the viewport and scrolls; the camera view is
+          also capped, so at 200 percent zoom the title and Close stay on screen. */}
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>

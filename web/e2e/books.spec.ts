@@ -4,13 +4,31 @@
   reconciliation fetched from the service. The test wallet may hold old test runs and test memos;
   they are real chain data and the assertions count them rather than assume a clean history.
 
-  Needs the testnet service (E2E_API_URL) in full mode and the web app (E2E_BASE_URL). Spends
-  nothing. Run: pnpm exec playwright test e2e/books.spec.ts
+  The judge kit tests run on any testnet service, full or statements-only: they load the published
+  kit (web/public/judge-kit-testnet.json, the same file as docs/judge/judge-kit-testnet.json) and
+  check that every payment carries the kit's names. The other tests need a full-mode service,
+  whose company keys they load.
+
+  Needs the testnet service (E2E_API_URL) and the web app (E2E_BASE_URL). Spends nothing.
+  Run: pnpm exec playwright test e2e/books.spec.ts
 */
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+const KIT_PATH = join(process.cwd(), "..", "docs", "judge", "judge-kit-testnet.json");
+const PUBLIC_KIT_PATH = join(process.cwd(), "public", "judge-kit-testnet.json");
+
+interface KitKey {
+  label: string;
+  role: "treasury" | "contractor";
+  ufvk: string;
+}
+
+async function serviceMode(): Promise<string> {
+  return (await (await fetch(`${API}/api/health`)).json()).mode ?? "full";
+}
 
 interface KeyEntry {
   label: string;
@@ -72,7 +90,75 @@ async function waitForBooks(page: Page) {
   await expect(page.getByTestId("books-headline")).toBeVisible({ timeout: 4 * 60_000 });
 }
 
+test("the judge kit the web app serves is the published one", () => {
+  expect(readFileSync(PUBLIC_KIT_PATH, "utf8")).toBe(readFileSync(KIT_PATH, "utf8"));
+});
+
+test("the judge kit loads with one click and names every payment by its key file", async ({ page }) => {
+  const kit = JSON.parse(readFileSync(KIT_PATH, "utf8")) as { birthday_height: number; keys: KitKey[] };
+  let sent: { birthday_height?: number; ufvks: string[] } | null = null;
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/api/statements/accountant")) sent = r.postDataJSON();
+  });
+  await page.goto("/books");
+  await page.getByRole("button", { name: /^Load the judge kit/ }).click();
+  await waitForBooks(page);
+
+  // The kit's birthday goes with every scan, and the page says where the scan started.
+  expect(sent!.birthday_height).toBe(kit.birthday_height);
+  await expect(page.getByTestId("books-scan-meta")).toContainText(
+    `scanned from block ${kit.birthday_height.toLocaleString("en-US")}`,
+  );
+  await expect(page.getByTestId("books-key-chip")).toContainText("7 keys · Treasury and 6 contractors");
+  // Funding records were read, so no warning about the Treasury key, on any kind of deployment.
+  await expect(page.getByText(/No funding record was found/)).toHaveCount(0);
+  await expect(page.getByTestId("books-headline")).toContainText("every dollar accounted for");
+
+  // Every payment in the ledger, the contractor filter and the exports carries a name.
+  await page.getByRole("link", { name: "Ledger", exact: true }).first().click();
+  await expect(page.getByTestId("ledger-row").first()).toBeVisible({ timeout: 60_000 });
+  const names = kit.keys.filter((k) => k.role === "contractor").map((k) => k.label);
+  const options = await page.getByTestId("ledger-contractor").locator("option").allInnerTexts();
+  expect(options.slice(1).sort()).toEqual([...names].sort());
+  await expect(page.getByTestId("ledger-table").getByText(/Unknown account|Unlabelled account/)).toHaveCount(0);
+  await page.getByRole("link", { name: "Exports", exact: true }).first().click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download", { timeout: 4 * 60_000 }),
+    page.getByTestId("export-xero").click(),
+  ]);
+  const xero = readFileSync((await download.path())!, "utf8");
+  expect(xero).not.toMatch(/,Contractor,/);
+  for (const name of names) expect(xero).toContain(`,${name},`);
+});
+
+test("a key set missing contractors never reads as reconciled", async ({ page }) => {
+  const kit = JSON.parse(readFileSync(KIT_PATH, "utf8")) as { keys: KitKey[] };
+  await page.goto("/books");
+  await page.getByLabel(/^Or paste viewing keys/).fill(
+    kit.keys
+      .slice(0, 3)
+      .map((k) => k.ufvk)
+      .join("\n"),
+  );
+  await page.getByRole("button", { name: "Add 3 keys" }).click();
+  await waitForBooks(page);
+  await expect(page.getByTestId("books-headline")).not.toContainText("every dollar accounted for");
+  await expect(page.getByTestId("books-headline")).toContainText("accounts whose keys are not loaded");
+  const table = page.getByTestId("books-runs");
+  await expect(table.getByText("Keys missing").first()).toBeVisible();
+  await table.getByTestId("books-run-row").first().getByRole("button").click();
+  await expect(page.getByTestId("run-missing-keys").first()).toContainText("4 of the 6 accounts this run paid");
+
+  // The service is asked to delete its read-only scan of these keys; the tab forgets them too.
+  await page.getByRole("button", { name: "Manage" }).first().click();
+  await page.getByRole("dialog").getByRole("button", { name: "Forget these keys on the service" }).click();
+  await expect(page.getByText(/^The service (forgot these keys|held no scan of these keys)$/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Open the books" })).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("payslip.books"))).toBeNull();
+});
+
 test("loads the company's keys with one button and reconciles every run", async ({ page }) => {
+  test.skip((await serviceMode()) === "statements", "a statements-only service holds no company keys");
   const file = await exportFile();
   const ufvks = file.keys.map((k) => k.ufvk);
   const contractors = file.keys.filter((k) => k.role === "contractor").length;
@@ -90,7 +176,9 @@ test("loads the company's keys with one button and reconciles every run", async 
   const r = await sameReconciliation(page, ufvks);
   const reconciled = r.runs.filter((x) => x.status === "reconciled").length;
   await expect(page.getByTestId("books-headline")).toContainText(
-    reconciled === r.runs.length ? "Every run reconciled" : `${reconciled} of ${r.runs.length} runs reconciled`,
+    reconciled === r.runs.length
+      ? `${usd(r.totals.paid_usd_cents)} paid, every dollar accounted for`
+      : `${reconciled} of ${r.runs.length} ${r.runs.length === 1 ? "run" : "runs"} reconciled`,
   );
 
   // KPI row: funded, paid and variance are the service's totals to the cent.
@@ -101,11 +189,11 @@ test("loads the company's keys with one button and reconciles every run", async 
   await expect(page.getByTestId("kpi-explained")).toContainText("$");
   await expect(page.getByTestId("kpi-unexplained")).toContainText("$");
 
-  // One row per run, and a cent of rounding is shown, never hidden.
+  // One row per run, and a cent of rounding is shown under Difference, never hidden.
   const table = page.getByTestId("books-runs");
   await expect(table.getByTestId("books-run-row")).toHaveCount(r.runs.length);
   const withinRounding = r.runs.filter((x) => x.status === "reconciled" && (x.difference_usd_cents ?? 0) !== 0);
-  await expect(table.getByText("Reconciled within rounding")).toHaveCount(withinRounding.length);
+  await expect(table.getByText("rounding", { exact: true })).toHaveCount(withinRounding.length);
   await expect(page.getByTestId("books-runs-total")).toContainText(usd(r.totals.paid_usd_cents));
 
   // Drill-down: the first run opens with its funding and its payments.
@@ -121,6 +209,7 @@ test("loads the company's keys with one button and reconciles every run", async 
 });
 
 test("imports the company's key file and filters the ledger", async ({ page }, testInfo) => {
+  test.skip((await serviceMode()) === "statements", "a statements-only service holds no company keys");
   const file = await exportFile();
   const path = testInfo.outputPath("payslip-viewing-keys.json");
   writeFileSync(path, JSON.stringify(file));
@@ -163,6 +252,7 @@ test("imports the company's key file and filters the ledger", async ({ page }, t
 });
 
 test("lists every exception and downloads the accounting exports", async ({ page }) => {
+  test.skip((await serviceMode()) === "statements", "a statements-only service holds no company keys");
   const file = await exportFile();
   await page.goto("/books");
   await page.getByRole("button", { name: "Load this company's keys" }).click();
@@ -205,8 +295,9 @@ test("lists every exception and downloads the accounting exports", async ({ page
 });
 
 test("refuses a seed phrase and forgets the keys on request", async ({ page }) => {
+  test.skip((await serviceMode()) === "statements", "a statements-only service holds no company keys");
   await page.goto("/books");
-  const box = page.getByLabel("Or paste viewing keys, one per line");
+  const box = page.getByLabel(/^Or paste viewing keys/);
   await box.fill("abandon ability able about above absent absorb abstract absurd abuse access accident");
   await expect(page.getByText(/This looks like a spending key or seed phrase/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Add keys" })).toBeDisabled();

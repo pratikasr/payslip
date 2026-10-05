@@ -1,23 +1,18 @@
+import Link from "next/link";
 import { formatHeight } from "@/lib/format";
-import {
-  REHEARSAL_PAYMENTS,
-  REHEARSALS,
-  TESTNET_CONVERSION,
-  repoFile,
-  type ProofRun,
-} from "@/components/marketing/data";
+import { DEMO_PAYMENTS, DEMO_RUNS, TESTNET_CONVERSION, repoFile, type ProofRun } from "@/components/marketing/data";
 import { Container, OutLink, TxLink } from "@/components/marketing/parts";
 
 const STATS: { value: string; label: string }[] = [
-  { value: String(REHEARSAL_PAYMENTS), label: "Shielded payroll payments on Zcash testnet" },
+  { value: String(DEMO_PAYMENTS), label: "Shielded payroll payments, every one readable with the judge kit" },
   { value: "MIT", label: "Open source, every line on GitHub" },
   { value: "USDC", label: "Funds each run, through NEAR Intents" },
   { value: "Shielded", label: "Settled in Zcash's Ironwood pool" },
 ];
 
 /**
- * Mercury's stats band, with only what can be checked: the rehearsal payments are listed under
- * it, each linked to the explorer.
+ * Mercury's stats band, with only what can be checked: the demo wallet's payroll payments are
+ * listed under it, each linked to the explorer, and all of them open in Books with the judge kit.
  */
 export function ProofStrip() {
   return (
@@ -50,16 +45,27 @@ export function ProofStrip() {
           ))}
         </dl>
 
-        <div className="mt-16 grid gap-10 lg:grid-cols-2 lg:gap-12">
-          {REHEARSALS.map((r) => (
+        <div className="mt-16 grid gap-10 lg:grid-cols-3 lg:gap-8">
+          {DEMO_RUNS.map((r) => (
             <RunLedger key={r.runId} run={r} />
           ))}
         </div>
 
-        <div className="mt-8 flex flex-col gap-2 text-sm text-muted-foreground lg:flex-row lg:flex-wrap lg:gap-x-8">
+        <div className="mt-8 grid gap-2 text-sm text-muted-foreground">
           <p>
-            A contractor paid in USDC (conversion simulated on testnet): <TxLink txid={TESTNET_CONVERSION.txid} /> at{" "}
-            <span className="num">{formatHeight(TESTNET_CONVERSION.height)}</span>.
+            All three runs are the demo company&apos;s, paid on Zcash testnet on 5 Oct 2026. Read them, with every
+            amount and the reconciliation, in{" "}
+            <Link href="/books" className="rounded-sm text-link underline underline-offset-4">
+              Books with the judge kit
+            </Link>
+            .
+          </p>
+          <p>
+            A contractor paid in USDC, from an earlier test wallet (conversion simulated on testnet):{" "}
+            <TxLink txid={TESTNET_CONVERSION.txid} /> at{" "}
+            <span className="num">{formatHeight(TESTNET_CONVERSION.height)}</span>. This conversion leg is public by
+            design: the explorer shows the amount sent to the venue&apos;s deposit address. Every payroll payment above
+            is shielded.
           </p>
           <p>
             Timings and every record:{" "}
@@ -78,11 +84,10 @@ function RunLedger({ run }: { run: ProofRun }) {
     <div className="min-w-0">
       <table className="w-full text-sm">
         <caption className="pb-3 text-left">
-          <span className="text-[15px] text-foreground">
-            {run.title}, {run.period} payroll
-          </span>
+          <span className="text-[15px] text-foreground">{run.periodLabel} payroll</span>
           <span className="mt-0.5 block text-[13px] text-muted-foreground">
-            Run {run.runId.slice(0, 8)}, {run.date}. Names come from Payslip&apos;s records; the explorer shows none.
+            Run {run.runId.slice(0, 8)}, paid {run.date}. Names come from Payslip&apos;s records; the explorer shows
+            none.
           </span>
         </caption>
         <thead>

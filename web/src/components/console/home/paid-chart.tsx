@@ -145,7 +145,7 @@ export function PaidChart({ points }: { points: PeriodPoint[] }) {
         ) : null}
         {sel && active !== null ? (
           <div
-            className="pointer-events-none absolute top-0 z-10 rounded-lg border bg-popover px-2.5 py-1.5 text-xs whitespace-nowrap text-popover-foreground shadow-sm"
+            className="pointer-events-none absolute top-0 z-10 rounded-lg border bg-popover px-2.5 py-1.5 text-[0.8125rem] whitespace-nowrap text-popover-foreground shadow-sm"
             style={{
               left: Math.min(Math.max(xy[active][0] - 60, 8), Math.max(8, width - 128)),
             }}

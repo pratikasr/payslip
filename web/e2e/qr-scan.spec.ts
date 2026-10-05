@@ -2,7 +2,8 @@
   Payslip access by camera, end to end: the QR code of a contractor's invite link (Payslip access,
   company console) is captured, turned into a video file, and played to the contractor portal's
   unlock screen as its camera (Chromium's fake capture device). The portal must decode the invite
-  link from the camera and open that contractor's payslips from the live testnet service.
+  link from the camera and open that contractor's payslips from the live testnet service, and
+  Books must take the key out of the same invite QR.
 
   Needs the testnet service and the web app running (E2E_API_URL, E2E_BASE_URL) with at least
   one contractor. Run: pnpm exec playwright test e2e/qr-scan.spec.ts
@@ -72,6 +73,14 @@ test("an invite link shown as a QR code is scanned by camera into the contractor
       new RegExp(`^Welcome, ${name.split(" ")[0]}$`),
       { timeout: 240_000 },
     );
+
+    // 4. The same invite QR scanned in Books gives its key (not the link) to the paste box.
+    const books = await context.newPage();
+    await books.goto(`${BASE}/books`);
+    await books.getByRole("button", { name: /^Scan a QR code/ }).click();
+    await expect(books.getByText(/^Scanned a viewing key/)).toBeVisible({ timeout: 120_000 });
+    await expect(books.getByRole("button", { name: "Add 1 key" })).toBeEnabled();
+    await expect(books.getByText(/This is not a Zcash viewing key/)).toHaveCount(0);
   } finally {
     await browser.close();
   }

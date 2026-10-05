@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
 import { ChevronLeft, Download, ExternalLink, Share } from "lucide-react";
 import { Fiat, Rate, Usd, Zec } from "@/components/app/amount";
 import { useCoinUnit } from "@/components/app/health-provider";
@@ -11,13 +12,14 @@ import { LogoMark } from "@/components/app/logo";
 import { ErrorState } from "@/components/app/states";
 import { Initials } from "@/components/ds/avatar";
 import { PageTitle } from "@/components/ds/page";
-import { payslipTitle, personName, proofLink } from "@/components/portal/portal-data";
-import { usePortal } from "@/components/portal/portal-provider";
-import { ScanProgress, SettlementTag, SimulatedRate } from "@/components/portal/portal-states";
+import { useDocumentTitle } from "@/components/portal/document-title";
+import { fetchStatement, payslipTitle, proofLink, statementRequest } from "@/components/portal/portal-data";
+import { usePersonName, usePortal } from "@/components/portal/portal-provider";
+import { ScanProgress, SettlementTag } from "@/components/portal/portal-states";
 import { ShareProofDialog } from "@/components/portal/share-proof-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import type { CreatedProof, Statement, StatementLine } from "@/lib/api";
+import { toDisplayError, type ApiError, type CreatedProof, type Statement, type StatementLine } from "@/lib/api";
 import {
   formatDate,
   formatDateTime,
@@ -25,9 +27,11 @@ import {
   formatHeight,
   formatPeriodLabel,
   formatRange,
+  formatRate,
   networkLabel,
   truncateMiddle,
 } from "@/lib/format";
+import { isValidRange } from "@/lib/period";
 
 const QrCode = dynamic(() => import("@/components/app/qr-code"), { ssr: false });
 
@@ -47,17 +51,53 @@ function Back() {
   );
 }
 
-/** One payslip as a document: who was paid, for what period, how much, and where it is on chain. */
-export function PayslipDocument({ txid }: { txid: string }) {
-  const { recent, reload } = usePortal();
-  const s = recent.statement;
-  const line = s?.lines.find((l) => l.txid === txid) ?? s?.pending.find((l) => l.txid === txid);
+const findLine = (s: Statement | undefined, txid: string) =>
+  s?.lines.find((l) => l.txid === txid) ?? s?.pending.find((l) => l.txid === txid);
 
-  if (!s) {
+interface Older {
+  statement?: Statement;
+  error?: ApiError;
+  loading: boolean;
+}
+
+/**
+ * One payslip as a document: who was paid, for what period, how much, and where it is on chain.
+ * A payment older than the last twelve months (opened from Tax documents) carries the period it
+ * was found in (?from=&to=), and that period is read before saying the payslip is not there.
+ */
+export function PayslipDocument({ txid }: { txid: string }) {
+  const { recent, reload, ufvk, meta } = usePortal();
+  const params = useSearchParams();
+  const from = params.get("from") ?? "";
+  const to = params.get("to") ?? "";
+  const s = recent.statement;
+  const inRecent = findLine(s, txid);
+  const wantOlder = !!s && !inRecent && !!ufvk && isValidRange(from, to);
+  const [older, setOlder] = useState<Older>({ loading: false });
+
+  useEffect(() => {
+    if (!wantOlder || !ufvk) return;
+    const ctrl = new AbortController();
+    setOlder({ loading: true });
+    fetchStatement(statementRequest(ufvk, { from, to }, meta), ctrl.signal)
+      .then((statement) => !ctrl.signal.aborted && setOlder({ statement, loading: false }))
+      .catch((err) => !ctrl.signal.aborted && setOlder({ error: toDisplayError(err), loading: false }));
+    return () => ctrl.abort();
+  }, [wantOlder, ufvk, meta, from, to]);
+
+  const olderLine = findLine(older.statement, txid);
+  const doc =
+    inRecent && s
+      ? { statement: s, line: inRecent }
+      : olderLine && older.statement
+        ? { statement: older.statement, line: olderLine }
+        : null;
+
+  if (!s || (wantOlder && (older.loading || (!older.statement && !older.error)))) {
     return (
       <>
         <Back />
-        {recent.error ? (
+        {recent.error && !s ? (
           <>
             <PageTitle title="Payslip" />
             <ErrorState error={recent.error} onRetry={reload} />
@@ -72,36 +112,39 @@ export function PayslipDocument({ txid }: { txid: string }) {
       </>
     );
   }
-  if (!line) {
+  if (!doc) {
     return (
       <>
         <Back />
         <PageTitle title="Payslip not found" />
+        {older.error ? <ErrorState error={older.error} onRetry={reload} className="mb-4 max-w-prose" /> : null}
         <p className="max-w-prose text-[0.9375rem] text-muted-foreground">
           Your key shows no payment in transaction{" "}
-          <code className="font-mono text-[0.8125rem] text-foreground">{truncateMiddle(txid, 10, 8)}</code> in the last
-          12 months. Open{" "}
-          <Link href="/portal/tax" className="rounded-sm text-link hover:underline">
+          <code className="font-mono text-[0.8125rem] text-foreground">{truncateMiddle(txid, 10, 8)}</code>{" "}
+          {wantOlder ? `from ${formatRange(from, to)}` : "in the last 12 months"}. Open{" "}
+          <Link href="/portal/tax" className="rounded-sm text-link underline underline-offset-4">
             Tax documents
           </Link>{" "}
-          to look further back.
+          to look in another period.
         </p>
       </>
     );
   }
-  return <Document statement={s} line={line} />;
+  return <Document statement={doc.statement} line={doc.line} />;
 }
 
 function Document({ statement: s, line }: { statement: Statement; line: StatementLine }) {
   const [sharing, setSharing] = useState(false);
   const [proof, setProof] = useState<CreatedProof | null>(null);
-  const name = personName(s);
+  const name = usePersonName();
   const mined = line.height !== null && s.lines.includes(line);
   const testnet = s.network === "testnet";
   const run = s.runs?.[line.run_id];
   const market = s.network === "mainnet" && line.market ? line.market : null;
   const title = payslipTitle(line);
   const coin = useCoinUnit();
+
+  useDocumentTitle(`${title} | Payslip`);
 
   const print = () => {
     const previous = document.title;
@@ -116,16 +159,24 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
       value: mined ? formatDateTime(line.block_time ?? line.date) : "Sent, waiting to be mined",
     },
     { label: "Invoice", value: line.invoice_ref },
-    {
-      label: "Rate",
-      value: (
-        <span className="inline-flex flex-wrap items-baseline gap-x-2">
-          <Rate e6={line.rate_usd_per_zec_e6} />
-          {testnet ? <SimulatedRate /> : null}
-        </span>
-      ),
-      hint: testnet ? undefined : "The rate the payroll run bought ZEC at.",
-    },
+    testnet
+      ? {
+          // On testnet the rate is a fixed demo figure; it stays in a tooltip, not on the page.
+          label: "Rate",
+          value: (
+            <span
+              title={`${formatRate(line.rate_usd_per_zec_e6)} per ${coin}, fixed so faucet coins can carry a demo payroll`}
+            >
+              Simulated testnet rate
+            </span>
+          ),
+          hint: `Testnet coins have no market price, so the dollar amount was converted to ${coin} at a fixed demo rate.`,
+        }
+      : {
+          label: "Rate",
+          value: <Rate e6={line.rate_usd_per_zec_e6} />,
+          hint: "The rate the payroll run bought ZEC at.",
+        },
     ...(market
       ? [
           {
@@ -138,8 +189,8 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
     line.settlement === "converted"
       ? {
           label: "Settlement",
-          value: "Converted to USDC",
-          hint: "Paid in ZEC to a swap that sends USDC to your payout address.",
+          value: "Sent to be converted to USDC",
+          hint: `Paid in ${coin} to a swap venue that sends USDC to your payout address. This payslip shows the ${coin} payment; the conversion is the venue's.`,
         }
       : {
           label: "Settlement",
@@ -148,8 +199,13 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
             <span>
               Paid to{" "}
               <code className="font-mono text-[0.8125rem]" title={line.to_address}>
-                {truncateMiddle(line.to_address, 12, 8)}
+                <span data-print="hide">{truncateMiddle(line.to_address, 12, 8)}</span>
+                <span data-print="only" className="break-all">
+                  {line.to_address}
+                </span>
               </code>
+              , one receiver of your Zcash address. A payment proof shows this same receiver; it will not look identical
+              to the full address you gave your payer, and the proof page can check that it is yours.
             </span>
           ) : undefined,
         },
@@ -175,9 +231,31 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           </span>
         </span>
       ),
-      hint: "A block explorer shows this transaction with no amount and no parties.",
     },
     { label: "Block height", value: <span className="num">{formatHeight(line.height)}</span> },
+    {
+      label: "What the world sees",
+      value: mined ? (
+        <span>
+          A shielded transaction in block <span className="num">{formatHeight(line.height)}</span>: no amount, no names.
+        </span>
+      ) : (
+        "Nothing yet: the transaction is waiting for a block."
+      ),
+      hint: line.explorer_url ? (
+        <a
+          href={line.explorer_url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 rounded-sm text-link underline underline-offset-4"
+          data-print="hide"
+        >
+          See it on a public block explorer
+          <ExternalLink className="size-3.5" aria-hidden="true" />
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      ) : undefined,
+    },
   ];
 
   return (
@@ -245,7 +323,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
             </p>
             {line.settlement === "converted" ? (
               <p className="mt-3 text-[0.9375rem]">
-                You chose to be paid in USDC, so this payment was converted to USDC.
+                You chose to be paid in USDC, so this payment was sent to a swap venue to be converted to USDC.
               </p>
             ) : null}
           </div>

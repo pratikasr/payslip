@@ -20,7 +20,7 @@ const POINTS = [
   {
     icon: ScanSearch,
     title: "What a block explorer sees",
-    body: "That a shielded transaction happened, in which block, and its network fee. No amount, no sender, no recipient and no memo. Open any transaction on this page to check.",
+    body: "That a shielded transaction happened, in which block, and its network fee. No amount, no sender, no recipient and no memo. Open any payroll payment on this page to check.",
   },
 ];
 

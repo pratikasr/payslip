@@ -8,24 +8,30 @@ import { explorerFor } from "@/components/books/run-detail";
 import {
   differenceOf,
   exceptionsOf,
+  missingAccountsOf,
   paidDateOf,
+  statusView,
+  unpaidAccountsOf,
   UNLABELLED_REASON,
   type BooksResult,
+  type BooksRun,
   type BooksUnlabelled,
 } from "@/components/books/books-data";
-import type { ReconciliationRun } from "@/lib/api";
 import { formatCount, formatDate, formatHeight, formatPeriodLabel } from "@/lib/format";
 import { cn } from "cn";
 
 /** Everything that needs a person: runs that do not reconcile and transactions with no Payslip memo. */
 export function ExceptionsView({ r }: { r: BooksResult }) {
   const ex = exceptionsOf(r);
+  const optional = (id: string, label: string, count: number, tone: TagTone) =>
+    count ? [{ id, label, count, tone }] : [];
   const groups: { id: string; label: string; count: number; tone: TagTone }[] = [
+    ...optional("missing-keys", "Keys missing", ex.missingKeys.length, "warning"),
+    ...optional("unpaid", "Unpaid", ex.unpaid.length, "danger"),
     { id: "no-funding", label: "No funding record", count: ex.noFunding.length, tone: "warning" },
     { id: "unexplained", label: "Unexplained variance", count: ex.unexplained.length, tone: "danger" },
-    ...(ex.incomplete.length
-      ? [{ id: "incomplete", label: "Not fully mined", count: ex.incomplete.length, tone: "warning" as TagTone }]
-      : []),
+    ...optional("incomplete", "Not fully mined", ex.incomplete.length, "warning"),
+    ...optional("other", "Other statuses", ex.other.length, "warning"),
     { id: "unlabelled", label: "Unlabelled transactions", count: ex.unlabelled.length, tone: "neutral" },
   ];
   return (
@@ -44,6 +50,30 @@ export function ExceptionsView({ r }: { r: BooksResult }) {
           </a>
         ))}
       </nav>
+
+      {ex.missingKeys.length ? (
+        <Group
+          id="missing-keys"
+          title="Runs that paid accounts whose keys are not loaded"
+          count={ex.missingKeys.length}
+          tone="warning"
+          todo="The Treasury's key shows each run paying more accounts than this key set holds, so those payments cannot be seen or checked. Ask the company for every contractor's viewing key."
+        >
+          <RunRows r={r} runs={ex.missingKeys} kind="allocations" />
+        </Group>
+      ) : null}
+
+      {ex.unpaid.length ? (
+        <Group
+          id="unpaid"
+          title="Runs with a funded account and no payment"
+          count={ex.unpaid.length}
+          tone="danger"
+          todo="The Treasury funded an account for the run, but that account shows no payment for it. Ask the company what happened to the payment."
+        >
+          <RunRows r={r} runs={ex.unpaid} kind="allocations" />
+        </Group>
+      ) : null}
 
       <Group
         id="no-funding"
@@ -74,6 +104,18 @@ export function ExceptionsView({ r }: { r: BooksResult }) {
           todo="Some payments are still waiting for a block. Scan again in a few minutes."
         >
           <RunRows r={r} runs={ex.incomplete} kind="unexplained" />
+        </Group>
+      ) : null}
+
+      {ex.other.length ? (
+        <Group
+          id="other"
+          title="Runs with a status Books does not know"
+          count={ex.other.length}
+          tone="warning"
+          todo="A newer Payslip service reported a status this version of Books cannot describe. Check these runs with the company."
+        >
+          <RunRows r={r} runs={ex.other} kind="unexplained" />
         </Group>
       ) : null}
 
@@ -125,7 +167,15 @@ const TH =
   "h-10 px-2.5 pb-2 text-left align-bottom text-[0.8125rem] font-normal whitespace-nowrap text-muted-foreground";
 const TD = "px-2.5 py-3 align-top";
 
-function RunRows({ r, runs, kind }: { r: BooksResult; runs: ReconciliationRun[]; kind: "no-funding" | "unexplained" }) {
+function RunRows({
+  r,
+  runs,
+  kind,
+}: {
+  r: BooksResult;
+  runs: BooksRun[];
+  kind: "no-funding" | "unexplained" | "allocations";
+}) {
   return (
     <ul className="divide-y divide-hairline border-y border-hairline">
       {runs.map((run) => {
@@ -134,7 +184,12 @@ function RunRows({ r, runs, kind }: { r: BooksResult; runs: ReconciliationRun[];
         return (
           <li key={run.run_id} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 py-3">
             <div className="min-w-0">
-              <span className="block text-[0.9375rem]">{formatPeriodLabel(run.period)} payroll</span>
+              <span className="block text-[0.9375rem]">
+                {formatPeriodLabel(run.period)} payroll
+                {kind === "unexplained" && run.status !== "variance_unexplained" ? (
+                  <span className="text-muted-foreground"> · {statusView(run).label}</span>
+                ) : null}
+              </span>
               <span className="num block text-xs text-muted-foreground">
                 Run <code className="font-mono">{run.run_id.slice(0, 8)}</code> · {run.lines}{" "}
                 {run.lines === 1 ? "payment" : "payments"}
@@ -148,7 +203,22 @@ function RunRows({ r, runs, kind }: { r: BooksResult; runs: ReconciliationRun[];
                   <Usd cents={run.paid_usd_cents} />
                 </dd>
               </div>
-              {kind === "unexplained" ? (
+              {kind === "allocations" ? (
+                <>
+                  <div className="text-right">
+                    <dt className="text-xs text-muted-foreground">Accounts paid</dt>
+                    <dd className="num">{run.allocations ?? "Unknown"}</dd>
+                  </div>
+                  <div className="text-right">
+                    <dt className="text-xs text-muted-foreground">
+                      {run.status === "unpaid" ? "With no payment" : "Keys missing"}
+                    </dt>
+                    <dd className="num text-destructive">
+                      {(run.status === "unpaid" ? unpaidAccountsOf(run) : missingAccountsOf(run)) ?? "Unknown"}
+                    </dd>
+                  </div>
+                </>
+              ) : kind === "unexplained" ? (
                 <>
                   <div className="text-right">
                     <dt className="text-xs text-muted-foreground">Variance</dt>
@@ -181,6 +251,11 @@ function RunRows({ r, runs, kind }: { r: BooksResult; runs: ReconciliationRun[];
       })}
     </ul>
   );
+}
+
+/** An account with no name: its fingerprint's first characters, so two can be told apart. */
+function unlabelledAccount(u: BooksUnlabelled): string {
+  return u.account ? `Unlabelled account ${u.account.slice(0, 8)}` : "Unlabelled account";
 }
 
 function reasonOf(u: BooksUnlabelled) {
@@ -258,7 +333,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                 >
                   <td className={cn(TD, "whitespace-nowrap")}>{formatDate(u.date)}</td>
                   <td className={cn(TD, "whitespace-nowrap")}>
-                    <span className="block">{u.label ?? "Unknown account"}</span>
+                    <span className="block">{u.label ?? unlabelledAccount(u)}</span>
                     <span className="block text-xs text-muted-foreground">
                       {u.direction === "in" ? "Received" : "Sent"}
                     </span>
@@ -295,7 +370,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
             <li key={`${u.txid}-${u.account ?? ""}-${i}`} className="grid gap-1.5 py-3">
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[0.9375rem]">
-                  {u.direction === "in" ? "Received by" : "Sent from"} {u.label ?? "an unknown account"}
+                  {u.direction === "in" ? "Received by" : "Sent from"} {u.label ?? unlabelledAccount(u)}
                 </span>
                 <Zec zat={u.direction === "out" ? -u.amount_zat : u.amount_zat} className="text-sm" />
               </div>

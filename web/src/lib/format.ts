@@ -93,11 +93,24 @@ function dayMonthYear(d: Date): string {
   return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 }
 
+/*
+  The app's two date forms (docs/DESIGN.md section 6): "5 Oct" in tables and lists, where the year
+  is already in the period or the heading, and "5 Oct 2026, 08:13 UTC" wherever a moment is the
+  point (a timeline, a document, a tooltip). Both are UTC, so every viewer reads the same day.
+*/
+
 /** "2026-10-05" or an RFC 3339 timestamp -> "5 Oct 2026" */
 export function formatDate(value: string | null | undefined): string {
   if (!value) return "Not set";
   const d = parseDate(value);
   return d ? dayMonthYear(d) : value;
+}
+
+/** "2026-10-05" or an RFC 3339 timestamp -> "5 Oct": table dates, the year is in the period. Empty when unset. */
+export function formatShortDate(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = parseDate(value);
+  return d ? `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}` : value;
 }
 
 /** RFC 3339 -> "5 Oct 2026, 11:42 UTC" */
@@ -111,6 +124,12 @@ export function formatDateTime(value: string | null | undefined): string {
 export function formatTime(value: string): string {
   const d = parseDate(value);
   return d ? `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}:${pad2(d.getUTCSeconds())} UTC` : value;
+}
+
+/** RFC 3339 -> "11:42 UTC": a time of day beside a date that is already on screen. */
+export function formatClock(value: string): string {
+  const d = parseDate(value);
+  return d ? `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())} UTC` : value;
 }
 
 /** "2026-09" -> "Sep 2026" */
@@ -133,13 +152,36 @@ export function truncateMiddle(value: string, head = 8, tail = 6): string {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
-/** Parse a user-typed USD amount ("4,800" or "4800.5") into integer cents. */
+/*
+  A typed USD amount: digits with at most two decimals ("4800", "4800.5", ".50"), commas only as
+  thousands separators ("4,800.50"), and an optional leading "$". "10,00" is refused rather than
+  read as 1,000: in many countries the comma marks the cents.
+*/
+const USD_INPUT = /^(?:\d{1,3}(?:,\d{3})+|\d+)?(?:\.\d{0,2})?$/;
+
+function cleanUsd(input: string): string {
+  return input.trim().replace(/^\$\s*/, "");
+}
+
+/** Parse a user-typed USD amount ("4,800" or "4800.5") into integer cents; null when unreadable. */
 export function parseUsdToCents(input: string): number | null {
-  const cleaned = input.replace(/[$,\s]/g, "");
-  if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null;
-  const [whole, frac = ""] = cleaned.split(".");
-  const cents = Number(whole) * 100 + Number(frac.padEnd(2, "0"));
+  const cleaned = cleanUsd(input);
+  if (!/\d/.test(cleaned) || !USD_INPUT.test(cleaned)) return null;
+  const [whole, frac = ""] = cleaned.replace(/,/g, "").split(".");
+  const cents = Number(whole || "0") * 100 + Number(frac.padEnd(2, "0"));
   return Number.isSafeInteger(cents) ? cents : null;
+}
+
+/** Why a typed amount cannot be read, in words that name the fix; null when it can be. */
+export function usdAmountProblem(input: string): string | null {
+  const cleaned = cleanUsd(input);
+  if (parseUsdToCents(input) !== null) return null;
+  if (/^[-\u2212]/.test(cleaned)) return "The amount must be more than zero.";
+  if (/^\d+,\d{1,2}$/.test(cleaned)) return "Use a dot for cents, like 10.00.";
+  if (/\.\d{3,}$/.test(cleaned) && /^[\d,]*\.\d+$/.test(cleaned)) return "Use at most two decimals, for the cents.";
+  if (/\d/.test(cleaned) && USD_INPUT.test(cleaned)) return "That amount is too large.";
+  if (/\s/.test(cleaned)) return "Leave out spaces. Use commas for thousands, like 4,800.50.";
+  return "Use a number like 4800 or 4,800.50.";
 }
 
 /** Base units string ("28462150000") and decimals -> "28,462.150000" */
@@ -167,6 +209,29 @@ export function networkLabel(network: string | null | undefined): string {
   if (network === "mainnet") return "Mainnet";
   if (network === "testnet") return "Testnet";
   return network ?? "Unknown network";
+}
+
+/**
+ * The coin's name on a network: TAZ on testnet (testnet coins have no value), ZEC otherwise.
+ * Components use `useCoinUnit()` (health-provider), which reads the network for them.
+ */
+export function coinUnit(network: string | null | undefined): "ZEC" | "TAZ" {
+  return network === "testnet" ? "TAZ" : "ZEC";
+}
+
+/** "Holds TAZ" on testnet, "Holds ZEC" on mainnet; "Converts to USDC" for converting contractors. */
+export function settlementName(choice: "hold_zec" | "convert_usdc" | string | undefined, coin: "ZEC" | "TAZ"): string {
+  return choice === "convert_usdc" ? "Converts to USDC" : `Holds ${coin}`;
+}
+
+/** A rate given as a decimal string or number of USD per coin ("1350000.00", 1350000) -> rate e6; null when unreadable. */
+export function rateE6FromDecimal(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const text = typeof value === "number" ? (Number.isFinite(value) ? value.toFixed(6) : "") : value.trim();
+  const m = /^(\d+)(?:\.(\d{1,6})\d*)?$/.exec(text);
+  if (!m) return null;
+  const e6 = Number(m[1]) * 1_000_000 + Number((m[2] ?? "").padEnd(6, "0"));
+  return Number.isSafeInteger(e6) && e6 > 0 ? e6 : null;
 }
 
 /** Today's UTC date as YYYY-MM-DD, for file names. */

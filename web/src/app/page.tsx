@@ -12,7 +12,7 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { WhoSeesWhat } from "@/components/marketing/who-sees-what";
 
 /*
-  The landing page, after Mercury's: a dark cinematic hero and product section (dark in both
+  The landing page, its layout informed by Mercury's: a dark cinematic hero and product section (dark in both
   themes), then light or dark sections that follow the theme, and a dark close. Server-rendered;
   the only client code is the product accordion and the phone menu.
 */

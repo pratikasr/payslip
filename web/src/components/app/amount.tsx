@@ -27,7 +27,8 @@ export function Zec({
   return (
     <span className={cn("money", className)} title={`${full} ${coin}`}>
       {head}
-      {tail ? <span className="money-tail">{tail}</span> : null}
+      {/* Dimmed by colour, not opacity, so the digits keep 4.5:1 contrast on any ground. */}
+      {tail ? <span className="text-muted-foreground">{tail}</span> : null}
       {unit ? (
         <span className="ml-1 tracking-normal text-muted-foreground" data-unit="">
           {coin}

@@ -7,8 +7,14 @@ import { Coin, Rate, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { Initials } from "@/components/ds/avatar";
 import { Tag } from "@/components/ds/tag";
-import { differenceOf, type BooksResult } from "@/components/books/books-data";
-import type { ReconciliationRun } from "@/lib/api";
+import {
+  differenceOf,
+  missingAccountsOf,
+  payeeOf,
+  unpaidAccountsOf,
+  type BooksResult,
+  type BooksRun,
+} from "@/components/books/books-data";
 import { formatDate, formatHeight, formatRate } from "@/lib/format";
 import { cn } from "cn";
 
@@ -51,12 +57,16 @@ export function RateValue({ e6, testnet }: { e6: number | null | undefined; test
 }
 
 /** One run opened: its funding record, what was not paid out, and every payment in it. */
-export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }) {
+export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
   const testnet = r.network === "testnet";
   const record = r.run_records?.find((x) => x.run_id === run.run_id) ?? null;
   const lines = r.lines.filter((l) => l.run_id === run.run_id);
   const pending = (r.pending ?? []).filter((l) => l.run_id === run.run_id);
-  const allocations = (r.funding ?? []).filter((f) => f.run_id === run.run_id);
+  // The Treasury's own count of allocation outputs when the service sends it; otherwise only the
+  // outputs received by accounts in this key set are visible.
+  const allocations = run.allocations ?? (r.funding ?? []).filter((f) => f.run_id === run.run_id).length;
+  const missing = missingAccountsOf(run);
+  const unpaid = unpaidAccountsOf(run);
   const diff = differenceOf(run);
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)]">
@@ -78,7 +88,9 @@ export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }
                 {
                   label: "Rate",
                   value: testnet ? (
-                    <span title={`${formatRate(record.rate_usd_per_zec_e6)} per coin, a fixed testnet rate`}>
+                    <span
+                      title={`${formatRate(record.rate_usd_per_zec_e6)} per coin: a fixed testnet rate so faucet coins can carry a demo payroll`}
+                    >
                       <Tag>Simulated rate</Tag>
                     </span>
                   ) : (
@@ -104,11 +116,11 @@ export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }
                     />
                   ),
                 },
-                ...(allocations.length
+                ...(allocations
                   ? [
                       {
                         label: "Moved to",
-                        value: `${allocations.length} ${allocations.length === 1 ? "account" : "accounts"} in that transaction`,
+                        value: `${allocations} ${allocations === 1 ? "account" : "accounts"} in that transaction`,
                       },
                     ]
                   : []),
@@ -120,6 +132,25 @@ export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }
               written the day the run starts paying.
             </p>
           )}
+          {missing ? (
+            <p className="mt-2 rounded-lg bg-warning-bg px-3 py-2 text-sm text-strong" data-testid="run-missing-keys">
+              {missing} of the {allocations} {allocations === 1 ? "account" : "accounts"} this run paid{" "}
+              {missing === 1 ? "is" : "are"} not in this key set
+              {run.missing_zat ? (
+                <>
+                  {" "}
+                  (<Zec zat={run.missing_zat} />)
+                </>
+              ) : null}
+              , so {missing === 1 ? "its payment" : "their payments"} cannot be seen. Load every contractor&apos;s key
+              to reconcile the run.
+            </p>
+          ) : null}
+          {unpaid ? (
+            <p className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-sm text-strong">
+              {unpaid} funded {unpaid === 1 ? "account shows" : "accounts show"} no payment for this run.
+            </p>
+          ) : null}
         </section>
         <section aria-label="Not paid out">
           <h3 className="mb-1 text-[0.8125rem] text-muted-foreground">Not paid out</h3>
@@ -127,7 +158,10 @@ export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }
             items={[
               { label: "Network fees", value: <Zec zat={run.network_fees_zat} /> },
               { label: "Unspent", value: <Zec zat={run.unspent_zat} /> },
-              { label: "Explained at the fill rate", value: <Usd cents={run.explained_usd_cents} /> },
+              {
+                label: testnet ? "Explained at the simulated rate" : "Explained at the fill rate",
+                value: <Usd cents={run.explained_usd_cents} />,
+              },
               {
                 label: "Variance minus explained",
                 value:
@@ -161,10 +195,10 @@ export function RunDetail({ r, run }: { r: BooksResult; run: ReconciliationRun }
           {[...pending.map((l) => ({ l, pending: true })), ...lines.map((l) => ({ l, pending: false }))].map(
             ({ l, pending: isPending }, i) => (
               <li key={`${l.txid}-${i}`} className="grid grid-cols-[26px_minmax(0,1fr)_auto] gap-x-3 py-2.5">
-                <Initials name={l.label} className="mt-0.5" />
+                <Initials name={l.label ?? payeeOf(l)} className="mt-0.5" />
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate text-[0.9375rem]">{l.label ?? "Unknown account"}</span>
+                    <span className="truncate text-[0.9375rem]">{payeeOf(l)}</span>
                     {isPending ? <Tag>Pending</Tag> : null}
                     {l.settlement === "converted" ? <Tag>Converted to USDC</Tag> : null}
                   </div>

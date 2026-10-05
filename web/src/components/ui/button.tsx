@@ -4,12 +4,17 @@ import { cn } from "cn"
 import { Slot } from "radix-ui"
 
 // Mercury-style pills: one gold primary per screen, grey chips for everything else.
+// On touch screens (pointer: coarse) every size gets an invisible hit area of at least 44px
+// (Apple's minimum) around it, so a 24px copy icon or a 32px pill is easy to tap without
+// changing how it looks.
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-[450] whitespace-nowrap transition-colors outline-hidden focus-visible:outline-solid select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button relative pointer-coarse:after:absolute pointer-coarse:after:content-[''] inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-[450] whitespace-nowrap transition-colors outline-hidden focus-visible:outline-solid select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "bg-primary font-medium text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),black_8%)]",
+        // Disabled, the primary turns grey like every other disabled button (never a washed-out gold).
+        default:
+          "bg-primary font-medium text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),black_8%)] disabled:bg-secondary disabled:text-muted-foreground disabled:opacity-100",
         outline: "border-border bg-background text-foreground hover:bg-muted aria-expanded:bg-muted",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_6%)] aria-expanded:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_6%)]",
@@ -18,14 +23,15 @@ const buttonVariants = cva(
         link: "rounded-sm text-link underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        xs: "h-6 gap-1 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-8 gap-1.5 px-3.5 text-[0.8125rem] [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-10 gap-2 px-5 text-[0.9375rem]",
-        icon: "size-9",
-        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm": "size-8",
-        "icon-lg": "size-10",
+        default:
+          "h-9 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3 pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-1",
+        xs: "h-6 gap-1 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3 pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5",
+        sm: "h-8 gap-1.5 px-3.5 text-[0.8125rem] [&_svg:not([class*='size-'])]:size-3.5 pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-1.5",
+        lg: "h-10 gap-2 px-5 text-[0.9375rem] pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-0.5",
+        icon: "size-9 pointer-coarse:after:-inset-1",
+        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3 pointer-coarse:after:-inset-2.5",
+        "icon-sm": "size-8 pointer-coarse:after:-inset-1.5",
+        "icon-lg": "size-10 pointer-coarse:after:-inset-0.5",
       },
     },
     defaultVariants: {

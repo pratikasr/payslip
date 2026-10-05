@@ -2,17 +2,22 @@
   The landing page (/): every section renders, the product accordion opens each item and swaps
   its card, the phone menu works, and every transaction link opens the testnet explorer.
 
-  The page is static, so only the web app needs to be running (E2E_BASE_URL).
+  The page is static; the calls to action ask the service which kind of deployment it is, so the
+  web app (E2E_BASE_URL) and its service (E2E_API_URL) run.
   Run: pnpm exec playwright test e2e/landing.spec.ts
 */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
+
+const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 
 const EXPLORER_TX = /^https:\/\/testnet\.zecblock\.com\/tx\/([0-9a-f]{64})$/;
 
 const ACCORDION = [
-  { title: "Shielded payroll runs", card: /^Sep 2026 payroll, run 284c2421/ },
+  { title: "Shielded payroll runs", card: /^Sep 2026 payroll, run 09019bd8/ },
   { title: "Payslips your contractors can prove", card: /^Payslip for Amara Okafor, verified on Zcash$/ },
-  { title: "Books your accountant can reconcile", card: /^Reconciliation of run 284c2421/ },
+  { title: "Books your accountant can reconcile", card: /^Reconciliation of run 09019bd8/ },
   { title: "Open source, MIT", card: /repository on GitHub/ },
 ];
 
@@ -44,13 +49,21 @@ test("every section is present", async ({ page }) => {
     await expect(page.locator(`#${id}`)).toBeAttached();
   }
 
-  // Hero: both calls to action, the disclaimer, and a payroll whose amounts stay sealed.
+  // Hero: both calls to action (the console on a full deployment, Books and the judge kit on a
+  // statements-only one), the disclaimer, and a payroll whose amounts stay sealed.
   const main = page.getByRole("main");
-  await expect(main.getByRole("link", { name: "Try the live demo" }).first()).toHaveAttribute("href", "/console");
+  const mode = (await (await fetch(`${API}/api/health`)).json()).mode;
+  const demo =
+    mode === "statements"
+      ? { name: "Import the judge kit", href: "/books" }
+      : { name: "Try the live demo", href: "/console" };
+  await expect(main.getByRole("link", { name: demo.name }).first()).toHaveAttribute("href", demo.href);
   await expect(main.getByRole("link", { name: "Check a payslip" })).toHaveAttribute("href", "/verify");
   await expect(page.getByText("Payslip is open-source software, not a bank.")).toBeVisible();
   const sealed = page.getByRole("figure", { name: "Sep 2026 payroll", exact: true });
   await expect(sealed).toContainText("Amara Okafor");
+  await expect(sealed).toContainText("Run 09019bd8");
+  await expect(sealed).toContainText("6 payments at height 4,466,912");
   await expect(sealed.getByText("Amount sealed")).toHaveCount(4);
   await expect(sealed).not.toContainText("$");
 
@@ -131,7 +144,10 @@ test("the phone menu opens, jumps to a section and closes", async ({ page }) => 
   await expect(button).toHaveAttribute("aria-expanded", "true");
   await expect(nav.getByRole("link")).toHaveText(["Product", "How it works", "Security", "Pricing", /^GitHub/]);
   const panel = page.locator(`[id="${await button.getAttribute("aria-controls")}"]`);
-  await expect(panel.getByRole("link", { name: "Try the live demo" })).toHaveAttribute("href", "/console");
+  await expect(panel.getByRole("link", { name: /^(Try the live demo|Import the judge kit)$/ })).toHaveAttribute(
+    "href",
+    /^\/(console|books)$/,
+  );
   await expect(panel.getByRole("link", { name: "Check a payslip" })).toHaveAttribute("href", "/verify");
 
   // Escape closes it and puts focus back on the button.
@@ -159,15 +175,30 @@ test("every transaction link opens the testnet explorer", async ({ page }) => {
     })),
   );
   const txLinks = links.filter((l) => l.txid !== null || /[0-9a-f]{64}/.test(l.href));
-  // Hero (4), payslip card (1), the two rehearsals (12) and the USDC conversion (1).
-  expect(txLinks.length).toBeGreaterThanOrEqual(18);
+  // Hero (4), payslip card (1), the demo wallet's three runs (18) and the USDC conversion (1).
+  expect(txLinks.length).toBeGreaterThanOrEqual(24);
   for (const l of txLinks) {
     const m = EXPLORER_TX.exec(l.href);
     expect(m, `${l.href} is not a testnet explorer link`).not.toBeNull();
     expect(l.txid).toBe(m![1]);
     expect(l.target).toBe("_blank");
   }
-  // Every rehearsal payment listed in the proof strip is linked.
+  // Every payment of the judge kit's wallet listed in the proof strip is linked, and only those
+  // (plus the public USDC conversion leg, which is labelled as public).
   const proof = page.locator("#proof a[data-txid]");
-  await expect(proof).toHaveCount(13);
+  await expect(proof).toHaveCount(19);
+  const kit = JSON.parse(readFileSync(join(process.cwd(), "..", "docs", "proof", "demo-wallet-runs.json"), "utf8")) as {
+    runs: { lines: { txid: string; height: number }[] }[];
+  };
+  const listed = new Set(await proof.evaluateAll((as) => as.map((a) => a.getAttribute("data-txid"))));
+  for (const line of kit.runs.flatMap((r) => r.lines)) expect(listed.has(line.txid), line.txid).toBe(true);
+  await expect(page.locator("#proof")).toContainText("conversion leg is public by design");
+  await expect(page.locator("#proof")).toContainText("18");
+});
+
+test("the phone header stays reachable after scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/");
+  await page.locator("#pricing").scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Menu" })).toBeInViewport();
 });

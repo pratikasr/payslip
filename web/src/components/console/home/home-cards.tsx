@@ -5,54 +5,63 @@ import { useEffect, useState } from "react";
 import {
   ArrowDownRight,
   ArrowUpRight,
+  BarChart3,
   Check,
   ChevronRight,
   FileKey2,
   KeyRound,
+  Landmark,
   ListChecks,
   ShieldCheck,
+  Table2,
 } from "lucide-react";
-import { compactUsd, Usd } from "@/components/app/amount";
+import { compactUsd, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
-import { Initials } from "@/components/ds/avatar";
 import { Card, CardHeader } from "@/components/ds/card";
-import { Tag } from "@/components/ds/tag";
 import { Button } from "@/components/ui/button";
 import type { Contractor, Run, Wallet } from "@/lib/api";
-import { formatCount, formatPeriodLabel, MINUS } from "@/lib/format";
+import { formatCount, formatPeriodLabel, formatShortDate, formatUsd, MINUS } from "@/lib/format";
+import { nextPayPeriod } from "@/lib/payroll";
+import { TESTNET_FAUCET_URL } from "@/lib/public-url";
 import { cn } from "cn";
-import type { PeriodPoint } from "@/components/console/home/paid-chart";
 import {
   AUDITOR_DOWNLOAD_KEY,
   latestFillRate,
-  nextPeriodLabel,
+  nextPeriodTitle,
   openRun,
   paidByPeriod,
   paidRuns,
   paidTotals,
-  RUN_STATUS_LABEL,
+  periodYear,
+  runStateLabel,
   zatToCents,
+  type PeriodPoint,
 } from "@/components/console/lib";
 import { IconChip } from "@/components/console/ui";
+import { periodTitle, plural, runTitle } from "@/components/runs/run-meta";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function confirmedCents(run: Run): number {
-  return run.lines.reduce((s, l) => s + (l.status === "confirmed" ? l.amount_usd_cents : 0), 0);
-}
-
 /**
- * The hero: everything paid to contractors, a rising line through each payroll month (Mercury's
- * balance card), and how the latest payroll compares with the one before. With a single payroll
- * there is no line to draw, so the card shows where that payroll went, person by person.
+ * The hero: everything paid to contractors this year, and the year month by month (Mercury's
+ * balance card), with how the latest payroll compares with the one before. Months without a
+ * payroll show as faint stubs, so a gap reads as a gap; a table twin shows the same figures.
  */
 export function PayrollHero({ runs }: { runs: Run[] }) {
-  const totals = paidTotals(runs);
-  const periods = paidByPeriod(runs).filter((p) => p.cents > 0);
+  // The year of the latest paid payroll; the total, the counts and the bars all cover that year.
+  const latestPaid = paidRuns(runs)[0];
+  const year = latestPaid ? periodYear(latestPaid) : new Date().getUTCFullYear().toString();
+  const totals = paidTotals(runs, year);
+  const paid = paidByPeriod(runs, year);
+  const periods = paid.filter((p) => p.cents > 0);
   const latest = periods[periods.length - 1];
   const previous = periods[periods.length - 2];
-  const change = latest && previous && previous.cents > 0 ? (latest.cents - previous.cents) / previous.cents : null;
-  const year = latest ? latest.period.slice(0, 4) : new Date().getUTCFullYear().toString();
+  // An extra run in a month (a bonus, or the same period paid twice) is not growth: compare only
+  // months that each had one payroll, and otherwise say how many runs the month had.
+  const comparable = latest && previous && latest.runs === 1 && previous.runs === 1 && previous.cents > 0;
+  const change = comparable ? (latest.cents - previous.cents) / previous.cents : null;
+  const months = yearMonths(year, paid);
+  const [asTable, setAsTable] = useState(false);
   return (
     <Card className="flex flex-col" aria-labelledby="hero-title">
       <CardHeader
@@ -63,20 +72,36 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
             <ShieldCheck className="size-4 text-primary-edge" aria-label="Every payment shielded" />
           </span>
         }
+        actions={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="text-muted-foreground"
+            aria-pressed={asTable}
+            aria-label={asTable ? "Show as a chart" : "Show as a table"}
+            title={asTable ? "Show as a chart" : "Show as a table"}
+            onClick={() => setAsTable((t) => !t)}
+          >
+            {asTable ? <BarChart3 aria-hidden="true" /> : <Table2 aria-hidden="true" />}
+          </Button>
+        }
       />
-      <div className="mt-1 text-[2rem] leading-tight font-[380] tracking-[-0.01em]">
+      <div className="mt-1 text-[2.125rem] leading-tight font-[380] tracking-[-0.02em]">
         <Usd cents={totals.cents} />
       </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm text-strong">
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[0.8125rem] text-strong">
         <span>
-          {formatCount(periods.length)} {periods.length === 1 ? "payroll" : "payrolls"} · {formatCount(totals.payments)}{" "}
-          payments
+          {plural(totals.payrolls, "payroll")} · {plural(totals.payments, "payment")}
         </span>
         {latest ? (
           <span className="inline-flex items-center gap-2 whitespace-nowrap">
             <span className="text-muted-foreground">{formatPeriodLabel(latest.period)}</span>
             <Usd cents={latest.cents} />
-            {change !== null && Math.abs(change) >= 0.0005 ? (
+            {latest.runs > 1 ? (
+              <span className="text-muted-foreground" title="This month had more than one paid run">
+                {formatCount(latest.runs)} runs
+              </span>
+            ) : change !== null && Math.abs(change) >= 0.0005 ? (
               <span
                 className={cn(
                   "inline-flex items-center gap-0.5",
@@ -98,140 +123,215 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
           </span>
         ) : null}
       </div>
-      {periods.length >= 2 ? (
-        <MonthlyBars points={paidByPeriod(runs).slice(-6)} />
-      ) : (
-        <Breakdown run={paidRuns(runs)[0]} />
-      )}
+      {asTable ? <MonthTable year={year} points={months} /> : <YearBars year={year} points={months} />}
     </Card>
   );
 }
 
+interface MonthPoint extends PeriodPoint {
+  /** After this month: nothing can be paid for it yet. */
+  future: boolean;
+}
+
+/** Every month of the year, January to December, with what was paid for each (0 when nothing). */
+function yearMonths(year: string, paid: PeriodPoint[]): MonthPoint[] {
+  const byPeriod = new Map(paid.map((p) => [p.period, p]));
+  const now = new Date();
+  const thisMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
+  return MONTHS.map((label, i) => {
+    const period = `${year}-${String(i + 1).padStart(2, "0")}`;
+    const p = byPeriod.get(period);
+    return { period, label, cents: p?.cents ?? 0, runs: p?.runs ?? 0, future: period > thisMonth };
+  });
+}
+
 /**
- * Payroll by month as bars that fill the card: gold for the latest month, a softer gold for the
- * months before. Values sit above each bar; the table twin carries them for screen readers.
+ * Twelve columns, January to December: gold for the latest paid month, a softer gold before it,
+ * faint stubs for months with no payroll, nothing for months still ahead. Values sit over paid
+ * months and in each column's tooltip; the caption reads them all for screen readers.
  */
-function MonthlyBars({ points }: { points: PeriodPoint[] }) {
+function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.cents));
-  const last = points.length - 1;
+  const lastPaid = points.reduce((l, p, i) => (p.cents > 0 ? i : l), -1);
   return (
     <figure className="mt-5 flex min-h-[188px] flex-1 flex-col">
-      <div className="flex flex-1 items-end gap-3 border-b border-hairline sm:gap-5" aria-hidden="true">
+      <div className="flex flex-1 items-end gap-1 border-b border-hairline sm:gap-2" aria-hidden="true">
         {points.map((p, i) => (
-          <div key={p.period} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1.5">
-            <span className={cn("money text-xs", i === last ? "text-foreground" : "text-muted-foreground")}>
-              {p.cents > 0 ? compactUsd(p.cents) : ""}
+          <div
+            key={p.period}
+            className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-1.5"
+            title={
+              p.future
+                ? undefined
+                : `${formatPeriodLabel(p.period)}: ${p.cents > 0 ? formatUsd(p.cents) : "no payroll"}`
+            }
+          >
+            {/* Twelve columns leave no room for every value: the latest paid month carries its
+                figure; the others show theirs in the tooltip, the caption and the table view. */}
+            <span className="money text-[11px] text-foreground">
+              {i === lastPaid && p.cents > 0 ? compactUsd(p.cents) : ""}
             </span>
-            <span
-              className={cn("w-full max-w-[56px] rounded-t-md", i === last ? "bg-primary" : "bg-viz-soft")}
-              style={{ height: `${Math.max(2, (p.cents / max) * 100) * 0.78}%` }}
-            />
+            {p.future ? null : (
+              <span
+                className={cn(
+                  "w-full max-w-[40px] rounded-t-[5px]",
+                  p.cents === 0 ? "h-[3px] bg-chip" : i === lastPaid ? "bg-primary" : "bg-viz-soft",
+                )}
+                style={p.cents > 0 ? { height: `${Math.max(4, (p.cents / max) * 100) * 0.78}%` } : undefined}
+              />
+            )}
           </div>
         ))}
       </div>
-      <div className="mt-2 flex gap-3 sm:gap-5" aria-hidden="true">
+      <div className="mt-2 flex gap-1 sm:gap-2" aria-hidden="true">
         {points.map((p) => (
-          <span key={p.period} className="min-w-0 flex-1 text-center text-xs text-muted-foreground">
-            {p.label}
+          <span
+            key={p.period}
+            className={cn("min-w-0 flex-1 text-center text-[11px] sm:text-[0.8125rem]", "text-muted-foreground")}
+          >
+            <span className="sm:hidden">{p.label.charAt(0)}</span>
+            <span className="hidden sm:inline">{p.label}</span>
           </span>
         ))}
       </div>
       <figcaption className="sr-only">
-        Paid to contractors by month:{" "}
-        {points.map((p) => `${formatPeriodLabel(p.period)} ${compactUsd(p.cents)}`).join(", ")}.
+        Paid to contractors by month in {year}:{" "}
+        {points
+          .filter((p) => !p.future)
+          .map((p) => `${formatPeriodLabel(p.period)} ${p.cents > 0 ? formatUsd(p.cents) : "none"}`)
+          .join(", ")}
+        .
       </figcaption>
     </figure>
   );
 }
 
-/** Where one payroll went: a bar per person, scaled to the largest payment. */
-function Breakdown({ run }: { run: Run | undefined }) {
-  if (!run) return null;
-  const lines = run.lines
-    .filter((l) => l.status === "confirmed")
-    .sort((a, b) => b.amount_usd_cents - a.amount_usd_cents);
-  const max = Math.max(1, ...lines.map((l) => l.amount_usd_cents));
+/** The same months as a table: the chart's twin for reading exact figures. */
+function MonthTable({ year, points }: { year: string; points: MonthPoint[] }) {
+  const shown = points.filter((p) => !p.future);
   return (
-    <div className="mt-5">
-      <p className="mb-2.5 text-[0.8125rem] text-muted-foreground">
-        Where the {formatPeriodLabel(run.period_label)} payroll went
-      </p>
-      <ul className="grid gap-2.5">
-        {lines.map((l) => (
-          <li key={l.id} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] items-center gap-3 text-sm">
-            <span className="truncate text-strong">{l.contractor_name}</span>
-            <span className="h-1.5 rounded-full bg-chip">
-              <span
-                className="block h-full rounded-full bg-primary"
-                style={{ width: `${Math.max(4, (l.amount_usd_cents / max) * 100)}%` }}
-              />
-            </span>
-            <Usd cents={l.amount_usd_cents} className="text-right" />
-          </li>
+    <table className="mt-4 w-full border-collapse text-[0.9375rem]">
+      <caption className="sr-only">Paid to contractors by month in {year}</caption>
+      <thead>
+        <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
+          <th scope="col" className="py-2 font-normal">
+            Month
+          </th>
+          <th scope="col" className="py-2 text-right font-normal">
+            Runs
+          </th>
+          <th scope="col" className="py-2 text-right font-normal">
+            Paid
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {shown.map((p) => (
+          <tr key={p.period} className="border-b border-hairline last:border-0">
+            <td className="py-1.5">{formatPeriodLabel(p.period)}</td>
+            <td className="num py-1.5 text-right text-strong">{p.runs || ""}</td>
+            <td className="py-1.5 text-right">
+              {p.cents > 0 ? <Usd cents={p.cents} /> : <span className="text-muted-foreground">None</span>}
+            </td>
+          </tr>
         ))}
-      </ul>
-    </div>
+      </tbody>
+    </table>
   );
 }
 
 /**
- * The treasury in dollars at the latest fill rate (the simulated rate on testnet), and whether it
- * covers the next payroll.
+ * How many payrolls like `run` the treasury covers, in coin: what the run drew from the treasury
+ * (its payments and fee reserve, `zec_acquired_zat`) against what the treasury holds. No rate is
+ * involved, so the answer is the same on testnet and mainnet.
+ */
+function payrollsCovered(treasuryZat: number, run: Run | undefined): number | null {
+  const drew = run?.funding?.zec_acquired_zat ?? run?.total_zat ?? null;
+  return drew && drew > 0 ? treasuryZat / drew : null;
+}
+
+/**
+ * The treasury. Mainnet: dollars at the latest fill rate (a real price at that time), coin under
+ * it. Testnet: the coin itself, because the only rate there is simulated and is not a price. In
+ * both, how many payrolls like the last one it covers.
  */
 export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] }) {
-  const { health } = useHealth();
-  const rate = latestFillRate(runs);
+  const { network } = useHealth();
+  const testnet = network === "testnet";
+  const rate = testnet ? null : latestFillRate(runs);
   const zat = wallet?.treasury.total_zat ?? 0;
-  const cents = rate ? zatToCents(zat, rate) : null;
   const lastPayroll = paidRuns(runs)[0];
-  const need = lastPayroll ? confirmedCents(lastPayroll) : 0;
-  const cover = cents !== null && need > 0 ? cents / need : null;
-  const testnet = health?.network === "testnet";
+  const cover = wallet ? payrollsCovered(zat, lastPayroll) : null;
   return (
     <Card className="flex flex-col" aria-labelledby="treasury-title">
       <CardHeader
         id="treasury-title"
         title="Treasury"
-        actions={<IconChip icon={FileKey2} href="/console/treasury" label="Open treasury" />}
+        actions={<IconChip icon={Landmark} href="/console/treasury" label="Open treasury" />}
       />
       <div className="mt-1 text-[1.1875rem]">
-        {cents !== null ? <Usd cents={cents} /> : <span className="text-muted-foreground">Not funded yet</span>}
+        {!wallet ? (
+          <span className="text-muted-foreground">Unavailable</span>
+        ) : rate ? (
+          <>
+            <Usd cents={zatToCents(zat, rate)} />
+            <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+              <Zec zat={zat} /> at the latest fill rate
+            </span>
+          </>
+        ) : (
+          <Zec zat={zat} />
+        )}
       </div>
-      {cover !== null ? (
+      {cover !== null && lastPayroll ? (
         <>
           <div
             className="mt-4 h-1.5 overflow-hidden rounded-full bg-chip"
             role="img"
-            aria-label={`Covers ${cover.toFixed(1)} payrolls`}
+            aria-label={`Covers ${cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`}
           >
             <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(1, cover) * 100}%` }} />
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
             {cover >= 1
-              ? `Covers ${cover >= 10 ? Math.floor(cover) : cover.toFixed(1)} payrolls like the last one`
-              : "Not enough for a payroll like the last one"}
+              ? `Covers ${cover >= 10 ? Math.floor(cover) : cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`
+              : `Not enough for a payroll like ${runTitle(lastPayroll)}`}
           </p>
         </>
       ) : null}
-      {wallet && rate ? (
-        <dl className="mt-4 mb-4 grid grid-cols-2 gap-x-4 text-sm">
+      {wallet ? (
+        <dl className="mt-4 mb-4 grid grid-cols-2 gap-x-4 text-[0.9375rem]">
           <div>
             <dt className="text-[0.8125rem] text-muted-foreground">Spendable</dt>
             <dd className="mt-0.5">
-              <Usd cents={zatToCents(wallet.treasury.spendable_zat, rate)} />
+              {rate ? (
+                <Usd cents={zatToCents(wallet.treasury.spendable_zat, rate)} />
+              ) : (
+                <Zec zat={wallet.treasury.spendable_zat} short />
+              )}
             </dd>
           </div>
           <div>
             <dt className="text-[0.8125rem] text-muted-foreground">Confirming</dt>
             <dd className="mt-0.5">
-              <Usd cents={zatToCents(wallet.treasury.pending_zat, rate)} />
+              {rate ? (
+                <Usd cents={zatToCents(wallet.treasury.pending_zat, rate)} />
+              ) : (
+                <Zec zat={wallet.treasury.pending_zat} short />
+              )}
             </dd>
           </div>
         </dl>
       ) : null}
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-hairline pt-3.5">
-        <div className="min-w-0 text-sm text-muted-foreground">
-          {testnet ? <Tag>Simulated rate</Tag> : "At the latest fill rate"}
+        <div className="min-w-0 text-[0.8125rem] text-muted-foreground">
+          {testnet ? (
+            <a href={TESTNET_FAUCET_URL} target="_blank" rel="noreferrer" className="text-link hover:underline">
+              Get free testnet coins<span className="sr-only"> (opens in a new tab)</span>
+            </a>
+          ) : (
+            "Funded with USDC per run"
+          )}
         </div>
         <Button asChild size="sm" variant="secondary">
           <Link href="/console/treasury">Fund</Link>
@@ -241,29 +341,37 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
   );
 }
 
-/** The next payroll as a dated card: the month after the latest run, due at its end. */
+/**
+ * The next payroll: the unfinished run when there is one, else the period after the latest paid
+ * payroll (the same period Run payroll proposes). Payslip has no pay schedule, so the card names
+ * the period, never a due date.
+ */
 export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractors: Contractor[] }) {
+  if (contractors.length === 0) return null;
   const open = openRun(runs);
-  const label = open ? formatPeriodLabel(open.period_label) : nextPeriodLabel(runs);
-  const [mon, year] = label.split(" ");
-  const monthIdx = MONTHS.indexOf(mon);
-  const lastDay = monthIdx >= 0 ? new Date(Date.UTC(Number(year), monthIdx + 1, 0)).getUTCDate() : null;
+  const period = open ? { from: open.period_start, to: open.period_end } : nextPayPeriod(runs);
+  const title = periodTitle(period.from, period.to);
+  const end = new Date(`${period.to}T00:00:00Z`);
+  const today = new Date().toISOString().slice(0, 10);
+  const ended = period.to < today;
   const estimate = paidRuns(runs)[0];
+  const people = plural(open ? open.lines.length : contractors.length, "person", "people");
   return (
     <Card className="flex flex-col" aria-labelledby="next-title">
       <CardHeader id="next-title" title="Next payroll" />
       <div className="mt-3 flex items-center gap-4">
         <div className="grid w-14 shrink-0 overflow-hidden rounded-lg border text-center" aria-hidden="true">
-          <span className="bg-primary py-0.5 text-[0.6875rem] font-medium tracking-wide text-primary-foreground uppercase">
-            {mon}
+          <span className="bg-primary py-0.5 text-[0.6875rem] font-medium text-primary-foreground">
+            {MONTHS[end.getUTCMonth()]}
           </span>
-          <span className="py-1 text-[1.375rem] leading-none font-[380]">{lastDay ?? ""}</span>
+          <span className="py-1 text-[0.9375rem] leading-tight font-[380]">{end.getUTCFullYear()}</span>
         </div>
         <div className="min-w-0">
-          <div className="text-[1.0625rem]">{label} payroll</div>
-          <div className="text-sm text-muted-foreground">
-            {open ? RUN_STATUS_LABEL[open.status] : `Due ${lastDay ? `${lastDay} ${mon}` : "at month end"}`} ·{" "}
-            {formatCount(open ? open.lines.length : contractors.length)} people
+          <div className="text-[0.9375rem]">{title} payroll</div>
+          <div className="text-[0.8125rem] text-muted-foreground">
+            {open
+              ? `${runStateLabel(open)} · ${people}`
+              : `${ended ? "Period ended" : "Period ends"} ${formatShortDate(period.to)} · ${people}`}
           </div>
         </div>
       </div>
@@ -274,7 +382,9 @@ export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractor
             {open ? (
               <Usd cents={open.total_usd_cents} />
             ) : estimate ? (
-              <Usd cents={confirmedCents(estimate)} />
+              <Usd
+                cents={estimate.lines.reduce((s, l) => s + (l.status === "confirmed" ? l.amount_usd_cents : 0), 0)}
+              />
             ) : (
               "None yet"
             )}
@@ -283,6 +393,7 @@ export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractor
         <Button asChild size="sm" variant="secondary">
           <Link href={open ? `/console/runs/new?run=${open.id}` : "/console/runs/new"}>
             {open ? "Continue" : "Start"}
+            <span className="sr-only"> the {title} payroll</span>
           </Link>
         </Button>
       </div>
@@ -298,7 +409,15 @@ interface Task {
 }
 
 /** Mercury's Tasks: what needs the payer, written as sentences, at most three. */
-export function TodoCard({ runs, contractors }: { runs: Run[]; contractors: Contractor[] }) {
+export function TodoCard({
+  runs,
+  contractors,
+  className,
+}: {
+  runs: Run[];
+  contractors: Contractor[];
+  className?: string;
+}) {
   const [auditorSent, setAuditorSent] = useState(true);
   useEffect(() => {
     try {
@@ -309,6 +428,7 @@ export function TodoCard({ runs, contractors }: { runs: Run[]; contractors: Cont
   }, []);
   const open = openRun(runs);
   const unshared = contractors.filter((c) => !c.fvk_shared_at);
+  const hasPeople = contractors.length > 0;
   const tasks: Task[] = [];
   if (open)
     tasks.push({
@@ -316,7 +436,7 @@ export function TodoCard({ runs, contractors }: { runs: Run[]; contractors: Cont
       icon: ListChecks,
       text: (
         <>
-          Finish the <b className="font-medium">{formatPeriodLabel(open.period_label)}</b> payroll
+          Finish the <b className="font-[450]">{runTitle(open)}</b> payroll
         </>
       ),
       href: `/console/runs/new?run=${open.id}`,
@@ -328,51 +448,52 @@ export function TodoCard({ runs, contractors }: { runs: Run[]; contractors: Cont
       text: (
         <>
           Share payslip access with{" "}
-          <b className="font-medium">
+          <b className="font-[450]">
             {formatCount(unshared.length)} {unshared.length === 1 ? "person" : "people"}
           </b>
         </>
       ),
       href: "/console/access",
     });
-  if (!auditorSent)
+  // Only once there is someone to read: an empty company has nothing for an accountant.
+  if (!auditorSent && hasPeople)
     tasks.push({
       key: "auditor",
       icon: FileKey2,
       text: (
         <>
-          Send the <b className="font-medium">auditor package</b> to your accountant
+          Send the <b className="font-[450]">auditor package</b> to your accountant
         </>
       ),
       href: "/console/access#auditor-package",
     });
-  if (!open)
+  if (!open && hasPeople)
     tasks.push({
       key: "next",
       icon: ListChecks,
       text: (
         <>
-          Start the <b className="font-medium">{nextPeriodLabel(runs)}</b> payroll
+          Start the <b className="font-[450]">{nextPeriodTitle(runs)}</b> payroll
         </>
       ),
       href: "/console/runs/new",
     });
   const shown = tasks.slice(0, 3);
   return (
-    <Card className="flex flex-col" aria-labelledby="todo-title">
+    <Card className={cn("flex flex-col", className)} aria-labelledby="todo-title">
       <CardHeader
         id="todo-title"
         title={
           <span className="inline-flex items-center gap-2">
             To do
             {tasks.length > 0 ? (
-              <span className="text-xs text-muted-foreground">{formatCount(tasks.length)}</span>
+              <span className="text-[0.8125rem] text-muted-foreground">{formatCount(tasks.length)}</span>
             ) : null}
           </span>
         }
       />
       {shown.length === 0 ? (
-        <p className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
+        <p className="mt-4 inline-flex items-center gap-2 text-[0.9375rem] text-muted-foreground">
           <Check className="size-4 text-success" aria-hidden="true" />
           Nothing needs you right now.
         </p>
@@ -397,5 +518,3 @@ export function TodoCard({ runs, contractors }: { runs: Run[]; contractors: Cont
     </Card>
   );
 }
-
-export { Initials };

@@ -3,18 +3,19 @@ import { cn } from "cn";
 import { Initials } from "@/components/ds/avatar";
 import { Button } from "@/components/ui/button";
 import { formatHeight } from "@/lib/format";
-import { REHEARSALS } from "@/components/marketing/data";
+import { DEMO_RUNS } from "@/components/marketing/data";
+import { DemoLink } from "@/components/marketing/demo-link";
 import { GoldDot, TxLink } from "@/components/marketing/parts";
 import { lp } from "@/components/marketing/classes";
 
-const RUN = REHEARSALS[0];
+const RUN = DEMO_RUNS[0];
 const SHOWN = RUN.lines.slice(0, 4);
 const REST = RUN.lines.slice(4);
 
 /**
- * Mercury's cinematic hero at dusk. The card is a real testnet payroll (rehearsal 1): the names
- * come from Payslip's own run records, the amounts stay sealed, and every row opens the
- * transaction in the explorer, which shows neither.
+ * Mercury's cinematic hero at dusk. The card is a real testnet payroll, the demo wallet's
+ * September run that the published judge kit reads: the names come from Payslip's own records,
+ * the amounts stay sealed, and every row opens the transaction in the explorer, which shows neither.
  */
 export function Hero() {
   return (
@@ -36,7 +37,7 @@ export function Hero() {
         </p>
         <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
           <Button asChild size="lg" className="h-11 px-6 text-[15px]">
-            <Link href="/console">Try the live demo</Link>
+            <DemoLink />
           </Button>
           <Link
             href="/verify"
@@ -58,6 +59,9 @@ export function Hero() {
 }
 
 function SealedRun() {
+  const heights = RUN.lines.map((l) => l.height);
+  const lowest = Math.min(...heights);
+  const highest = Math.max(...heights);
   return (
     <figure
       aria-labelledby="sealed-title"
@@ -66,7 +70,7 @@ function SealedRun() {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p id="sealed-title" className="text-[15px] text-[#ededf3]">
-            {RUN.period} payroll
+            {RUN.periodLabel} payroll
           </p>
           <p className="mt-0.5 text-xs text-[#a6a6b2]">
             Run {RUN.runId.slice(0, 8)} on Zcash testnet<span className="hidden sm:inline">, {RUN.date}</span>
@@ -112,8 +116,10 @@ function SealedRun() {
       <figcaption className="mt-1 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-white/[0.08] pt-3 text-[13px] text-[#dddde5]">
         <span className="inline-flex items-center gap-2">
           <GoldDot />
-          {RUN.lines.length} payments at heights {formatHeight(RUN.lines[0].height)} to{" "}
-          {formatHeight(RUN.lines[RUN.lines.length - 1].height)}
+          {RUN.lines.length} payments{" "}
+          {lowest === highest
+            ? `at height ${formatHeight(lowest)}`
+            : `at heights ${formatHeight(lowest)} to ${formatHeight(highest)}`}
         </span>
         <a href="#proof" className="rounded-sm text-[#f4b728] underline-offset-4 hover:underline">
           Check them yourself

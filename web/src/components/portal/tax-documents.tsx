@@ -17,10 +17,11 @@ import {
   monthDay,
   newestFirst,
   payslipHref,
-  personName,
+  retryOnce,
+  statementRequest,
   type StatementRequest,
 } from "@/components/portal/portal-data";
-import { usePortal, usePortalKey } from "@/components/portal/portal-provider";
+import { usePersonName, usePortal, usePortalKey } from "@/components/portal/portal-provider";
 import { RowsSkeleton, ScanProgress, SimulatedRate } from "@/components/portal/portal-states";
 import { Button } from "@/components/ui/button";
 import {
@@ -78,7 +79,7 @@ interface Loaded {
 /** A statement for any period, with the downloads a tax return or an accounting tool needs. */
 export function TaxDocuments() {
   const ufvk = usePortalKey();
-  const { currency, setCurrency } = usePortal();
+  const { currency, setCurrency, meta } = usePortal();
   const { health } = useHealth();
   const [preset, setPreset] = useState<PresetId>("ytd");
   const [range, setRange] = useState(() => yearToDate());
@@ -89,12 +90,16 @@ export function TaxDocuments() {
   const valid = withinAYear(range.from, range.to);
 
   const request = useMemo<StatementRequest>(
-    () => ({ ufvk, from: range.from, to: range.to, ...(showCurrency ? { currency } : {}) }),
-    [ufvk, range.from, range.to, showCurrency, currency],
+    () => statementRequest(ufvk, range, meta, showCurrency ? currency : undefined),
+    [ufvk, range, meta, showCurrency, currency],
   );
 
   useEffect(() => {
-    if (!valid) return;
+    if (!valid) {
+      // A range that turns invalid mid-load stops the progress line; the request is dropped.
+      setState((s) => ({ ...s, loading: false }));
+      return;
+    }
     const ctrl = new AbortController();
     setState((s) => ({ statement: s.statement, loading: true, startedAt: Date.now() }));
     fetchStatement(request, ctrl.signal)
@@ -108,12 +113,15 @@ export function TaxDocuments() {
 
   const s = state.statement;
   const current = s && s.period.from === range.from && s.period.to === range.to ? s : undefined;
-  const name = personName(s);
+  const name = usePersonName();
 
   const download = async (format: ContractorExportFormat) => {
     try {
-      const res = await api.contractorStatementCsv(request, format);
-      saveBlob(res.blob, res.filename ?? csvName(format, name, range.from, range.to));
+      // One retry when the service's lightwalletd connection had dropped, as for the statement.
+      const res = await retryOnce(() => api.contractorStatementCsv(request, format));
+      // A service that knows no names files the statement under a fingerprint; use the name we have.
+      const named = name && !s?.account.label ? csvName(format, name, range.from, range.to) : null;
+      saveBlob(res.blob, named ?? res.filename ?? csvName(format, name, range.from, range.to));
       toast.success(`${FORMATS.find((f) => f.value === format)?.label ?? "CSV"} downloaded`);
     } catch (err) {
       const e = toDisplayError(err);
@@ -222,7 +230,7 @@ export function TaxDocuments() {
       ) : null}
 
       {current ? (
-        <StatementBody statement={current} currency={showCurrency ? currency.toUpperCase() : null} />
+        <StatementBody statement={current} currency={showCurrency ? currency.toUpperCase() : null} range={range} />
       ) : !state.error && valid ? (
         <RowsSkeleton rows={3} />
       ) : null}
@@ -323,7 +331,15 @@ function DownloadMenu({
   );
 }
 
-function StatementBody({ statement: s, currency }: { statement: Statement; currency: string | null }) {
+function StatementBody({
+  statement: s,
+  currency,
+  range,
+}: {
+  statement: Statement;
+  currency: string | null;
+  range: { from: string; to: string };
+}) {
   const lines = newestFirst(s.lines);
   const market = currency && s.market?.available ? s.market : null;
   const testnet = s.network === "testnet";
@@ -369,14 +385,14 @@ function StatementBody({ statement: s, currency }: { statement: Statement; curre
           No payments in this period. A September invoice paid in October counts in October.
         </p>
       ) : (
-        <LinesTable lines={lines} currency={market ? market.currency : null} />
+        <LinesTable lines={lines} currency={market ? market.currency : null} range={range} />
       )}
 
       {s.pending.length > 0 ? (
         <>
           <SectionHeader title="Waiting to be mined" />
           <p className="mb-3 text-sm text-muted-foreground">Sent but not yet in a block, so not in the totals above.</p>
-          <LinesTable lines={newestFirst(s.pending)} currency={null} pending />
+          <LinesTable lines={newestFirst(s.pending)} currency={null} range={range} pending />
         </>
       ) : null}
 
@@ -433,10 +449,13 @@ function Figure({ label, children }: { label: string; children: React.ReactNode 
 function LinesTable({
   lines,
   currency,
+  range,
   pending,
 }: {
   lines: StatementLine[];
   currency: string | null;
+  /** The statement's period, carried to the payslip so it can open a payment from any year. */
+  range: { from: string; to: string };
   pending?: boolean;
 }) {
   return (
@@ -468,7 +487,7 @@ function LinesTable({
             <tr key={`${l.txid}-${l.amount_zat}`} className="h-[54px] border-b border-hairline align-middle">
               <td className="pr-3 whitespace-nowrap">{pending ? "Pending" : monthDay(l.block_time ?? l.date)}</td>
               <td className="max-w-0 pr-3 sm:max-w-none">
-                <Link href={payslipHref(l)} className="block truncate rounded-sm hover:underline">
+                <Link href={payslipHref(l, range)} className="block truncate rounded-sm hover:underline">
                   {formatPeriodLabel(l.period)}
                 </Link>
                 <span className="block truncate text-[0.8125rem] text-muted-foreground">

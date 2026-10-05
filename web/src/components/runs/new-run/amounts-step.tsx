@@ -2,11 +2,14 @@
 
 import { useId } from "react";
 import { Usd } from "@/components/app/amount";
+import { useCoinUnit } from "@/components/app/health-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import type { Contractor, Run } from "@/lib/api";
+import { formatDate } from "@/lib/format";
+import { endsAfterToday } from "@/lib/payroll";
 import { cn } from "cn";
 import { periodTitle, plural, recentMonths } from "../run-meta";
 import {
@@ -19,11 +22,14 @@ import {
   type DraftCheck,
   type LineDraft,
 } from "./draft";
+import { OverlapWarning } from "./overlap";
+import { FlowTitle } from "./rail";
 
 const CHAIN_NAMES: Record<string, string> = { base: "Base", arb: "Arbitrum", eth: "Ethereum", sol: "Solana" };
 
-export function settlementText(c: Pick<Contractor, "settlement_choice" | "payout_chain">): string {
-  if (c.settlement_choice === "hold_zec") return "Holds ZEC";
+/** "Holds TAZ" (testnet) or "Holds ZEC", or "Converts to USDC on Base". */
+export function settlementText(c: Pick<Contractor, "settlement_choice" | "payout_chain">, coin: "ZEC" | "TAZ"): string {
+  if (c.settlement_choice === "hold_zec") return `Holds ${coin}`;
   const chain = c.payout_chain ? (CHAIN_NAMES[c.payout_chain] ?? c.payout_chain) : null;
   return chain ? `Converts to USDC on ${chain}` : "Converts to USDC";
 }
@@ -45,6 +51,7 @@ export function AmountsStep({
   /** The run amounts can be copied from, when there is one. */
   source: Run | undefined;
 }) {
+  const coin = useCoinUnit();
   const months = recentMonths();
   const periodId = useId();
   const update = (id: string, patch: Partial<LineDraft>) =>
@@ -53,7 +60,7 @@ export function AmountsStep({
 
   return (
     <div>
-      <h1 className="text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">Amounts</h1>
+      <FlowTitle>Amounts</FlowTitle>
       <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
         What each contractor is owed in US dollars for this period.
       </p>
@@ -92,7 +99,7 @@ export function AmountsStep({
                 aria-invalid={submitted && !!check.periodError}
                 className="h-10 w-[10.5rem] rounded-[10px]"
               />
-              <span className="text-sm text-muted-foreground">to</span>
+              <span className="text-[0.8125rem] text-muted-foreground">to</span>
               <label className="sr-only" htmlFor="period-end">
                 Period ends
               </label>
@@ -109,15 +116,21 @@ export function AmountsStep({
           ) : null}
         </div>
         {check.periodError && (submitted || draft.month === "custom") ? (
-          <p id="period-error" className="mt-1.5 text-sm text-destructive">
+          <p id="period-error" className="mt-1.5 text-[0.8125rem] text-destructive">
             {check.periodError}
+          </p>
+        ) : !check.periodError && endsAfterToday({ from: draft.from, to: draft.to }) ? (
+          <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
+            This period ends on {formatDate(draft.to)}, after today. You can still pay now, for example in advance.
           </p>
         ) : null}
       </section>
 
+      <OverlapWarning runs={check.overlaps} draft={draft} setDraft={setDraft} showError={submitted} className="mt-6" />
+
       <section aria-label="Pay lines" className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-hairline pb-3">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[0.8125rem] text-muted-foreground">
             {draft.source
               ? `Amounts from the ${draft.source.label} run. Add this period's invoice references.`
               : "Enter an amount and an invoice reference for each contractor you are paying."}
@@ -175,7 +188,7 @@ export function AmountsStep({
                       {c.name}
                     </span>
                     <span className="block truncate text-[0.8125rem] text-muted-foreground">
-                      {l.include ? settlementText(c) : "Not paid in this run"}
+                      {l.include ? settlementText(c, coin) : "Not paid in this run"}
                     </span>
                   </span>
                 </label>
@@ -223,7 +236,7 @@ export function AmountsStep({
                   </div>
                 </div>
                 {err ? (
-                  <p id={`line-error-${c.id}`} className="col-start-2 text-sm text-destructive sm:col-span-3">
+                  <p id={`line-error-${c.id}`} className="col-start-2 text-[0.8125rem] text-destructive sm:col-span-3">
                     {err.message}
                   </p>
                 ) : null}
@@ -231,9 +244,9 @@ export function AmountsStep({
             );
           })}
         </ul>
-        {submitted && check.noneError ? (
-          <p role="alert" className="mt-3 text-sm text-destructive">
-            {check.noneError}
+        {submitted && check.countError ? (
+          <p role="alert" className="mt-3 text-[0.8125rem] text-destructive">
+            {check.countError}
           </p>
         ) : null}
       </section>

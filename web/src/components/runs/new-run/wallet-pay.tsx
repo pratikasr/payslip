@@ -124,7 +124,7 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
 
   if (!chain) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-[0.8125rem] text-destructive" role="alert">
         The venue asked for a deposit on chain id {funding.chain_id}, which this web app is not configured for. Send the
         deposit from any wallet using the address and amount shown, or add the chain in
         web/src/components/runs/new-run/wallet-pay.tsx.
@@ -133,7 +133,7 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
   }
   if (!addressesValid || amount === null) {
     return (
-      <p className="text-sm text-destructive" role="alert">
+      <p className="text-[0.8125rem] text-destructive" role="alert">
         The funding details from the service are not a valid EVM transfer (token {funding.token_address}, deposit{" "}
         {funding.deposit_address}). Request a new deposit address.
       </p>
@@ -191,7 +191,7 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
       </div>
 
       {isConnected && balance !== undefined && decimals !== undefined ? (
-        <p className={insufficient ? "text-sm text-destructive" : "text-sm text-muted-foreground"}>
+        <p className={insufficient ? "text-[0.8125rem] text-destructive" : "text-[0.8125rem] text-muted-foreground"}>
           Wallet balance on {chain.name}: <span className="num">{formatUnits(balance, decimals)}</span>{" "}
           {symbol ?? funding.origin_asset}
           {insufficient
@@ -200,14 +200,14 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
         </p>
       ) : null}
       {!PROJECT_ID ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[0.8125rem] text-muted-foreground">
           Browser extension wallets only. Set NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID to enable mobile wallets through
           WalletConnect.
         </p>
       ) : null}
 
       {hash ? (
-        <div className="rounded-xl bg-raised p-3.5 text-sm">
+        <div className="rounded-xl bg-raised p-3.5 text-[0.8125rem]">
           <p className="font-medium">
             {receipt.isSuccess
               ? `Deposit confirmed on ${chain.name}`
@@ -232,7 +232,7 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
       ) : null}
 
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="text-[0.8125rem] text-destructive">
           {error}
         </p>
       ) : null}

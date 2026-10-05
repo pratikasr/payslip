@@ -15,10 +15,15 @@ function DropdownMenuTrigger(props: React.ComponentProps<typeof DropdownMenuPrim
 function DropdownMenuContent({
   className,
   sideOffset = 6,
+  portal = true,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content> & {
+  /** False keeps the menu inside the page's landmarks (for a non-modal menu in <main>). */
+  portal?: boolean
+}) {
+  const Wrap = portal ? DropdownMenuPrimitive.Portal : React.Fragment
   return (
-    <DropdownMenuPrimitive.Portal>
+    <Wrap>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
@@ -28,7 +33,7 @@ function DropdownMenuContent({
         )}
         {...props}
       />
-    </DropdownMenuPrimitive.Portal>
+    </Wrap>
   )
 }
 

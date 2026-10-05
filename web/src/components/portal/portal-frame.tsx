@@ -1,35 +1,63 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Lock, ShieldCheck } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Eraser, KeyRound, Lock, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 import { useHealth } from "@/components/app/health-provider";
 import { Initials } from "@/components/ds/avatar";
-import { personName } from "@/components/portal/portal-data";
 import { PORTAL_PRINT_CSS } from "@/components/portal/portal-states";
-import { usePortal } from "@/components/portal/portal-provider";
+import { usePersonName, usePortal } from "@/components/portal/portal-provider";
 import { UnlockScreen } from "@/components/portal/unlock-card";
 import { SidebarBrand } from "@/components/shell/app-shell";
 import { PortalShell } from "@/components/shell/portal-shell";
 import { Skeleton } from "@/components/ui/skeleton";
+import { toDisplayError } from "@/lib/api";
 import { networkLabel } from "@/lib/format";
 
 /** Locked: the unlock card. Unlocked: the contractor's own shell, with no company navigation. */
 export function PortalFrame({ children }: { children: ReactNode }) {
-  const { ready, ufvk, recent, lock } = usePortal();
+  const { ready, ufvk, recent, lock, forgetOnService } = usePortal();
+  const name = usePersonName();
   const { health } = useHealth();
+  const [forgetting, setForgetting] = useState(false);
   if (!ready) return <main id="main" aria-busy="true" className="min-h-[calc(100dvh-3rem)] bg-sidebar" />;
   if (!ufvk) return <UnlockScreen />;
 
-  const name = personName(recent.statement);
+  // With no name (a pasted key on a deployment that knows none), a key, not a question mark.
+  const mark = name ? (
+    <Initials name={name} />
+  ) : (
+    <span
+      className="grid size-[26px] shrink-0 place-items-center rounded-full bg-avatar text-strong"
+      aria-hidden="true"
+    >
+      <KeyRound className="size-3.5" />
+    </span>
+  );
   const brand =
     name || recent.statement ? (
-      <SidebarBrand mark={<Initials name={name} />} name={name ?? "Your payslips"} />
+      <SidebarBrand mark={mark} name={name ?? "Your payslips"} />
     ) : (
-      <div className="flex items-center gap-2 pb-1" aria-label="Opening your payslips">
+      <div className="flex items-center gap-2 pb-1" role="status" aria-label="Opening your payslips">
         <Skeleton className="size-[26px] rounded-full" />
         <Skeleton className="h-3.5 w-28" />
       </div>
     );
+
+  const forget = async () => {
+    setForgetting(true);
+    try {
+      const res = await forgetOnService();
+      toast.success(res.forgotten ? "The service forgot your key" : "The service held no scan of your key", {
+        description: "This tab is locked too.",
+      });
+    } catch (err) {
+      const e = toDisplayError(err);
+      toast.error(e.message, { description: e.hint });
+    } finally {
+      setForgetting(false);
+    }
+  };
 
   return (
     <PortalShell
@@ -56,6 +84,18 @@ export function PortalFrame({ children }: { children: ReactNode }) {
             Lock
           </button>
           <p className="px-2 pt-0.5 pb-1 text-xs text-muted-foreground">Forgets your key in this tab.</p>
+          <button
+            type="button"
+            onClick={() => void forget()}
+            disabled={forgetting}
+            className="mt-1 flex w-full items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-left text-strong transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+          >
+            <Eraser className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            {forgetting ? "Forgetting" : "Forget on the service"}
+          </button>
+          <p className="px-2 pt-0.5 pb-1 text-xs text-muted-foreground">
+            Deletes the service&apos;s read-only scan of your key, then locks.
+          </p>
         </div>
       }
     >

@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { FileText, LoaderCircle } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
+import { SimulatedRate as SharedSimulatedRate } from "@/components/ds/simulated-rate";
 import { Tag } from "@/components/ds/tag";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StatementLine } from "@/lib/api";
-import { formatHeight, networkLabel } from "@/lib/format";
+import { formatHeight, networkLabel, rateE6FromDecimal } from "@/lib/format";
 import { cn } from "cn";
 
 /**
@@ -83,14 +84,15 @@ export function SettlementTag({ line }: { line: Pick<StatementLine, "settlement"
   );
 }
 
-/** The small label testnet figures carry: the rate is fixed, not a market price. */
+/**
+ * The label testnet figures carry: the app's one SimulatedRate (components/ds/simulated-rate.tsx),
+ * whose note gives the fixed rate the service reports and says it is not a market price.
+ */
 export function SimulatedRate({ className }: { className?: string }) {
+  const { health } = useHealth();
   return (
-    <span
-      className={cn("text-xs text-muted-foreground", className)}
-      title="Testnet coins have no market price. Testnet runs use a fixed rate of about $1,350,000 per TAZ."
-    >
-      Simulated rate
+    <span className={cn("inline-block", className)}>
+      <SharedSimulatedRate rateE6={rateE6FromDecimal(health?.simulated_rate_usd_per_zec)} />
     </span>
   );
 }

@@ -9,6 +9,12 @@
 */
 
 const CSS = `
+/* Phones keep the header fixed at the top; anchors land below it. */
+@media (max-width: 767px) {
+  html {
+    scroll-padding-top: 72px;
+  }
+}
 .lp-sky {
   background:
     radial-gradient(38% 26% at 50% 70%, rgba(244, 183, 40, 0.5), transparent 72%),

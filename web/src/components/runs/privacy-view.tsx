@@ -21,7 +21,7 @@ export function PrivacyView({ run }: { run: Run }) {
       <Card className="flex flex-col p-0 sm:px-0">
         <div className="flex flex-wrap items-start justify-between gap-2 px-5 pt-5 pb-3 sm:px-[22px]">
           <div className="min-w-0">
-            <h3 className="text-[0.9375rem] font-normal text-strong">What a public chain would show</h3>
+            <h2 className="text-[0.9375rem] font-normal text-strong">What a public chain would show</h2>
             <p className="text-[0.8125rem] text-muted-foreground">Readable by anyone, forever.</p>
           </div>
           <Tag tone="neutral">Illustration</Tag>
@@ -51,7 +51,7 @@ export function PrivacyView({ run }: { run: Run }) {
       <Card className="flex flex-col p-0 sm:px-0">
         <div className="flex flex-wrap items-start justify-between gap-2 px-5 pt-5 pb-3 sm:px-[22px]">
           <div className="min-w-0">
-            <h3 className="text-[0.9375rem] font-normal text-strong">What the Zcash explorer shows</h3>
+            <h2 className="text-[0.9375rem] font-normal text-strong">What the Zcash explorer shows</h2>
             <p className="text-[0.8125rem] text-muted-foreground">These transactions, live on chain.</p>
           </div>
           <Tag tone="shielded">Shielded</Tag>
@@ -81,7 +81,11 @@ export function PrivacyView({ run }: { run: Run }) {
                   <span className="text-muted-foreground">Not sent yet</span>
                 )}
               </div>
-              <div className="mt-1.5 flex items-center gap-2" aria-label="Sender, recipient, amount and memo hidden">
+              <div
+                className="mt-1.5 flex items-center gap-2"
+                role="img"
+                aria-label="Sender, recipient, amount and memo hidden"
+              >
                 <Sealed className="w-20" />
                 <span className="text-[0.8125rem] text-muted-foreground" aria-hidden="true">
                   →

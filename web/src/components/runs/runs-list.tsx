@@ -9,10 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
 import { api, type Run } from "@/lib/api";
-import { formatDate } from "@/lib/format";
-import { cn } from "cn";
+import { formatShortDate } from "@/lib/format";
+import { latestPeriodFirst, runPaidAt } from "@/lib/payroll";
+import { FilterChips } from "@/components/console/ui";
 import { Problem } from "./problem";
-import { matchesFilter, plural, RUN_FILTERS, RunTag, runTitle, type RunFilterId } from "./run-meta";
+import {
+  confirmedCount,
+  isPaying,
+  matchesFilter,
+  plural,
+  RUN_FILTERS,
+  RunTag,
+  runTitle,
+  type RunFilterId,
+} from "./run-meta";
 
 /** The runs list: lifecycle chips with counts over a Mercury table that sits straight on the page. */
 export function RunsList({ initial }: { initial?: Run[] }) {
@@ -20,19 +30,19 @@ export function RunsList({ initial }: { initial?: Run[] }) {
   const contractors = useResource((s) => api.contractors(s), "console-runs-contractors");
   const [filter, setFilter] = useState<RunFilterId>("all");
 
-  const all = useMemo(
-    () =>
-      [...(runs.data ?? [])].sort(
-        (a, b) => b.period_label.localeCompare(a.period_label) || b.created_at.localeCompare(a.created_at),
-      ),
-    [runs.data],
-  );
+  const all = useMemo(() => latestPeriodFirst(runs.data ?? []), [runs.data]);
   const counts = useMemo(
     () => Object.fromEntries(RUN_FILTERS.map((f) => [f.id, all.filter((r) => matchesFilter(r, f.id)).length])),
     [all],
   ) as Record<RunFilterId, number>;
   const shown = all.filter((r) => matchesFilter(r, filter));
   const empty = runs.data !== undefined && all.length === 0;
+  // Mercury shows a filter only where there is something in it; All and the chosen one stay.
+  const options = RUN_FILTERS.filter((f) => f.id === "all" || f.id === filter || counts[f.id] > 0).map((f) => ({
+    id: f.id,
+    label: f.label,
+    count: counts[f.id],
+  }));
 
   return (
     <>
@@ -58,23 +68,7 @@ export function RunsList({ initial }: { initial?: Run[] }) {
         <EmptyRuns hasPeople={contractors.data ? contractors.data.length > 0 : undefined} />
       ) : (
         <>
-          <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter runs by status">
-            {RUN_FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                aria-pressed={filter === f.id}
-                onClick={() => setFilter(f.id)}
-                className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-lg border border-border px-3 text-sm text-strong transition-colors hover:bg-muted",
-                  filter === f.id && "border-transparent bg-chip text-foreground hover:bg-chip",
-                )}
-              >
-                {f.label}
-                <span className="num text-xs text-muted-foreground">{counts[f.id]}</span>
-              </button>
-            ))}
-          </div>
+          <FilterChips label="Filter runs by status" value={filter} onChange={setFilter} options={options} />
           <RunsTable runs={shown} />
           {shown.length === 0 ? (
             <p className="border-b border-hairline py-6 text-[0.9375rem] text-muted-foreground">
@@ -90,59 +84,84 @@ export function RunsList({ initial }: { initial?: Run[] }) {
 function RunsTable({ runs }: { runs: Run[] }) {
   return (
     <div className="-mx-1 px-1">
-      <table className="w-full border-collapse text-[0.9375rem]">
-        <caption className="sr-only">Payroll runs, newest first. Open a run to see its payments.</caption>
+      <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+        <caption className="sr-only">Payroll runs, latest pay period first. Open a run to see its payments.</caption>
         <thead>
           <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
             <th scope="col" className="py-2.5 pr-3 font-normal">
               Period
             </th>
-            <th scope="col" className="hidden py-2.5 pr-3 font-normal sm:table-cell">
+            <th scope="col" className="hidden w-[5.5rem] py-2.5 pr-3 font-normal sm:table-cell">
               People
             </th>
-            <th scope="col" className="py-2.5 pr-3 text-right font-normal sm:pr-6">
+            <th scope="col" className="w-[7.5rem] py-2.5 pr-3 text-right font-normal sm:w-[9.5rem] sm:pr-6">
               Total
             </th>
-            <th scope="col" className="py-2.5 pr-3 font-normal">
+            <th scope="col" className="w-[7.5rem] py-2.5 pr-3 font-normal sm:w-[9rem]">
               Status
             </th>
-            <th scope="col" className="hidden py-2.5 font-normal md:table-cell">
-              Created
+            <th scope="col" className="hidden w-[7rem] py-2.5 font-normal lg:table-cell">
+              Paid on
             </th>
           </tr>
         </thead>
         <tbody>
-          {runs.map((r) => (
-            <tr
-              key={r.id}
-              className="relative border-b border-hairline transition-colors hover:bg-raised has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
-            >
-              <td className="h-[58px] py-2 pr-3">
-                <Link
-                  href={`/console/runs/${r.id}`}
-                  className="text-foreground outline-none after:absolute after:inset-0 after:content-['']"
-                >
-                  {runTitle(r)}
-                </Link>
-                <span className="block text-[0.8125rem] text-muted-foreground sm:hidden">
-                  {plural(r.lines.length, "person", "people")} · {formatDate(r.created_at)}
-                </span>
-              </td>
-              <td className="hidden py-2 pr-3 text-strong sm:table-cell">
-                <span className="num">{r.lines.length}</span>
-              </td>
-              <td className="py-2 pr-3 text-right sm:pr-6">
-                <Usd cents={r.total_usd_cents} />
-                {r.total_zat ? null : (
-                  <span className="block text-[0.8125rem] text-muted-foreground">Not funded yet</span>
-                )}
-              </td>
-              <td className="py-2 pr-3">
-                <RunTag status={r.status} />
-              </td>
-              <td className="hidden py-2 whitespace-nowrap text-strong md:table-cell">{formatDate(r.created_at)}</td>
-            </tr>
-          ))}
+          {runs.map((r) => {
+            const paidAt = runPaidAt(r);
+            const n = r.lines.length;
+            const confirmed = confirmedCount(r.lines);
+            return (
+              <tr
+                key={r.id}
+                className="relative border-b border-hairline transition-colors hover:bg-raised has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
+              >
+                <td className="h-[58px] py-2 pr-3">
+                  <Link
+                    href={`/console/runs/${r.id}`}
+                    className="block truncate text-foreground outline-none after:absolute after:inset-0 after:content-['']"
+                  >
+                    {runTitle(r)} payroll
+                  </Link>
+                  <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                    <span className="sm:hidden">{plural(n, "person", "people")} · </span>
+                    {paidAt ? <span className="lg:hidden">Paid {formatShortDate(paidAt)} · </span> : null}
+                    Created {formatShortDate(r.created_at)}
+                  </span>
+                </td>
+                <td className="hidden py-2 pr-3 text-strong sm:table-cell">
+                  <span className="num">{n}</span>
+                </td>
+                <td className="py-2 pr-3 text-right sm:pr-6">
+                  <Usd cents={r.total_usd_cents} />
+                  {r.total_zat || r.status === "cancelled" ? null : (
+                    <span className="block text-[0.8125rem] text-muted-foreground">Not funded yet</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3">
+                  <RunTag run={r} />
+                  {isPaying(r) && n > 0 ? (
+                    <span
+                      className="mt-1.5 block h-1 w-20 overflow-hidden rounded-full bg-chip"
+                      role="progressbar"
+                      aria-label={`${runTitle(r)} payments confirmed`}
+                      aria-valuemin={0}
+                      aria-valuemax={n}
+                      aria-valuenow={confirmed}
+                      aria-valuetext={`${confirmed} of ${n} confirmed`}
+                    >
+                      <span
+                        className="block h-full rounded-full bg-primary"
+                        style={{ width: `${Math.max(6, (confirmed / n) * 100)}%` }}
+                      />
+                    </span>
+                  ) : null}
+                </td>
+                <td className="hidden py-2 whitespace-nowrap text-strong lg:table-cell">
+                  {paidAt ? formatShortDate(paidAt) : <span className="text-muted-foreground">Not yet</span>}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -186,7 +205,7 @@ function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
       </div>
       {hasPeople === false ? (
         <Button asChild>
-          <Link href="/console/people">
+          <Link href="/console/people?add=1">
             <UsersRound aria-hidden="true" />
             Add people
           </Link>

@@ -106,3 +106,48 @@ test("run payroll amounts can be filled and their errors are announced", async (
   expect(describedBy).toBeTruthy();
   await expect(page.locator(`#${describedBy!.split(" ")[0]}`)).not.toBeEmpty();
 });
+
+test("person drawer: Enter opens it from the name, Escape closes it, focus returns to the name", async ({ page }) => {
+  const { contractors } = (await (await fetch(`${API}/api/contractors`)).json()) as {
+    contractors: { name: string; account_index: number }[];
+  };
+  test.skip(contractors.length === 0, "No contractors on this service yet.");
+  const first = contractors.sort((a, b) => a.account_index - b.account_index)[0];
+  await page.goto("/console/people", { waitUntil: "networkidle" });
+  await tabTo(page, new RegExp(`^${first.name}$`));
+  await page.keyboard.press("Enter");
+  const drawer = page.getByRole("dialog", { name: new RegExp(first.name) });
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  // Focus moves back once the drawer has finished sliding out.
+  await expect.poll(() => focusedName(page)).toBe(first.name);
+});
+
+test("run payroll: moving between steps puts focus on the new step's heading and names it in the title", async ({
+  page,
+}) => {
+  const { contractors } = (await (await fetch(`${API}/api/contractors`)).json()) as {
+    contractors: { id: string }[];
+  };
+  test.skip(contractors.length === 0, "No contractors on this service yet.");
+  await page.goto("/console/runs/new", { waitUntil: "networkidle" });
+  await expect(page).toHaveTitle("Amounts, Run payroll | Payslip");
+  for (const c of contractors) {
+    if (await page.locator(`#amount-${c.id}`).isEnabled()) {
+      if (!(await page.locator(`#amount-${c.id}`).inputValue())) await page.locator(`#amount-${c.id}`).fill("100");
+      await page.locator(`#invoice-${c.id}`).fill("E2E-KEYBOARD-ONLY");
+    }
+  }
+  const extra = page.getByLabel(/This is an extra run for the same period/);
+  if (await extra.isVisible()) await extra.check();
+  await page.getByRole("button", { name: "Continue" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/step=review/);
+  await expect(page.getByRole("heading", { level: 1, name: /^Review payroll for / })).toBeFocused();
+  await expect(page).toHaveTitle("Review and approve, Run payroll | Payslip");
+  await page.getByRole("button", { name: "Back", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { level: 1, name: "Amounts" })).toBeFocused();
+  await expect(page).toHaveTitle("Amounts, Run payroll | Payslip");
+});

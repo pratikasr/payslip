@@ -13,6 +13,8 @@ export interface ApiErrorBody {
   code: string;
   message: string;
   hint: string;
+  /** The runs an error is about, earliest period first (409 period_overlap, idempotency_mismatch). */
+  runs?: string[];
 }
 
 export interface Health {
@@ -36,6 +38,12 @@ export interface Health {
   app_fee_bps?: number;
   /** Whether statements carry the market value of each payment at receipt. */
   market_prices?: boolean;
+  /**
+   * The testnet venue's fixed rate in USD per coin (1350000.0 by default): what payroll dollars
+   * convert at on testnet. Not a price. Null on mainnet, with any other venue and in statements
+   * mode; absent on older services.
+   */
+  simulated_rate_usd_per_zec?: number | string | null;
 }
 
 export interface Treasury {
@@ -95,6 +103,8 @@ export interface ViewingKeyExportEntry {
   ufvk: string;
   ufvk_wallet?: string;
   contractor_id: string | null;
+  /** Where this account's payments can start: a scan of the key need not look earlier. */
+  birthday_height?: number;
 }
 
 export interface ViewingKeyExport {
@@ -103,10 +113,22 @@ export interface ViewingKeyExport {
   keys: ViewingKeyExportEntry[];
 }
 
+/** `cancelled`: closed before any money reached it (services with POST /api/runs/{id}/cancel). */
 export type RunStatus =
-  "draft" | "awaiting_funds" | "funded" | "swapping" | "swapped" | "allocating" | "paying" | "paid" | "failed";
+  | "draft"
+  | "awaiting_funds"
+  | "funded"
+  | "swapping"
+  | "swapped"
+  | "allocating"
+  | "paying"
+  | "paid"
+  | "failed"
+  | "cancelled";
 
-export type FundingStatus = "awaiting_deposit" | "processing" | "success" | "refunded" | "failed" | "expired";
+/** `deposit_seen` and `incomplete` come from the 1Click venue; the rest from every venue. */
+export type FundingStatus =
+  "awaiting_deposit" | "deposit_seen" | "processing" | "incomplete" | "success" | "refunded" | "failed" | "expired";
 
 /**
  * Funding record. The EVM fields (chain, token, deposit address, deadline)
@@ -131,7 +153,13 @@ export interface Funding {
   refund_reason?: string | null;
   requested_usd_cents?: number | null;
   quoted_zat?: number | null;
+  /** The venue's quoted rate (USD per ZEC times 1e6), set when the quote is made. */
+  quote_rate_e6?: number | null;
   venue_status?: string | null;
+  /** Maya only: the router contract a token deposit goes through. */
+  router?: string | null;
+  /** Maya only: the memo the deposit must carry, or the swap is not made. */
+  deposit_memo?: string | null;
 }
 
 /** Funding that asks for an EVM deposit: the fields the browser wallet needs are present. */
@@ -156,6 +184,12 @@ export interface PayLine {
   allocation_txid?: string | null;
   txid: string | null;
   confirmed_height: number | null;
+  /**
+   * The block time of `confirmed_height` (RFC 3339 UTC): null until confirmed, and briefly null
+   * beside a height for lines confirmed before the service recorded block times. Absent on older
+   * services.
+   */
+  confirmed_at?: string | null;
   explorer_url: string | null;
   memo: string | null;
   error: ApiErrorBody | null;
@@ -163,6 +197,8 @@ export interface PayLine {
   payout_chain?: string | null;
   /** Conversion to USDC for a convert_usdc line (ADR-018); null for lines that hold ZEC. */
   settlement?: Conversion | null;
+  /** True when the contractor was archived after the run was created (newer services). */
+  contractor_archived?: boolean;
 }
 
 export interface Conversion {
@@ -215,6 +251,11 @@ export interface NewRun {
   period_end: string;
   lines: NewRunLine[];
   idempotency_key: string;
+  /**
+   * Sent only when the payer ticked "This is an extra run for the same period". Newer services
+   * answer 409 period_overlap without it when another run covers the period; older ones ignore it.
+   */
+  allow_overlap?: boolean;
 }
 
 export interface FundRequest {
@@ -274,6 +315,25 @@ export interface StatementMarket {
 }
 
 export type ContractorExportFormat = "payslip" | "koinly" | "cointracker";
+
+/**
+ * `birthday_height`: where a scan of keys the service does not know starts (a key file's
+ * birthday). Optional; JSON leaves it out when undefined, and older services ignore it.
+ */
+export interface ContractorStatementRequest {
+  ufvk: string;
+  from: string;
+  to: string;
+  currency?: string;
+  birthday_height?: number;
+}
+
+export interface AccountantStatementRequest {
+  ufvks: string[];
+  from: string;
+  to: string;
+  birthday_height?: number;
+}
 export type AccountantExportFormat = "payslip" | "xero" | "quickbooks";
 
 export type ProofMemo =
@@ -284,6 +344,8 @@ export type ProofMemo =
       invoice_ref: string;
       usd_basis_cents: number;
       rate_usd_per_zec_e6: number;
+      /** Always true: the memo is the sender's own claim, not checked against any payroll. */
+      asserted_by_sender?: boolean;
     }
   | { kind: "text"; text: string }
   | { kind: "none" }
@@ -302,11 +364,15 @@ export interface ProofSet {
   network: Network;
   txid: string;
   height: number | null;
+  /** False until the transaction is in a block; a proof of an unmined payment is not valid yet. */
+  mined?: boolean;
   proofs: CreatedProof[];
 }
 
 export interface VerifiedProof {
-  valid: true;
+  /** True when the output is real and its transaction is mined (ADR-024). */
+  valid: boolean;
+  mined?: boolean;
   network: Network;
   txid: string;
   explorer_url: string;
@@ -322,6 +388,10 @@ export interface VerifiedProof {
   address_valid?: boolean | null;
   memo: ProofMemo;
   discloses: string;
+  /** What a valid proof establishes, in the service's words. */
+  proves?: string;
+  /** What it does not establish (who sent it; the memo is the sender's claim). */
+  does_not_prove?: string;
 }
 
 export interface UnlabelledLine {
@@ -331,7 +401,7 @@ export interface UnlabelledLine {
   direction: "in" | "out";
   amount_zat: number;
   memo_text: string | null;
-  reason: "no_memo" | "unknown_prefix" | "malformed" | "non_text";
+  reason: "no_memo" | "unknown_prefix" | "malformed" | "non_text" | "unexpected_direction";
 }
 
 export interface FundingLine {
@@ -363,6 +433,8 @@ export interface Statement {
     role?: "treasury" | "contractor" | "unknown";
   };
   period: StatementPeriod;
+  /** The lowest height the scan started at: nothing earlier is in the statement. */
+  scanned_from_height?: number | null;
   scanned_to_height: number;
   generated_at: string;
   lines: StatementLine[];
@@ -375,7 +447,12 @@ export interface Statement {
   market?: StatementMarket;
 }
 
-export type ReconciliationStatus = "reconciled" | "variance_unexplained" | "missing_funding_record" | "incomplete";
+/**
+ * `incomplete_keys`: the treasury allocated to accounts whose key was not supplied.
+ * `unpaid`: an account that was allocated ZEC shows no payment for the run.
+ */
+export type ReconciliationStatus =
+  "reconciled" | "variance_unexplained" | "missing_funding_record" | "incomplete" | "incomplete_keys" | "unpaid";
 
 export interface ReconciliationRun {
   run_id: string;
@@ -387,8 +464,19 @@ export interface ReconciliationRun {
   paid_zat: number;
   lines: number;
   pending_lines?: number;
+  /** Block date (UTC) of the run's funding record: the period the run is reconciled in. */
+  funding_date?: string | null;
+  /** Allocation outputs the treasury key shows for the run (one per funded pay line). */
+  allocations?: number;
+  allocated_zat?: number;
+  /** Allocations to accounts whose viewing key was not supplied, and the ZEC they got. */
+  missing_accounts?: number;
+  missing_zat?: number;
+  /** Allocations to supplied accounts that show no payment for the run. */
+  unpaid_accounts?: number;
   network_fees_zat: number;
-  unspent_zat: number;
+  /** ZEC the treasury kept from the run; null without the treasury key's view of the allocation. */
+  unspent_zat: number | null;
   variance_usd_cents: number | null;
   explained_usd_cents: number | null;
   /** Variance minus explained; within rounding_tolerance_cents for a reconciled run. */
@@ -403,6 +491,8 @@ export interface ReconciliationAccount {
   account_index: number | null;
   label: string | null;
   role: "treasury" | "contractor" | "unknown";
+  /** Where this key's scan started. */
+  scanned_from_height?: number | null;
 }
 
 export type ReconciliationLine = StatementLine & {
@@ -413,6 +503,8 @@ export type ReconciliationLine = StatementLine & {
 export interface Reconciliation {
   network: Network;
   period: StatementPeriod;
+  /** The lowest height any key was scanned from: nothing earlier is in the books. */
+  scanned_from_height?: number | null;
   scanned_to_height: number;
   generated_at: string;
   accounts: ReconciliationAccount[];
@@ -437,6 +529,8 @@ export class ApiError extends Error {
   readonly code: string;
   readonly hint: string;
   readonly status: number;
+  /** Run ids the error names (period_overlap, idempotency_mismatch); empty for other errors. */
+  readonly runs: string[];
 
   constructor(status: number, body: ApiErrorBody) {
     super(body.message);
@@ -444,18 +538,26 @@ export class ApiError extends Error {
     this.status = status;
     this.code = body.code;
     this.hint = body.hint;
+    this.runs = body.runs ?? [];
   }
 }
 
 export const UNREACHABLE_CODE = "service_unreachable";
 
 function unreachable(): ApiError {
-  const origin = typeof window === "undefined" ? "this web app's origin" : window.location.origin;
+  // Plain words for anyone (a contractor, an accountant, a payer). The setup details are in
+  // serviceSetupHint(), which only the company console shows, to whoever runs the service.
   return new ApiError(0, {
     code: UNREACHABLE_CODE,
-    message: `Payslip service is not reachable at ${API_URL}.`,
-    hint: `Start it with: cd service && cargo run. If it is already running, check that NEXT_PUBLIC_PAYSLIP_API_URL points at it and that the service's PAYSLIP_WEB_ORIGIN is set to ${origin}.`,
+    message: "The Payslip service is not answering.",
+    hint: "Try again in a moment.",
   });
+}
+
+/** For whoever runs Payslip: where the web app expects the service and what it must allow. */
+export function serviceSetupHint(): string {
+  const origin = typeof window === "undefined" ? "this web app's origin" : window.location.origin;
+  return `Start it with: cd service && cargo run. If it is already running, check that NEXT_PUBLIC_PAYSLIP_API_URL points at it (now ${API_URL}) and that the service's PAYSLIP_WEB_ORIGIN includes ${origin}.`;
 }
 
 function isErrorBody(value: unknown): value is { error: ApiErrorBody } {
@@ -472,10 +574,12 @@ async function toApiError(res: Response): Promise<ApiError> {
     body = null;
   }
   if (isErrorBody(body)) {
+    const runs = (body.error as { runs?: unknown }).runs;
     return new ApiError(res.status, {
       code: body.error.code,
       message: body.error.message,
       hint: body.error.hint ?? "",
+      runs: Array.isArray(runs) ? runs.filter((r): r is string => typeof r === "string") : undefined,
     });
   }
   return new ApiError(res.status, {
@@ -497,8 +601,10 @@ async function send(path: string, { method = "GET", body, signal }: RequestOptio
     res = await fetch(`${API_URL}${path}`, {
       method,
       signal,
+      // Every write is JSON, even with no body: the service refuses non-JSON writes so a
+      // cross-site form post cannot reach it without a CORS preflight.
       headers:
-        body === undefined
+        method === "GET"
           ? { Accept: "application/json" }
           : { "Content-Type": "application/json", Accept: "application/json" },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -546,6 +652,13 @@ export const api = {
     json<ContractorViewingKey>(`/api/contractors/${id(contractorId)}/viewing-key`, { signal }),
   markViewingKeyShared: (contractorId: string) =>
     json<Contractor>(`/api/contractors/${id(contractorId)}/viewing-key/shared`, { method: "POST" }),
+  /**
+   * Undoes Mark as shared: clears fvk_shared_at and answers the Contractor. Services from before
+   * 5 Oct 2026 answer 404 or 405: the UI then stops offering Undo. A key already handed over
+   * still works; this changes only the record.
+   */
+  unmarkViewingKeyShared: (contractorId: string) =>
+    json<Contractor>(`/api/contractors/${id(contractorId)}/viewing-key/shared`, { method: "DELETE" }),
   viewingKeyExport: (signal?: AbortSignal) => json<ViewingKeyExport>("/api/viewing-keys", { signal }),
 
   runs: (signal?: AbortSignal) => json<{ runs: Run[] }>("/api/runs", { signal }).then((r) => r.runs),
@@ -558,23 +671,24 @@ export const api = {
   pollFunding: (runId: string, signal?: AbortSignal) => json<Run>(`/api/runs/${id(runId)}/funding`, { signal }),
   executeRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/execute`, { method: "POST" }),
   discardRun: (runId: string) => json<void>(`/api/runs/${id(runId)}`, { method: "DELETE" }),
+  /** Closes a run that received no money (status `cancelled`); 409 run_has_funds or deposit_in_progress otherwise. */
+  cancelRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/cancel`, { method: "POST", body: {} }),
   runLog: (runId: string, signal?: AbortSignal) =>
     json<{ events: RunLogEvent[] }>(`/api/runs/${id(runId)}/log`, { signal }).then((r) => r.events),
   runEventsUrl: (runId: string) => `${API_URL}/api/runs/${id(runId)}/events`,
 
-  contractorStatement: (body: { ufvk: string; from: string; to: string; currency?: string }, signal?: AbortSignal) =>
+  contractorStatement: (body: ContractorStatementRequest, signal?: AbortSignal) =>
     json<Statement>("/api/statements/contractor", { method: "POST", body, signal }),
-  contractorStatementCsv: (
-    body: { ufvk: string; from: string; to: string; currency?: string },
-    format: ContractorExportFormat = "payslip",
-  ) => blob(`/api/statements/contractor.csv?format=${format}`, { method: "POST", body }),
-  accountantStatement: (body: { ufvks: string[]; from: string; to: string }, signal?: AbortSignal) =>
+  contractorStatementCsv: (body: ContractorStatementRequest, format: ContractorExportFormat = "payslip") =>
+    blob(`/api/statements/contractor.csv?format=${format}`, { method: "POST", body }),
+  accountantStatement: (body: AccountantStatementRequest, signal?: AbortSignal) =>
     json<Reconciliation>("/api/statements/accountant", { method: "POST", body, signal }),
-  accountantStatementCsv: (
-    body: { ufvks: string[]; from: string; to: string },
-    format: AccountantExportFormat = "payslip",
-  ) => blob(`/api/statements/accountant.csv?format=${format}`, { method: "POST", body }),
+  accountantStatementCsv: (body: AccountantStatementRequest, format: AccountantExportFormat = "payslip") =>
+    blob(`/api/statements/accountant.csv?format=${format}`, { method: "POST", body }),
 
+  /** Deletes the service's cached scan of exactly this key set; the next statement scans afresh. */
+  forgetKeys: (ufvks: string[]) =>
+    json<{ forgotten: boolean }>("/api/statements/forget", { method: "POST", body: { ufvks } }),
   createProof: (body: { ufvk: string; txid: string }) => json<ProofSet>("/api/proofs", { method: "POST", body }),
   verifyProof: (token: string, address?: string, signal?: AbortSignal) =>
     json<VerifiedProof>(`/api/proofs/${id(token)}${address ? `?address=${encodeURIComponent(address)}` : ""}`, {

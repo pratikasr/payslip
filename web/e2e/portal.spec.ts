@@ -6,7 +6,9 @@
   Needs the testnet service and the web app running (E2E_API_URL, E2E_BASE_URL) with at least one
   paid contractor. Run: pnpm exec playwright test e2e/portal.spec.ts
 */
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
@@ -27,6 +29,51 @@ async function contractorKey(): Promise<ExportedKey> {
 }
 
 const firstName = (label: string) => label.trim().split(/\s+/)[0];
+
+/** Amara Okafor's key from the published judge kit: works on any testnet service. */
+function kitKey(): { label: string; ufvk: string } {
+  const kit = JSON.parse(readFileSync(join(process.cwd(), "..", "docs", "judge", "judge-kit-testnet.json"), "utf8"));
+  return kit.keys.find((k: { label: string }) => k.label === "Amara Okafor");
+}
+
+for (const width of [1440, 375]) {
+  test(`the first click on Open payslips opens the portal at ${width}px`, async ({ page }) => {
+    test.setTimeout(4 * 60_000);
+    await page.setViewportSize({ width, height: width === 375 ? 812 : 900 });
+    await page.goto("/portal");
+    await expect(page).toHaveTitle("Open your payslips | Payslip");
+    await page.getByLabel("Viewing key").fill(kitKey().ufvk);
+    // A normal press, held while the status line under the field settles: the button must not move.
+    const button = page.getByRole("button", { name: "Open payslips" });
+    const before = (await button.boundingBox())!;
+    await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(800);
+    const during = (await button.boundingBox())!;
+    await page.mouse.up();
+    expect(Math.abs(during.y - before.y)).toBeLessThan(4);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Welcome/, { timeout: SCAN });
+  });
+}
+
+test("the demo key opens the judge kit's contractor with her name, on any testnet service", async ({ page }) => {
+  test.setTimeout(4 * 60_000);
+  await page.goto("/portal");
+  await page.getByRole("button", { name: /^Try it with a demo key \(Amara Okafor/ }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Welcome, Amara", { timeout: SCAN });
+  // The sidebar names her: the name comes from the key file, so it shows on any deployment.
+  await expect(page.locator("aside").filter({ hasText: "Amara Okafor" }).first()).toBeVisible();
+  // A payslip names her and says what the world sees.
+  await page
+    .getByRole("region", { name: "Last payment" })
+    .getByRole("link", { name: /^Open the payslip for / })
+    .click();
+  const doc = page.getByRole("article");
+  await expect(doc).toContainText("Amara Okafor");
+  await expect(doc).toContainText("What the world sees");
+  await expect(doc).toContainText("no amount, no names");
+  await expect(page).toHaveTitle(/^Payslip for [A-Z][a-z]{2} \d{4} \| Payslip$/);
+});
 
 async function openWithInvite(page: Page, key: ExportedKey) {
   await page.goto(`/portal#key=${encodeURIComponent(key.ufvk)}`);

@@ -3,7 +3,7 @@ import { ConsoleHome } from "@/components/console/home/console-home";
 import type { Contractor, Run, Wallet } from "@/lib/api";
 import { serverGet } from "@/lib/server-api";
 
-export const metadata: Metadata = { title: "Home" };
+export const metadata: Metadata = { title: "Company home" };
 
 /**
  * The first paint carries the treasury, people and runs (fetched on the server), so the cards are

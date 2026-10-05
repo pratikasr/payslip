@@ -17,7 +17,9 @@ import {
 } from "lucide-react";
 import { Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
+import { LogoMark } from "@/components/app/logo";
 import { Tag } from "@/components/ds/tag";
+import { useDocumentTitle } from "@/components/portal/document-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,6 +33,7 @@ import {
   networkLabel,
   truncateMiddle,
 } from "@/lib/format";
+import { classifyKey } from "@/lib/keys";
 import { cn } from "cn";
 import styles from "./public-payslip.module.css";
 
@@ -45,13 +48,49 @@ const PRINT_CSS = `@media print {
 }`;
 const RETRY_MS = 1500;
 
-/** The proof travels in the URL fragment (#pp1...), which browsers never send to the web host. */
-function tokenFromHash(): string {
+/** A proof token: pp1 then unpadded base64url (service/src/proof.rs). */
+const TOKEN = /^pp1[A-Za-z0-9_-]{16,}$/;
+
+/** What a link fragment holds: the proof, and an optional note from whoever shared it. */
+interface Fragment {
+  token: string;
+  note: string | null;
+}
+
+/**
+ * The proof travels in the URL fragment (#pp1...), which browsers never send to the web host. A
+ * note the contractor added rides after it (&note=...), and is shown as theirs, not checked.
+ */
+function parseFragment(raw: string): Fragment {
+  let text = raw.trim().replace(/^.*?#/, "");
   try {
-    return decodeURIComponent(window.location.hash.replace(/^#/, "")).trim();
+    text = decodeURIComponent(text);
   } catch {
-    return window.location.hash.replace(/^#/, "").trim();
+    /* leave it as it is; validation below decides */
   }
+  const [token, ...rest] = text.split("&");
+  const note = new URLSearchParams(rest.join("&")).get("note")?.trim();
+  return { token: token.trim(), note: note ? note.slice(0, 120) : null };
+}
+
+/**
+ * Checked before anything is sent: a viewing key, an invite link or other key material pasted
+ * here must never reach the service in a URL.
+ */
+function localProblem(token: string): { title: string; body: string } | null {
+  if (TOKEN.test(token)) return null;
+  const candidate = token.replace(/^key=/, "");
+  const key = classifyKey(candidate);
+  if (token.startsWith("key=") || key.kind === "ufvk" || (key.kind === "rejected" && key.spending)) {
+    return {
+      title: "This is a key, not a payment proof. Nothing was sent.",
+      body: "Keep it private: a key reads (or, for a spending key, moves) every payment of its account. A payment proof starts with pp1 and shows one payment only; ask the person paid to share one from their payslip.",
+    };
+  }
+  return {
+    title: "This is not a complete payslip proof.",
+    body: "A proof starts with pp1. Part of the link may be missing; ask the person who sent it to copy the whole link again.",
+  };
 }
 
 /** Checks a proof against the chain; a dropped lightwalletd connection is retried once first. */
@@ -84,8 +123,8 @@ function explain(e: ApiError): { title: string; body: string; retry: boolean } {
       return { title: "This proof is for a different Zcash network.", body: `${e.message} ${e.hint}`, retry: false };
     case "tx_not_found":
       return {
-        title: "The payment in this proof is not on the chain yet.",
-        body: "If it was sent in the last few minutes, try again shortly. Otherwise ask the sender for a new link.",
+        title: "We could not find this payment on the Zcash chain.",
+        body: "If it was sent in the last few minutes, try again. Otherwise the link is wrong or was changed; ask the sender for a new one.",
         retry: true,
       };
     case UNREACHABLE_CODE:
@@ -107,14 +146,16 @@ function explain(e: ApiError): { title: string; body: string; retry: boolean } {
  */
 export function PublicPayslip() {
   /** null until the fragment has been read in the browser. */
-  const [token, setToken] = useState<string | null>(null);
+  const [frag, setFrag] = useState<Fragment | null>(null);
   const [draft, setDraft] = useState("");
   const [address, setAddress] = useState("");
   const [checkedAddress, setCheckedAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [problem, setProblem] = useState<{ title: string; body: string } | null>(null);
   const [proof, setProof] = useState<VerifiedProof | null>(null);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
+  const token = frag?.token ?? null;
 
   const verify = useCallback(async (t: string, addr: string) => {
     if (!t) return;
@@ -126,45 +167,60 @@ export function PublicPayslip() {
       setCheckedAt(new Date().toISOString());
     } catch (err) {
       setError(toDisplayError(err));
+      setCheckedAddress(addr.trim());
       if (!addr.trim()) setProof(null);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    const read = () => {
-      const t = tokenFromHash();
-      setToken(t);
+  /** Validates in the browser first; only a well-formed proof is sent to the service. */
+  const start = useCallback(
+    (f: Fragment) => {
+      setFrag(f);
       setProof(null);
       setError(null);
       setAddress("");
       setCheckedAddress("");
-      if (t) void verify(t, "");
-    };
+      const p = f.token ? localProblem(f.token) : null;
+      setProblem(p);
+      // Key material leaves the address bar at once, so it is not kept in history or shared on.
+      if (p && f.token) window.history.replaceState(null, "", window.location.pathname);
+      if (f.token && !p) void verify(f.token, "");
+    },
+    [verify],
+  );
+
+  useEffect(() => {
+    const read = () => start(parseFragment(window.location.hash));
     read();
     window.addEventListener("hashchange", read);
     return () => window.removeEventListener("hashchange", read);
-  }, [verify]);
+  }, [start]);
 
   const open = (raw: string) => {
-    const t = raw.trim().replace(/^.*#/, "");
-    if (!t) return;
-    window.history.replaceState(null, "", `#${t}`);
-    setToken(t);
-    setProof(null);
-    void verify(t, "");
+    const f = parseFragment(raw);
+    if (!f.token) return;
+    if (!localProblem(f.token)) {
+      window.history.replaceState(null, "", `#${f.token}${f.note ? `&note=${encodeURIComponent(f.note)}` : ""}`);
+    }
+    start(f);
   };
 
   const reset = () => {
     window.history.replaceState(null, "", window.location.pathname);
-    setToken("");
+    setFrag({ token: "", note: null });
     setDraft("");
     setProof(null);
     setError(null);
+    setProblem(null);
     setAddress("");
     setCheckedAddress("");
   };
+
+  const payTitle =
+    proof && proof.memo.kind === "pay_line" ? `Payslip for ${formatPeriodLabel(proof.memo.period)}` : "Payment proof";
+  useDocumentTitle(proof ? `${payTitle} | Payslip` : "Check a payslip | Payslip");
 
   let body: ReactNode;
   if (token === null) {
@@ -183,6 +239,8 @@ export function PublicPayslip() {
     body = (
       <ProofView
         proof={proof}
+        title={payTitle}
+        note={frag?.note ?? null}
         checkedAt={checkedAt}
         address={address}
         setAddress={setAddress}
@@ -192,8 +250,8 @@ export function PublicPayslip() {
         onCheckAddress={() => void verify(token, address)}
       />
     );
-  } else if (error) {
-    const plain = explain(error);
+  } else if (problem || error) {
+    const plain = problem ? { ...problem, retry: false } : explain(error as ApiError);
     body = (
       <>
         <Title>We could not check this payslip</Title>
@@ -202,7 +260,13 @@ export function PublicPayslip() {
           <p className="mt-1 text-sm text-muted-foreground">{plain.body}</p>
         </div>
         {plain.retry ? (
-          <Button variant="secondary" className="mt-4" onClick={() => void verify(token, "")} disabled={loading}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-4"
+            onClick={() => void verify(token, "")}
+            disabled={loading}
+          >
             <RotateCw aria-hidden="true" />
             {loading ? "Checking" : "Try again"}
           </Button>
@@ -228,21 +292,29 @@ export function PublicPayslip() {
   return (
     <div className={styles.page}>
       <style>{PRINT_CSS}</style>
-      <div className={styles.card}>{body}</div>
+      <div className={styles.card}>
+        <p className="mb-5 flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
+          <LogoMark className="size-5 text-foreground" />
+          <span>
+            <span className="text-foreground">Payslip</span> · Payment proof
+          </span>
+        </p>
+        {body}
+      </div>
       <footer className={styles.foot}>
         {proof ? (
-          <p>This payment was sent with Payslip, private payroll on Zcash.</p>
+          <p>Checked by Payslip, private payroll on Zcash, against the public chain.</p>
         ) : (
           <p>Payslip is private payroll on Zcash.</p>
         )}
         <p data-print="hide">
-          <Link href="/" className="rounded-sm text-link hover:underline">
+          <Link href="/" className="rounded-sm text-link underline underline-offset-4">
             About Payslip
           </Link>
           {token ? (
             <>
               <span aria-hidden="true"> · </span>
-              <button type="button" onClick={reset} className="rounded-sm text-link hover:underline">
+              <button type="button" onClick={reset} className="rounded-sm text-link underline underline-offset-4">
                 Check another payslip
               </button>
             </>
@@ -313,6 +385,8 @@ function PasteForm({
 
 function ProofView({
   proof,
+  title,
+  note,
   checkedAt,
   address,
   setAddress,
@@ -322,6 +396,8 @@ function ProofView({
   onCheckAddress,
 }: {
   proof: VerifiedProof;
+  title: string;
+  note: string | null;
   checkedAt: string | null;
   address: string;
   setAddress: (v: string) => void;
@@ -333,9 +409,12 @@ function ProofView({
   const memo = proof.memo;
   const payLine = memo.kind === "pay_line" ? memo : null;
   const testnet = proof.network === "testnet";
-  const mined = proof.height !== null;
-  const title = payLine ? `Payslip for ${formatPeriodLabel(payLine.period)}` : "Payment proof";
+  // Older services send no `mined`; a height means the transaction is in a block.
+  const mined = proof.mined ?? proof.height !== null;
   const n = proof.confirmations ?? 0;
+  const net = `Zcash${testnet ? " testnet" : ""}`;
+  // A result belongs to the address it was checked with; editing the field clears it.
+  const current = checkedAddress !== "" && checkedAddress === address.trim();
 
   const print = () => {
     const previous = document.title;
@@ -348,7 +427,10 @@ function ProofView({
     <>
       <Title>{title}</Title>
 
-      <section aria-label="Amount" className="overflow-hidden rounded-lg border bg-raised px-5 pt-[22px] pb-0 sm:px-6">
+      <section
+        aria-label="Amount"
+        className="overflow-hidden rounded-lg border bg-raised px-5 pt-[22px] pb-0 sm:px-6 dark:pb-5"
+      >
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[1.625rem] leading-tight font-[380]">
@@ -358,7 +440,10 @@ function ProofView({
               <p className="mt-1 text-[0.8125rem] text-muted-foreground">
                 <Zec zat={proof.amount_zat} />
                 {testnet ? (
-                  <span title="Testnet runs use a fixed rate, not a market price."> · Simulated rate</span>
+                  <span title="Testnet coins have no market price; testnet payrolls convert dollars at a fixed demo rate.">
+                    {" "}
+                    · Simulated rate
+                  </span>
                 ) : null}
               </p>
             ) : null}
@@ -368,55 +453,48 @@ function ProofView({
           ) : null}
         </div>
         {mined ? (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-success">
+          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-success" data-testid="verify-status">
             <Check className="size-4" aria-hidden="true" />
-            Verified on Zcash{testnet ? " testnet" : ""} · {n.toLocaleString("en-US")}{" "}
-            {n === 1 ? "confirmation" : "confirmations"}
+            Verified on {net} · {n.toLocaleString("en-US")} {n === 1 ? "confirmation" : "confirmations"}
           </p>
         ) : (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-warning">
+          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-warning" data-testid="verify-status">
             <LoaderCircle className="size-4" aria-hidden="true" />
-            Found on Zcash{testnet ? " testnet" : ""}, waiting to be mined
+            Found on {net}, not yet confirmed. Check again once it is in a block.
           </p>
         )}
         <Thumb proof={proof} title={title} />
         <div className="hidden h-4 print:block" aria-hidden="true" />
       </section>
 
-      <button
-        type="button"
-        onClick={print}
-        className="mt-6 flex h-[42px] w-full items-center justify-center gap-2 rounded-lg border bg-card text-[0.9375rem] text-foreground transition-colors hover:bg-muted"
-      >
-        <Download className="size-4 text-link" aria-hidden="true" />
+      {note ? (
+        <p className="mt-4 rounded-lg border px-4 py-3 text-sm" data-testid="verify-note">
+          <span className="block text-[0.8125rem] text-muted-foreground">
+            A note from the person who shared this, not checked by Payslip
+          </span>
+          <span className="break-words text-foreground">{note}</span>
+        </p>
+      ) : null}
+
+      <Button type="button" variant="secondary" onClick={print} className="mt-6" data-print="hide">
+        <Download aria-hidden="true" />
         Download payslip
-      </button>
+      </Button>
 
       <section aria-labelledby="shows" className="mt-[34px]">
         <h2 id="shows" className="text-base font-normal">
           What this proof shows
         </h2>
         <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
-          {checkedAt ? `Checked ${formatDateTime(checkedAt)} against the Zcash chain. ` : ""}Nothing else about the
-          payer or the contractor is revealed.
+          {checkedAt ? `Checked ${formatDateTime(checkedAt)} against the Zcash chain. ` : ""}
+          {proof.proves ?? "Nothing else about the payer or the contractor is revealed."}
         </p>
         <ul className="mt-3.5 rounded-lg border">
           <Shows icon={CircleDollarSign} label="Amount">
             {payLine ? <Usd cents={payLine.usd_basis_cents} /> : <Zec zat={proof.amount_zat} />}
           </Shows>
           <Shows icon={CalendarDays} label="Paid on">
-            {proof.block_time ? formatDateTime(proof.block_time) : "Not yet mined"}
-          </Shows>
-          <Shows icon={ShieldCheck} label="Paid to">
-            <span className="inline-flex flex-wrap items-center justify-end gap-x-1 gap-y-1">
-              <code className="font-mono text-[0.8125rem]" title={proof.recipient}>
-                <span data-print="hide">{truncateMiddle(proof.recipient, 10, 5)}</span>
-                <span data-print="only" className="break-all">
-                  {proof.recipient}
-                </span>
-              </code>
-              <CopyButton value={proof.recipient} label="address" />
-            </span>
+            {proof.block_time ? formatDateTime(proof.block_time) : "Not yet in a block"}
           </Shows>
           <Shows icon={SquareStack} label="Transaction">
             <a
@@ -441,57 +519,83 @@ function ProofView({
         </ul>
         <p className="mt-3 text-[0.8125rem] text-muted-foreground">
           A block explorer shows this transaction with no amount and no parties. This proof opens only this payment.
+          {payLine ? " The period, invoice and dollar amount are the sender's own statement, written in the memo." : ""}
         </p>
       </section>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          onCheckAddress();
-        }}
-        className="mt-8 space-y-2 border-t border-hairline pt-6"
-        data-print="hide"
-      >
-        <label htmlFor="expected-address" className="block text-[0.9375rem]">
-          Check the address it was paid to <span className="text-muted-foreground">(optional)</span>
-        </label>
-        <p id="expected-address-help" className="text-[0.8125rem] text-muted-foreground">
-          Paste the unified address you expected this payment to go to.
+      <section aria-labelledby="paid-to" className="mt-8 border-t border-hairline pt-6">
+        <h2 id="paid-to" className="flex items-center gap-2 text-base font-normal">
+          <ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" />
+          Paid to
+        </h2>
+        <p className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1">
+          <code className="font-mono text-[0.8125rem] break-all" title={proof.recipient}>
+            <span data-print="hide">{truncateMiddle(proof.recipient, 14, 8)}</span>
+            <span data-print="only">{proof.recipient}</span>
+          </code>
+          <CopyButton value={proof.recipient} label="address" />
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            id="expected-address"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={testnet ? "utest1…" : "u1…"}
-            className="h-10 font-mono"
-            aria-describedby="expected-address-help expected-address-result"
-          />
-          <Button type="submit" variant="secondary" size="lg" disabled={!address.trim() || checking}>
-            {checking ? "Checking" : "Check address"}
-          </Button>
-        </div>
-        <div id="expected-address-result" aria-live="polite">
-          {addressError && checkedAddress !== address.trim() ? (
-            <p className="text-sm text-destructive">{explain(addressError).title}</p>
-          ) : !checkedAddress ? null : proof.address_valid === false ? (
-            <AddressResult tone="warning" tag="Could not read the address you entered">
-              That is not a unified address on Zcash {networkLabel(proof.network).toLowerCase()}. Paste the full
-              address, starting with {testnet ? "utest1" : "u1"}.
-            </AddressResult>
-          ) : proof.address_matches === true ? (
-            <AddressResult tone="success" tag="Matches the address you entered">
-              The payment went to a receiver inside {truncateMiddle(checkedAddress, 10, 5)}.
-            </AddressResult>
-          ) : proof.address_matches === false ? (
-            <AddressResult tone="danger" tag="Not the address you entered">
-              The payment went to a different receiver than {truncateMiddle(checkedAddress, 10, 5)} holds.
-            </AddressResult>
-          ) : null}
-        </div>
-      </form>
+        <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+          This is one receiver of the person&apos;s Zcash address, so it will not look identical to the full address
+          they gave you. Paste that address below to check it holds this receiver.
+        </p>
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onCheckAddress();
+          }}
+          className="mt-4 space-y-2"
+          data-print="hide"
+        >
+          <label htmlFor="expected-address" className="block text-[0.9375rem]">
+            Check the address it was paid to <span className="text-muted-foreground">(optional)</span>
+          </label>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              id="expected-address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={testnet ? "utest1…" : "u1…"}
+              className="h-10 font-mono"
+              aria-describedby="expected-address-result"
+            />
+            <Button type="submit" variant="secondary" size="lg" disabled={!address.trim() || checking}>
+              {checking ? "Checking" : "Check address"}
+            </Button>
+          </div>
+          <div id="expected-address-result" aria-live="polite">
+            {!current ? null : addressError ? (
+              <p className="text-sm text-destructive">{explain(addressError).title}</p>
+            ) : proof.address_valid === false ? (
+              <AddressResult tone="warning" tag="Could not read the address you entered">
+                That is not a unified address on Zcash {networkLabel(proof.network).toLowerCase()}. Paste the full
+                address, starting with {testnet ? "utest1" : "u1"}.
+              </AddressResult>
+            ) : proof.address_matches === true ? (
+              <AddressResult tone="success" tag="Matches the address you entered">
+                The payment went to a receiver inside {truncateMiddle(checkedAddress, 10, 5)}.
+              </AddressResult>
+            ) : proof.address_matches === false ? (
+              <AddressResult tone="danger" tag="Not the address you entered">
+                The payment went to a different receiver than {truncateMiddle(checkedAddress, 10, 5)} holds.
+              </AddressResult>
+            ) : null}
+          </div>
+        </form>
+      </section>
+
+      <section aria-labelledby="not-proved" className="mt-8 border-t border-hairline pt-6">
+        <h2 id="not-proved" className="text-base font-normal">
+          What it does not prove
+        </h2>
+        <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+          {proof.does_not_prove ??
+            "Who sent it, or that it came from a Payslip payer. The memo was written by the sender and is not checked against any payroll record."}
+        </p>
+      </section>
 
       <section data-print="only" className="mt-6 border-t pt-4">
         <div className="flex items-center gap-4">
@@ -549,7 +653,7 @@ function AddressResult({
   );
 }
 
-/** A small paper payslip under the amount, like Mercury's invoice thumbnail. Decorative. */
+/** A small paper payslip under the amount, like Mercury's invoice thumbnail. Decorative; light theme only. */
 function Thumb({ proof, title }: { proof: VerifiedProof; title: string }) {
   const memo = proof.memo.kind === "pay_line" ? proof.memo : null;
   return (

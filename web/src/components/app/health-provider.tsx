@@ -1,21 +1,36 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
-import { api, toDisplayError, type ApiError, type Health } from "@/lib/api";
+import { api, toDisplayError, type ApiError, type Health, type Network } from "@/lib/api";
+
+/** What a server render already knows about the service before /api/health answers. */
+export interface ServiceHint {
+  network?: Network;
+  mode?: "full" | "statements";
+}
 
 interface HealthState {
   health: Health | undefined;
   error: ApiError | undefined;
   loading: boolean;
   refresh: () => void;
+  /** The network, from health once it answers, else from the server's hint; undefined while unknown. */
+  network: Network | undefined;
+  /** "statements" for a deployment with no wallet; undefined while unknown. */
+  mode: "full" | "statements" | undefined;
 }
 
 const HealthContext = createContext<HealthState | null>(null);
 
 const POLL_MS = 30_000;
 
-/** Fetches GET /api/health once for the whole app and refreshes it every 30 s. */
-export function HealthProvider({ children }: { children: ReactNode }) {
+/**
+ * Fetches GET /api/health once for the whole app and refreshes it every 30 s. Health can take a
+ * few seconds (it asks lightwalletd for the chain tip), so a layout may pass a `hint` read on the
+ * server from a fast endpoint: the network and the mode are then right on the first paint, and
+ * nothing claims testnet or mainnet before they are known.
+ */
+export function HealthProvider({ children, hint }: { children: ReactNode; hint?: ServiceHint }) {
   const [health, setHealth] = useState<Health | undefined>(undefined);
   const [error, setError] = useState<ApiError | undefined>(undefined);
   const [loading, setLoading] = useState(true);
@@ -44,7 +59,12 @@ export function HealthProvider({ children }: { children: ReactNode }) {
   }, [tick]);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
-  const value = useMemo(() => ({ health, error, loading, refresh }), [health, error, loading, refresh]);
+  const network = health?.network ?? hint?.network;
+  const mode = health ? (health.mode ?? "full") : hint?.mode;
+  const value = useMemo(
+    () => ({ health, error, loading, refresh, network, mode }),
+    [health, error, loading, refresh, network, mode],
+  );
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }
 
@@ -57,5 +77,5 @@ export function useHealth(): HealthState {
 /** The coin's display unit: TAZ on testnet (testnet coins have no value), ZEC otherwise. */
 export function useCoinUnit(): "ZEC" | "TAZ" {
   const ctx = useContext(HealthContext);
-  return ctx?.health?.network === "testnet" ? "TAZ" : "ZEC";
+  return ctx?.network === "testnet" ? "TAZ" : "ZEC";
 }

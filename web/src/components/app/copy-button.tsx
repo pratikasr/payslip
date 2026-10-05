@@ -14,9 +14,11 @@ interface CopyButtonProps {
   className?: string;
   size?: "icon-xs" | "icon-sm" | "sm";
   children?: React.ReactNode;
+  /** Called after a successful copy, for example to record that a key file was sent. */
+  onCopied?: () => void;
 }
 
-export function CopyButton({ value, label, className, size = "icon-xs", children }: CopyButtonProps) {
+export function CopyButton({ value, label, className, size = "icon-xs", children, onCopied }: CopyButtonProps) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -30,6 +32,7 @@ export function CopyButton({ value, label, className, size = "icon-xs", children
     if (ok) {
       setCopied(true);
       toast.success(`Copied ${label}`);
+      onCopied?.();
     } else {
       toast.error(`Could not copy the ${label}. Select the text and copy it manually.`);
     }

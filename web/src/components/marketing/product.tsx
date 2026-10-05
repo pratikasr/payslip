@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { DemoLink } from "@/components/marketing/demo-link";
 import { ProductAccordion, type ProductItem } from "@/components/marketing/product-accordion";
 import { OpenSourceVignette, PayslipVignette, ReconcileVignette, RunVignette } from "@/components/marketing/vignettes";
 
@@ -43,12 +43,7 @@ export function ProductSection() {
           }
           items={ITEMS}
           footer={
-            <Link
-              href="/console"
-              className="mt-7 inline-block rounded-sm border-b border-current pb-0.5 text-[15px] text-[#ededf3] transition-colors hover:text-primary"
-            >
-              Try the live demo
-            </Link>
+            <DemoLink className="mt-7 inline-block rounded-sm border-b border-current pb-0.5 text-[15px] text-[#ededf3] transition-colors hover:text-primary" />
           }
         />
       </div>

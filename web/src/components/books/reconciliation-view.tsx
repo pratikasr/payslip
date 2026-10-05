@@ -2,40 +2,71 @@
 
 import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
-import { ArrowRight, ChevronRight, CircleCheck, TriangleAlert } from "lucide-react";
+import { ArrowRight, ChevronRight, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
-import { Tag } from "@/components/ds/tag";
-import { RateValue, RunDetail } from "@/components/books/run-detail";
+import { StatusTag as SharedStatusTag } from "@/components/ds/status";
+import { RunDetail } from "@/components/books/run-detail";
 import {
   differenceOf,
   exceptionsOf,
+  hasTreasuryKey,
   paidDateOf,
   sortRuns,
   statusView,
   totalsOf,
   type BooksResult,
+  type BooksRun,
   type BooksTotals,
 } from "@/components/books/books-data";
-import type { ReconciliationRun } from "@/lib/api";
-import { formatCount, formatDate, formatPeriodLabel } from "@/lib/format";
+import { useBooks } from "@/components/books/books-provider";
+import { formatCount, formatDate, formatHeight, formatPeriodLabel, formatUsd } from "@/lib/format";
 import { cn } from "cn";
 
+const plural = (n: number, one: string, many: string) => `${formatCount(n)} ${n === 1 ? one : many}`;
+
 export function ReconciliationView({ r }: { r: BooksResult }) {
+  const { keys, scan } = useBooks();
   const runs = sortRuns(r);
   const totals = totalsOf(r);
+  const testnet = r.network === "testnet";
+  const from = r.scanned_from_height ?? scan.birthday;
   return (
     <div className="grid gap-6">
-      <StatusBanner r={r} runs={runs} />
-      {r.treasury_key_present === false ? (
+      <div className="grid gap-2.5">
+        <StatusBanner r={r} runs={runs} t={totals} />
+        {testnet && runs.length > 0 ? (
+          <p
+            className="flex items-start gap-2 px-1 text-[0.8125rem] text-muted-foreground"
+            data-testid="books-testnet-note"
+          >
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              Testnet: payroll dollars convert at a simulated rate so faucet coins can carry a demo payroll.
+              {runs.every((run) => run.status === "reconciled")
+                ? " The variance is network fees and coin left in the treasury, valued at that rate; no money was lost."
+                : " Variance and explained amounts are valued at that rate."}
+            </span>
+          </p>
+        ) : null}
+      </div>
+      {runs.length > 0 && !totals.fundingKnown ? (
         <p role="status" className="rounded-xl border border-warning/30 bg-warning-bg px-4 py-3 text-sm text-strong">
-          The Treasury viewing key is not loaded, so funding cannot be read. Add it from Manage in the sidebar.
+          {hasTreasuryKey(r, keys)
+            ? "No funding record was found for these runs in this period, so what was funded cannot be read. A run's record is written the day it starts paying; widen the period to include that day."
+            : "No funding record was found, so what was funded cannot be read. Load the Treasury viewing key from Manage in the sidebar."}
         </p>
       ) : null}
-      <KpiRow t={totals} runs={r.runs.length} />
+      <KpiRow t={totals} runs={r.runs.length} testnet={testnet} />
       {runs.length === 0 ? (
-        <p className="border-y border-hairline py-10 text-center text-[0.9375rem] text-muted-foreground">
-          No runs paid in this period. Choose another period above.
-        </p>
+        <div className="border-y border-hairline py-10 text-center text-[0.9375rem] text-muted-foreground">
+          <p>No runs paid in this period. Choose another period above.</p>
+          {from ? (
+            <p className="mx-auto mt-2 max-w-md text-sm">
+              These keys were read from block <span className="num">{formatHeight(from)}</span> on. If they were paid
+              earlier, import the company&apos;s key file: it names the block to start from.
+            </p>
+          ) : null}
+        </div>
       ) : (
         <section aria-labelledby="runs-heading" className="min-w-0">
           <h2 id="runs-heading" className="mb-2 text-[1.1875rem] font-normal tracking-[-0.01em]">
@@ -56,27 +87,50 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
 
 /* ---------- Headline ---------- */
 
-function StatusBanner({ r, runs }: { r: BooksResult; runs: ReconciliationRun[] }) {
+function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksTotals }) {
   const reconciled = runs.filter((run) => run.status === "reconciled").length;
-  const rounding = runs.filter((run) => run.status === "reconciled" && (differenceOf(run) ?? 0) !== 0).length;
+  const roundingRuns = runs.filter((run) => run.status === "reconciled" && (differenceOf(run) ?? 0) !== 0);
+  const maxRounding = Math.max(0, ...roundingRuns.map((run) => Math.abs(differenceOf(run) ?? 0)));
   const ex = exceptionsOf(r);
   const all = runs.length > 0 && reconciled === runs.length;
   const problems: string[] = [];
-  if (ex.noFunding.length)
-    problems.push(`${ex.noFunding.length} ${ex.noFunding.length === 1 ? "run has" : "runs have"} no funding record`);
-  if (ex.unexplained.length)
+  if (ex.missingKeys.length)
     problems.push(
-      `${ex.unexplained.length} ${ex.unexplained.length === 1 ? "run has" : "runs have"} an unexplained variance`,
+      `${plural(ex.missingKeys.length, "run paid", "runs paid")} accounts whose keys are not loaded, so those payments cannot be seen`,
     );
-  if (ex.incomplete.length)
-    problems.push(`${ex.incomplete.length} ${ex.incomplete.length === 1 ? "run is" : "runs are"} not fully mined`);
-  const severe = ex.unexplained.length > 0;
+  if (ex.unpaid.length)
+    problems.push(`${plural(ex.unpaid.length, "run has", "runs have")} a funded account with no payment`);
+  if (ex.noFunding.length) problems.push(`${plural(ex.noFunding.length, "run has", "runs have")} no funding record`);
+  if (ex.unexplained.length)
+    problems.push(`${plural(ex.unexplained.length, "run has", "runs have")} an unexplained variance`);
+  if (ex.incomplete.length) problems.push(`${plural(ex.incomplete.length, "run is", "runs are")} not fully mined`);
+  if (ex.other.length)
+    problems.push(`${plural(ex.other.length, "run has", "runs have")} a status this version of Books does not know`);
+  const severe = ex.unexplained.length > 0 || ex.unpaid.length > 0;
+  const paid = formatUsd(t.paid);
   const headline =
     runs.length === 0
       ? "No runs in this period"
       : all
-        ? "Every run reconciled"
-        : `${formatCount(reconciled)} of ${formatCount(runs.length)} runs reconciled`;
+        ? `${plural(runs.length, "run", "runs")}, ${paid} paid, every dollar accounted for`
+        : `${formatCount(reconciled)} of ${plural(runs.length, "run", "runs")} reconciled, ${paid} paid`;
+  const rounding = roundingRuns.length
+    ? ` ${plural(roundingRuns.length, "run differs", "runs differ")} by ${maxRounding === 1 ? "a cent" : `up to ${maxRounding} cents`} of rounding, within the allowance, shown under Difference.`
+    : "";
+  const review =
+    ex.total > 0 ? (
+      <Link
+        href="/books/exceptions"
+        className="inline-flex shrink-0 items-center gap-1 self-start rounded-sm text-sm text-link underline underline-offset-4 sm:self-center"
+      >
+        {all
+          ? ex.unlabelled.length === 1
+            ? "1 unlabelled transaction to review"
+            : `${formatCount(ex.unlabelled.length)} unlabelled transactions to review`
+          : "Review exceptions"}
+        <ArrowRight className="size-3.5" aria-hidden="true" />
+      </Link>
+    ) : null;
   return (
     <div
       role="status"
@@ -100,27 +154,17 @@ function StatusBanner({ r, runs }: { r: BooksResult; runs: ReconciliationRun[] }
           />
         )}
         <div>
-          <p className="text-[1.375rem] leading-tight font-[380] tracking-[-0.01em]">{headline}</p>
+          <p className="text-[1.375rem] leading-tight font-[380] tracking-[-0.01em] text-balance">{headline}</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {runs.length === 0
               ? "Payments are matched to runs by their memo; none were mined in this period."
               : all
-                ? rounding
-                  ? `Funded minus paid equals fees and unspent coin at each run's rate. ${rounding} ${rounding === 1 ? "run differs" : "runs differ"} by a cent of rounding, shown under Difference.`
-                  : "Funded minus paid equals fees and unspent coin at each run's rate, to the cent."
-                : `${problems.join(", ")}.`}
+                ? `Funded minus paid equals network fees and unspent coin at each run's rate.${rounding}`
+                : `${problems.join("; ")}.`}
           </p>
         </div>
       </div>
-      {!all && ex.total > 0 ? (
-        <Link
-          href="/books/exceptions"
-          className="inline-flex shrink-0 items-center gap-1 self-start rounded-sm text-sm text-link underline-offset-4 hover:underline sm:self-center"
-        >
-          Review exceptions
-          <ArrowRight className="size-3.5" aria-hidden="true" />
-        </Link>
-      ) : null}
+      {review}
     </div>
   );
 }
@@ -139,32 +183,24 @@ function Kpi({ label, value, sub, testId }: { label: ReactNode; value: ReactNode
   );
 }
 
-function KpiRow({ t, runs }: { t: BooksTotals; runs: number }) {
+const NotRecorded = () => <span className="text-muted-foreground">Not recorded</span>;
+
+function KpiRow({ t, runs, testnet }: { t: BooksTotals; runs: number; testnet: boolean }) {
   const unexplainedParts: ReactNode[] = [];
-  if (t.rounding !== 0)
-    unexplainedParts.push(
-      <span key="r">
-        <Usd cents={t.rounding} /> rounding
-      </span>,
-    );
-  if (t.unexplainedRuns !== 0)
-    unexplainedParts.push(
-      <span key="u">
-        <Usd cents={t.unexplainedRuns} /> unexplained
-      </span>,
-    );
-  if (t.incompleteRuns !== 0)
-    unexplainedParts.push(
-      <span key="i">
-        <Usd cents={t.incompleteRuns} /> in runs not fully mined
-      </span>,
-    );
-  if (t.unrecorded !== 0)
-    unexplainedParts.push(
-      <span key="n">
-        <Usd cents={-t.unrecorded} /> with no funding record
-      </span>,
-    );
+  const part = (key: string, cents: number, text: string) =>
+    cents !== 0
+      ? unexplainedParts.push(
+          <span key={key}>
+            <Usd cents={cents} /> {text}
+          </span>,
+        )
+      : 0;
+  part("r", t.rounding, "rounding");
+  part("u", t.unexplainedRuns, "unexplained");
+  part("i", t.incompleteRuns, "in runs not fully mined");
+  part("k", t.missingKeyRuns, "in runs with keys missing");
+  part("p", t.unpaidRuns, "in runs with an unpaid account");
+  part("n", -t.unrecorded, "with no funding record");
   const material = Math.abs(t.unexplained - t.rounding) > 0;
   return (
     <dl
@@ -174,68 +210,96 @@ function KpiRow({ t, runs }: { t: BooksTotals; runs: number }) {
       <Kpi
         testId="kpi-funded"
         label="Funded"
-        value={<Usd cents={t.funded} />}
+        value={t.fundingKnown ? <Usd cents={t.funded} /> : <NotRecorded />}
         sub={
-          <>
-            <Zec zat={t.zecAcquired} short /> acquired
-          </>
+          t.fundingKnown ? (
+            <>
+              <Zec zat={t.zecAcquired} short /> acquired{testnet ? " at the simulated rate" : ""}
+            </>
+          ) : (
+            "No funding record in the period"
+          )
         }
       />
       <Kpi
         testId="kpi-paid"
         label="Paid"
         value={<Usd cents={t.paid} />}
-        sub={`${formatCount(t.payments)} ${t.payments === 1 ? "payment" : "payments"} in ${formatCount(runs)} ${runs === 1 ? "run" : "runs"}`}
+        sub={`${plural(t.payments, "payment", "payments")} in ${plural(runs, "run", "runs")}`}
       />
-      <Kpi testId="kpi-variance" label="Variance" value={<Usd cents={t.variance} />} sub="Funded minus paid" />
+      <Kpi
+        testId="kpi-variance"
+        label="Variance"
+        value={t.fundingKnown ? <Usd cents={t.variance} /> : <NotRecorded />}
+        sub={testnet ? "Funded minus paid, still held as coin" : "Funded minus paid"}
+      />
       <Kpi
         testId="kpi-explained"
         label="Explained"
-        value={<Usd cents={t.explained} />}
+        value={t.fundingKnown ? <Usd cents={t.explained} /> : <NotRecorded />}
         sub={
-          <>
-            Fees and unspent <Coin /> at the fill rate
-          </>
+          testnet ? (
+            <>
+              <Zec zat={t.feesZat} /> fees and <Zec zat={t.unspentZat} /> unspent, at the simulated rate
+            </>
+          ) : (
+            <>
+              Network fees and unspent <Coin /> at the fill rate
+            </>
+          )
         }
       />
       <Kpi
         testId="kpi-unexplained"
         label="Unexplained"
-        value={<Usd cents={t.unexplained} className={cn(material && "text-destructive")} />}
-        sub={unexplainedParts.length ? <span className="grid">{unexplainedParts}</span> : "Variance minus explained"}
+        value={
+          t.fundingKnown ? (
+            <Usd cents={t.unexplained} className={cn(material && "text-destructive")} />
+          ) : (
+            <NotRecorded />
+          )
+        }
+        sub={
+          !t.fundingKnown ? (
+            "Needs a funding record"
+          ) : unexplainedParts.length ? (
+            <span className="grid">{unexplainedParts}</span>
+          ) : (
+            "Variance minus explained"
+          )
+        }
       />
     </dl>
   );
 }
 
-/* ---------- Runs table (tablet and up) ---------- */
+/* ---------- Runs table (wide screens) ---------- */
 
 const TH =
   "h-10 px-[7px] first:pl-1 last:pr-0 text-left align-bottom pb-2 text-[0.8125rem] font-normal whitespace-nowrap text-muted-foreground";
 const TD = "px-[7px] first:pl-1 last:pr-0 py-3 align-top whitespace-nowrap";
 
-function DiffValue({ run }: { run: ReconciliationRun }) {
+function DiffValue({ run, note = true }: { run: BooksRun; note?: boolean }) {
   const diff = differenceOf(run);
   if (diff === null) return <span className="text-muted-foreground">None</span>;
+  const rounding = note && run.status === "reconciled" && diff !== 0;
   return (
-    <Usd
-      cents={diff}
-      className={cn(
-        run.status === "variance_unexplained" ? "text-destructive" : diff === 0 ? "text-muted-foreground" : "",
-      )}
-    />
+    <>
+      <Usd
+        cents={diff}
+        className={cn(
+          run.status === "variance_unexplained" ? "text-destructive" : diff === 0 ? "text-muted-foreground" : "",
+        )}
+      />
+      {rounding ? <span className="block text-xs text-muted-foreground">rounding</span> : null}
+    </>
   );
 }
 
-function StatusTag({ run, wrap }: { run: ReconciliationRun; wrap?: boolean }) {
+/** The run's status as a short tag (the app's one StatusTag); "within rounding" moves to the Difference column. */
+function StatusTag({ run }: { run: BooksRun }) {
   const s = statusView(run);
-  return (
-    <span title={s.help} className="inline-block">
-      <Tag tone={s.tone} className={cn(wrap && "h-auto max-w-[7rem] py-[3px] leading-[1.3] whitespace-normal")}>
-        {s.label}
-      </Tag>
-    </span>
-  );
+  return <SharedStatusTag status={{ ...s, label: run.status === "reconciled" ? "Reconciled" : s.label }} />;
 }
 
 function Stack({ top, bottom }: { top: ReactNode; bottom?: ReactNode }) {
@@ -247,19 +311,18 @@ function Stack({ top, bottom }: { top: ReactNode; bottom?: ReactNode }) {
   );
 }
 
-function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; t: BooksTotals }) {
+function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksTotals }) {
   const [open, setOpen] = useState<string | null>(null);
-  const testnet = r.network === "testnet";
   const reconciled = runs.filter((run) => run.status === "reconciled").length;
-  const columns = 10;
+  const columns = 7;
   return (
     <div
-      className="hidden overflow-x-auto xl:block xl:overflow-visible"
+      className="hidden overflow-x-auto lg:block xl:overflow-visible"
       role="region"
       aria-label="Runs, funded against paid"
       tabIndex={0}
     >
-      <table className="w-full min-w-[900px] border-collapse text-[0.9375rem]" data-testid="books-runs">
+      <table className="w-full min-w-[720px] border-collapse text-[0.9375rem]" data-testid="books-runs">
         <thead>
           <tr className="border-b border-hairline">
             <th scope="col" className={TH}>
@@ -269,22 +332,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
               Funded
             </th>
             <th scope="col" className={cn(TH, "text-right")}>
-              Rate
-            </th>
-            <th scope="col" className={cn(TH, "text-right")}>
               Paid
-            </th>
-            <th scope="col" className={cn(TH, "text-right")}>
-              Fees
-              <span className="block text-[0.6875rem] text-faint">
-                in <Coin />
-              </span>
-            </th>
-            <th scope="col" className={cn(TH, "text-right")}>
-              Unspent
-              <span className="block text-[0.6875rem] text-faint">
-                in <Coin />
-              </span>
             </th>
             <th scope="col" className={cn(TH, "text-right")}>
               Variance
@@ -306,6 +354,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
             const detailId = `run-detail-${run.run_id}`;
             const paidOn = paidDateOf(r, run.run_id);
             const toggle = () => setOpen(isOpen ? null : run.run_id);
+            const sub = `${run.lines + (run.pending_lines ?? 0)} paid${paidOn ? ` · ${formatDate(paidOn).replace(/ \d{4}$/, "")}` : ""}`;
             return (
               <Fragment key={run.run_id}>
                 <tr
@@ -337,12 +386,16 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
                       <span>
                         <span className="block">{formatPeriodLabel(run.period)}</span>
                         <span className="num block text-xs text-muted-foreground">
-                          {run.lines + (run.pending_lines ?? 0)} paid
-                          {paidOn ? ` · ${formatDate(paidOn).replace(/ \d{4}$/, "")}` : ""}
+                          {sub}
                           <span className="sr-only">, run {run.run_id.slice(0, 8)}</span>
                         </span>
                       </span>
                     </button>
+                    {/* Buttons are not printed; the run's name is. */}
+                    <span data-print="text">
+                      {formatPeriodLabel(run.period)} · {run.run_id.slice(0, 8)}
+                      <span className="block text-[8pt]">{sub}</span>
+                    </span>
                   </td>
                   <td className={cn(TD, "text-right")}>
                     {run.funded_usd_cents === null ? (
@@ -352,20 +405,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
                     )}
                   </td>
                   <td className={cn(TD, "text-right")}>
-                    <RateValue e6={run.rate_usd_per_zec_e6} testnet={testnet} />
-                  </td>
-                  <td className={cn(TD, "text-right")}>
                     <Stack top={<Usd cents={run.paid_usd_cents} />} bottom={<Zec zat={run.paid_zat} />} />
-                  </td>
-                  <td className={cn(TD, "text-right text-[0.8125rem]")}>
-                    <Zec zat={run.network_fees_zat} unit={false} />
-                  </td>
-                  <td className={cn(TD, "text-right text-[0.8125rem]")}>
-                    {run.unspent_zat === null ? (
-                      <span className="text-muted-foreground">None</span>
-                    ) : (
-                      <Zec zat={run.unspent_zat} unit={false} />
-                    )}
                   </td>
                   <td className={cn(TD, "text-right")}>
                     {run.variance_usd_cents === null ? (
@@ -385,7 +425,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
                     <DiffValue run={run} />
                   </td>
                   <td className={TD}>
-                    <StatusTag run={run} wrap />
+                    <StatusTag run={run} />
                   </td>
                 </tr>
                 {isOpen ? (
@@ -408,29 +448,30 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
               Total
             </th>
             <td className={cn(TD, "text-right font-[450]")}>
-              <Stack top={<Usd cents={t.funded} />} bottom={<Zec zat={t.zecAcquired} />} />
+              {t.fundingKnown ? (
+                <Stack top={<Usd cents={t.funded} />} bottom={<Zec zat={t.zecAcquired} />} />
+              ) : (
+                <NotRecorded />
+              )}
             </td>
-            <td className={TD} />
             <td className={cn(TD, "text-right font-[450]")}>
               <Stack top={<Usd cents={t.paid} />} bottom={<Zec zat={t.paidZat} />} />
             </td>
-            <td className={cn(TD, "text-right text-[0.8125rem]")}>
-              <Zec zat={t.feesZat} unit={false} />
-            </td>
-            <td className={cn(TD, "text-right text-[0.8125rem]")}>
-              <Zec zat={t.unspentZat} unit={false} />
+            <td className={cn(TD, "text-right font-[450]")}>
+              {t.fundingKnown ? <Usd cents={t.variance} /> : <NotRecorded />}
             </td>
             <td className={cn(TD, "text-right font-[450]")}>
-              <Usd cents={t.variance} />
+              {t.fundingKnown ? <Usd cents={t.explained} /> : <NotRecorded />}
             </td>
             <td className={cn(TD, "text-right font-[450]")}>
-              <Usd cents={t.explained} />
-            </td>
-            <td className={cn(TD, "text-right font-[450]")}>
-              <Usd
-                cents={t.unexplained}
-                className={cn(Math.abs(t.unexplained - t.rounding) > 0 && "text-destructive")}
-              />
+              {t.fundingKnown ? (
+                <Usd
+                  cents={t.unexplained}
+                  className={cn(Math.abs(t.unexplained - t.rounding) > 0 && "text-destructive")}
+                />
+              ) : (
+                <NotRecorded />
+              )}
             </td>
             <td className={cn(TD, "text-[0.8125rem] text-muted-foreground")}>
               {reconciled} of {runs.length} reconciled
@@ -442,12 +483,12 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: ReconciliationRun[]; 
   );
 }
 
-/* ---------- Runs list (phones) ---------- */
+/* ---------- Runs list (phones and tablets) ---------- */
 
-function RunsList({ r, runs }: { r: BooksResult; runs: ReconciliationRun[] }) {
+function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <ul className="divide-y divide-hairline border-y border-hairline xl:hidden" aria-label="Runs, funded against paid">
+    <ul className="divide-y divide-hairline border-y border-hairline lg:hidden" aria-label="Runs, funded against paid">
       {runs.map((run) => {
         const isOpen = open === run.run_id;
         const detailId = `run-detail-m-${run.run_id}`;
@@ -491,9 +532,15 @@ function RunsList({ r, runs }: { r: BooksResult; runs: ReconciliationRun[] }) {
                   label="Variance"
                   value={run.variance_usd_cents === null ? null : <Usd cents={run.variance_usd_cents} />}
                 />
-                <MiniStat label="Difference" value={<DiffValue run={run} />} />
+                <MiniStat label="Difference" value={<DiffValue run={run} note={false} />} />
               </span>
             </button>
+            {/* Buttons are not printed; the run's name and figures are. */}
+            <span data-print="text">
+              {formatPeriodLabel(run.period)} · {run.run_id.slice(0, 8)}: funded{" "}
+              {run.funded_usd_cents === null ? "not recorded" : formatUsd(run.funded_usd_cents)}, paid{" "}
+              {formatUsd(run.paid_usd_cents)}, {statusView(run).label.toLowerCase()}
+            </span>
             {isOpen ? (
               <div id={detailId} className="mb-4 rounded-xl bg-raised px-4 py-4">
                 <RunDetail r={r} run={run} />

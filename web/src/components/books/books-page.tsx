@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CalendarDays, Check, ChevronDown, RefreshCw, TriangleAlert } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
 import { PageTitle } from "@/components/ds/page";
@@ -62,6 +62,7 @@ export function BooksPage({
       ) : (
         <PageTitle title={title} description={meta} actions={controls} className="sm:items-start" />
       )}
+      {header ? null : <PrintPeriod />}
       {scan.status === "error" && scan.error ? (
         <ScanError />
       ) : scan.status === "ready" && scan.result ? (
@@ -73,16 +74,43 @@ export function BooksPage({
   );
 }
 
+/**
+ * What was read and how: the number of viewing keys (and that the public sees none of it), then
+ * the network and the blocks scanned. "From block N" is the service's own figure when it sends
+ * one, else the birthday the request asked for.
+ */
 function ScanMeta() {
   const { scan, keys } = useBooks();
   const r = scan.result;
-  if (!r || scan.status !== "ready")
-    return <span data-print="hide">{`${keys.length} viewing ${keys.length === 1 ? "key" : "keys"}`}</span>;
-  return (
-    <span className="num">
-      Zcash {networkLabel(r.network).toLowerCase()} · scanned to block {formatHeight(r.scanned_to_height)} at{" "}
-      {formatTime(r.generated_at).replace(/:\d\d UTC$/, " UTC")}
+  const read = (
+    <span className="block">
+      Read with {keys.length} viewing {keys.length === 1 ? "key" : "keys"}. The public explorer shows none of this.
     </span>
+  );
+  if (!r || scan.status !== "ready") return read;
+  const from = r.scanned_from_height ?? scan.birthday;
+  const at = formatTime(r.generated_at).replace(/:\d\d UTC$/, " UTC");
+  return (
+    <>
+      {read}
+      <span className="num mt-0.5 block text-[0.8125rem]" data-testid="books-scan-meta">
+        Zcash {networkLabel(r.network).toLowerCase()} ·{" "}
+        {from
+          ? `scanned from block ${formatHeight(from)} to ${formatHeight(r.scanned_to_height)} at ${at}`
+          : `scanned to block ${formatHeight(r.scanned_to_height)} at ${at}`}
+      </span>
+    </>
+  );
+}
+
+/** On paper the period pill is gone, so the period is printed under the title. */
+function PrintPeriod() {
+  const { period } = useBooks();
+  if (!period) return null;
+  return (
+    <p data-print="text" className="mb-3 text-[10pt]">
+      Payments mined {shortRange(period)} (UTC)
+    </p>
   );
 }
 
@@ -107,6 +135,7 @@ function RefreshButton() {
 export function PeriodMenu() {
   const { period, setPeriod, latestRun } = useBooks();
   const [customOpen, setCustomOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   const presets = presetPeriods();
   const same = (a: BooksPeriod | null, b: BooksPeriod) => !!a && a.from === b.from && a.to === b.to;
   return (
@@ -114,6 +143,7 @@ export function PeriodMenu() {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
+            ref={trigger}
             type="button"
             variant="secondary"
             size="sm"
@@ -148,12 +178,21 @@ export function PeriodMenu() {
           <DropdownMenuItem onSelect={() => setCustomOpen(true)}>Custom range</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      <CustomRangeDialog open={customOpen} onOpenChange={setCustomOpen} />
+      <CustomRangeDialog open={customOpen} onOpenChange={setCustomOpen} returnFocus={trigger} />
     </>
   );
 }
 
-function CustomRangeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function CustomRangeDialog({
+  open,
+  onOpenChange,
+  returnFocus,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The period button: the menu item that opened the dialog is gone by the time it closes. */
+  returnFocus: React.RefObject<HTMLButtonElement | null>;
+}) {
   const { period, setPeriod } = useBooks();
   const [draft, setDraft] = useState<BooksPeriod>(period ?? presetPeriods()[0].period);
   useEffect(() => {
@@ -162,7 +201,14 @@ function CustomRangeDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const valid = isValidPeriod(draft);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md"
+        onCloseAutoFocus={(e) => {
+          if (!returnFocus.current) return;
+          e.preventDefault();
+          returnFocus.current.focus();
+        }}
+      >
         <form
           className="grid gap-4"
           onSubmit={(e) => {
@@ -259,7 +305,9 @@ export function ScanProgress() {
           </p>
           <p className="num text-sm text-muted-foreground">
             {period ? `${shortRange(period)} · ` : ""}
-            {health ? `reading up to block ${formatHeight(health.chain_tip)} · ` : ""}
+            {health
+              ? `reading ${scan.birthday ? `from block ${formatHeight(scan.birthday)} ` : ""}up to block ${formatHeight(health.chain_tip)} · `
+              : ""}
             {seconds} s
           </p>
         </div>

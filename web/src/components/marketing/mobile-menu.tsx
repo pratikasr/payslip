@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Menu, X } from "lucide-react";
+import { DemoLink } from "@/components/marketing/demo-link";
 
 export interface NavLink {
   href: string;
@@ -97,13 +98,10 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
           </ul>
         </nav>
         <div className="mt-2 grid gap-2 border-t border-white/10 p-2 pt-4">
-          <Link
-            href="/console"
+          <DemoLink
             onClick={close}
             className="inline-flex h-11 items-center justify-center rounded-full bg-primary text-[15px] font-medium text-primary-foreground"
-          >
-            Try the live demo
-          </Link>
+          />
           <Link
             href="/verify"
             onClick={close}

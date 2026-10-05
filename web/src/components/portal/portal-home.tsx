@@ -2,26 +2,26 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ChevronRight, Download, KeyRound } from "lucide-react";
+import { BookOpenCheck, ChevronRight, Download, KeyRound } from "lucide-react";
 import { Fiat, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { ErrorState } from "@/components/app/states";
 import { Card, CardFoot, CardHeader } from "@/components/ds/card";
 import { PageTitle, SectionHeader } from "@/components/ds/page";
 import { PayslipRows } from "@/components/portal/payslip-rows";
-import { firstName, monthDay, newestFirst, payslipHref, personName } from "@/components/portal/portal-data";
-import { usePortal } from "@/components/portal/portal-provider";
+import { firstName, monthDay, newestFirst, payslipHref } from "@/components/portal/portal-data";
+import { usePersonName, usePortal } from "@/components/portal/portal-provider";
 import { RowsSkeleton, ScanProgress, SettlementTag, SimulatedRate } from "@/components/portal/portal-states";
 import { ShareProofDialog } from "@/components/portal/share-proof-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Statement, StatementLine } from "@/lib/api";
-import { formatPeriodLabel } from "@/lib/format";
+import { formatPeriodLabel, formatUsd } from "@/lib/format";
 import { cn } from "cn";
 
 const LATEST = 5;
 
-/** The contractor's home, after Mercury's employee view: what was paid, the last payment, payslips. */
+/** The contractor's home, its layout informed by Mercury's employee view: what was paid, the last payment, payslips. */
 export function PortalHome() {
   const { recent, reload } = usePortal();
   const s = recent.statement;
@@ -57,17 +57,48 @@ function Scope() {
   );
 }
 
+/** The latest payment by the time it was mined, whatever pay period it was for. */
+function latestPaid(lines: StatementLine[]): StatementLine | undefined {
+  return lines
+    .slice()
+    .sort(
+      (a, b) => (b.block_time ?? b.date).localeCompare(a.block_time ?? a.date) || (b.height ?? 0) - (a.height ?? 0),
+    )[0];
+}
+
+/** The company's Treasury key opened as if it were a person's: say what it is and where it belongs. */
+function TreasuryKeyNote() {
+  return (
+    <div
+      role="note"
+      className="mb-6 flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between"
+    >
+      <span className="text-strong">
+        This is the company&apos;s Treasury key. It reads the payroll account, not one person&apos;s pay, so it has no
+        payslips. Open it in Books with the contractors&apos; keys to reconcile each run.
+      </span>
+      <Link
+        href="/books"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-sm text-link underline underline-offset-4"
+      >
+        <BookOpenCheck className="size-4" aria-hidden="true" />
+        Open Books
+      </Link>
+    </div>
+  );
+}
+
 function HomeBody({ statement: s }: { statement: Statement }) {
   const { recent, reload } = usePortal();
   const [sharing, setSharing] = useState<StatementLine | null>(null);
-  const first = firstName(personName(s));
+  const first = firstName(usePersonName());
   const lines = newestFirst(s.lines);
   const pending = newestFirst(s.pending);
-  const last = lines[0];
+  const last = latestPaid(s.lines);
   return (
     <>
       <PageTitle title={first ? `Welcome, ${first}` : "Welcome"} />
-      <Scope />
+      {s.account.role === "treasury" ? <TreasuryKeyNote /> : <Scope />}
       {recent.error ? <ErrorState error={recent.error} onRetry={reload} className="mb-5" /> : null}
       {recent.loading ? (
         <div className="mb-5">
@@ -205,7 +236,73 @@ function PaidThisYear({ statement: s }: { statement: Statement }) {
           <SimulatedRate />
         )}
       </div>
-      {ytd.length === 0 ? <p className="mt-3 text-sm text-muted-foreground">No payments yet this year.</p> : null}
+      {ytd.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">No payments yet this year.</p>
+      ) : (
+        <MonthStrip lines={s.lines} year={year} />
+      )}
     </Card>
+  );
+}
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Pay for each month of the year, by the pay period each payment was for: twelve thin bars, an
+ * empty month as a faint stub. One series, so no legend; the table beside it is for screen readers.
+ */
+function MonthStrip({ lines, year }: { lines: StatementLine[]; year: number }) {
+  const months = MONTHS.map((label, i) => {
+    const period = `${year}-${String(i + 1).padStart(2, "0")}`;
+    return {
+      label,
+      period,
+      cents: lines.filter((l) => l.period === period).reduce((n, l) => n + l.usd_basis_cents, 0),
+    };
+  });
+  const max = Math.max(1, ...months.map((m) => m.cents));
+  return (
+    <figure className="mt-4" aria-labelledby="month-strip-caption">
+      <figcaption id="month-strip-caption" className="mb-1.5 text-xs text-muted-foreground">
+        By pay period
+      </figcaption>
+      <div className="flex h-12 items-end gap-[2px]" aria-hidden="true">
+        {months.map((m) => (
+          <div
+            key={m.period}
+            title={`${formatPeriodLabel(m.period)}: ${m.cents ? formatUsd(m.cents) : "no pay"}`}
+            className="flex h-full flex-1 items-end"
+          >
+            <div
+              className={cn(
+                "w-full rounded-t-[4px]",
+                m.cents ? "bg-[#b3820e] dark:bg-[#bd8a14]" : "h-[2px] rounded-none bg-hairline",
+              )}
+              style={m.cents ? { height: `${Math.max(8, (m.cents / max) * 100)}%` } : undefined}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex gap-[2px] text-center text-[0.6875rem] text-muted-foreground" aria-hidden="true">
+        {months.map((m) => (
+          <span key={m.period} className="flex-1">
+            {m.label.slice(0, 1)}
+          </span>
+        ))}
+      </div>
+      <table className="sr-only">
+        <caption>Pay by pay period, {year}</caption>
+        <tbody>
+          {months
+            .filter((m) => m.cents)
+            .map((m) => (
+              <tr key={m.period}>
+                <th scope="row">{formatPeriodLabel(m.period)}</th>
+                <td>{formatUsd(m.cents)}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+    </figure>
   );
 }

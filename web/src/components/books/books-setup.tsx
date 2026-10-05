@@ -3,11 +3,11 @@
 import { BookOpenCheck } from "lucide-react";
 import { Card } from "@/components/ds/card";
 import { KeyImport } from "@/components/books/key-import";
-import { useBooks } from "@/components/books/books-provider";
+import { useDocumentTitle } from "@/components/portal/document-title";
 
 /** First visit: a centred card that asks for the company's viewing keys. */
 export function BooksSetup() {
-  const { addKeys } = useBooks();
+  useDocumentTitle("Open the books | Books | Payslip");
   return (
     <div className="mx-auto grid max-w-[560px] gap-6 pt-6 sm:pt-12">
       <div className="text-center">
@@ -21,10 +21,11 @@ export function BooksSetup() {
         </p>
       </div>
       <Card className="p-5 sm:p-6">
-        <KeyImport onAdd={addKeys} primary idPrefix="books-setup" />
+        <KeyImport layout="rows" idPrefix="books-setup" />
       </Card>
       <p className="text-center text-xs text-muted-foreground">
-        Keys stay in this browser tab and are sent to the Payslip service only to scan the chain.
+        Keys stay in this browser tab and are sent only to the Payslip service, which keeps a read-only scan of them so
+        the next visit is quick. You can ask it to forget them from Manage.
       </p>
     </div>
   );

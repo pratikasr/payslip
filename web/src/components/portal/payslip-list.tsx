@@ -53,7 +53,7 @@ export function PayslipList() {
           <PayslipRows lines={lines} pending={pending} onShare={setSharing} />
           <p className="mt-4 text-sm text-muted-foreground">
             Older payments are in{" "}
-            <Link href="/portal/tax" className="rounded-sm text-link hover:underline">
+            <Link href="/portal/tax" className="rounded-sm text-link underline underline-offset-4">
               Tax documents
             </Link>
             , for any period you choose.

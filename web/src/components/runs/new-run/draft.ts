@@ -1,16 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Contractor, Run } from "@/lib/api";
-import { parseUsdToCents } from "@/lib/format";
-import { isValidRange, previousMonth } from "@/lib/period";
+import type { Contractor, NewRun, Run } from "@/lib/api";
+import { parseUsdToCents, usdAmountProblem } from "@/lib/format";
+import { isValidRange } from "@/lib/period";
+import { latestPeriodFirst, nextPayPeriod, overlappingRuns, type PayPeriod } from "@/lib/payroll";
 import { monthRange, periodTitle } from "../run-meta";
 
 /*
   The Amounts and Review steps work on a draft that lives in the browser until the payer
   approves; approving creates the run. The draft is kept in sessionStorage so a reload on the
-  Review step comes back to the same amounts and the same idempotency key (a second approval
-  after a reload returns the run the first one created instead of making another).
+  Review step comes back to the same amounts.
+
+  The idempotency key is the draft's random salt plus a fingerprint of exactly what is being
+  approved (period and every line). Approving the same amounts again, after a reload or a lost
+  response, sends the same key and gets the run the first approval created. Changing the period
+  or any line makes a new key, so an edited draft can never come back as the earlier run.
 */
 
 export const INVOICE_MAX = 64;
@@ -29,16 +34,21 @@ export interface Draft {
   from: string;
   to: string;
   lines: Record<string, LineDraft>;
-  /** Idempotency key for POST /api/runs, generated once per draft. */
+  /** Random salt for the idempotency key, made once per draft (see idempotencyKey). */
   key: string;
   /** The run the amounts were copied from. */
   source: { id: string; label: string } | null;
   /** Set when the payer continued from Amounts, so Review only ever shows amounts they saw. */
   ready?: boolean;
+  /**
+   * The runs the payer confirmed this extra run alongside (overlapKey of them). When the
+   * overlapping runs change, so does the key, and the payer confirms again.
+   */
+  overlapAck?: string;
 }
 
 /** crypto.randomUUID needs a secure context; fall back to getRandomValues elsewhere. */
-function newIdempotencyKey(): string {
+export function newIdempotencyKey(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const b = crypto.getRandomValues(new Uint8Array(16));
   b[6] = (b[6] & 0x0f) | 0x40;
@@ -66,13 +76,22 @@ function amountsFrom(run: Run | undefined, contractors: Contractor[]): Record<st
   );
 }
 
-function freshDraft(contractors: Contractor[], source: Run | undefined): Draft {
-  const prev = previousMonth();
+/** "YYYY-MM" when the period is one whole calendar month, else "custom". */
+export function monthKey(period: PayPeriod): string {
+  const r = monthRange(Number(period.from.slice(0, 4)), Number(period.from.slice(5, 7)) - 1);
+  return r.from === period.from && r.to === period.to ? period.from.slice(0, 7) : "custom";
+}
+
+/**
+ * A new draft for the next unpaid period (the period after the latest paid payroll, the one Home
+ * names), with the amounts of `source`.
+ */
+function freshDraft(contractors: Contractor[], source: Run | undefined, period: PayPeriod): Draft {
   return {
     v: 1,
-    month: prev.from.slice(0, 7),
-    from: prev.from,
-    to: prev.to,
+    month: monthKey(period),
+    from: period.from,
+    to: period.to,
     lines: amountsFrom(source, contractors),
     key: newIdempotencyKey(),
     source: source ? { id: source.id, label: periodTitle(source.period_start, source.period_end) } : null,
@@ -99,13 +118,13 @@ function writeStored(d: Draft | null) {
   }
 }
 
-/** The run whose amounts prefill a new run: the one named in ?repeat=, else the newest with lines. */
+/**
+ * The run whose amounts prefill a new run: the one named in ?repeat=, else the latest paid
+ * payroll by pay period, else the latest run with lines (never the latest created).
+ */
 export function sourceRun(runs: Run[] | undefined, repeatId: string | null): Run | undefined {
-  const all = runs ?? [];
-  return (
-    all.find((r) => r.id === repeatId) ??
-    [...all].sort((a, b) => b.created_at.localeCompare(a.created_at)).find((r) => r.lines.length > 0)
-  );
+  const all = latestPeriodFirst((runs ?? []).filter((r) => r.lines.length > 0 && r.status !== "cancelled"));
+  return all.find((r) => r.id === repeatId) ?? all.find((r) => r.status === "paid") ?? all[0];
 }
 
 export function useDraft(contractors: Contractor[] | undefined, runs: Run[] | undefined, repeatId: string | null) {
@@ -124,7 +143,7 @@ export function useDraft(contractors: Contractor[] | undefined, runs: Run[] | un
       );
       setDraftState({ ...stored, lines });
     } else {
-      setDraftState(freshDraft(contractors, source));
+      setDraftState(freshDraft(contractors, source, nextPayPeriod(runs)));
     }
   }, [contractors, runs, repeatId]);
 
@@ -167,27 +186,103 @@ export function copyAmounts(d: Draft, run: Run, contractors: Contractor[]): Draf
   };
 }
 
+/** The body POST /api/runs gets for this draft (without the key). */
+export function runRequest(d: Draft, included: Contractor[]): Omit<NewRun, "idempotency_key"> {
+  return {
+    period_start: d.from,
+    period_end: d.to,
+    lines: included.map((c) => ({
+      contractor_id: c.id,
+      amount_usd_cents: parseUsdToCents(d.lines[c.id].amount) ?? 0,
+      invoice_ref: d.lines[c.id].invoice.trim(),
+    })),
+  };
+}
+
+/** cyrb53: a small, stable 53-bit string hash (not for secrets; only to tell bodies apart). */
+function hash53(text: string, seed: number): string {
+  let h1 = 0xdeadbeef ^ seed;
+  let h2 = 0x41c6ce57 ^ seed;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+
+/**
+ * The idempotency key for approving `body`: the draft's salt and a fingerprint of the body
+ * (period and lines, sorted by contractor). Same draft and same amounts: same key, so a retry
+ * returns the run already made. Anything changed: a new key, so a new run.
+ */
+export function idempotencyKey(salt: string, body: Omit<NewRun, "idempotency_key">): string {
+  const lines = [...body.lines]
+    .sort((a, b) => a.contractor_id.localeCompare(b.contractor_id))
+    .map((l) => [l.contractor_id, l.amount_usd_cents, l.invoice_ref]);
+  const canonical = JSON.stringify([body.period_start, body.period_end, lines]);
+  return `${salt}.${hash53(canonical, 1)}${hash53(canonical, 2)}`;
+}
+
+/**
+ * Whether the run the service returned is the one the payer reviewed: same period, same people,
+ * same amounts and invoice references. A different answer is never treated as approval.
+ */
+export function runMatches(run: Run, body: Omit<NewRun, "idempotency_key">): boolean {
+  if (run.period_start !== body.period_start || run.period_end !== body.period_end) return false;
+  if (run.lines.length !== body.lines.length) return false;
+  const want = new Map(body.lines.map((l) => [l.contractor_id, l]));
+  return run.lines.every((l) => {
+    const w = want.get(l.contractor_id);
+    return !!w && w.amount_usd_cents === l.amount_usd_cents && w.invoice_ref === l.invoice_ref.trim();
+  });
+}
+
+/** Runs already covering any day of the draft's period (cancelled ones excepted). */
+export function draftOverlaps(d: Draft | null, runs: Run[] | undefined): Run[] {
+  if (!d || !runs || !isValidRange(d.from, d.to)) return [];
+  return overlappingRuns(runs, { from: d.from, to: d.to });
+}
+
+/** A stable name for a set of overlapping runs, so a confirmation applies to exactly that set. */
+export function overlapKey(runs: Run[]): string {
+  return runs
+    .map((r) => r.id)
+    .sort()
+    .join(",");
+}
+
 export interface DraftCheck {
   included: Contractor[];
   /** One problem per line, and which field it is in. */
   lineErrors: Record<string, { field: "amount" | "invoice"; message: string }>;
   periodError: string | null;
-  noneError: string | null;
+  /** Nobody ticked, or more people than one run can pay. */
+  countError: string | null;
+  /** Runs that already cover this period. */
+  overlaps: Run[];
+  /** True when there are overlaps the payer has not confirmed as an extra run. */
+  overlapUnconfirmed: boolean;
   totalCents: number;
   valid: boolean;
 }
 
 /** The service's ceiling for one line (MAX_LINE_CENTS): $10,000,000. */
 const MAX_LINE_CENTS = 1_000_000_000;
+/** The service's ceiling for one run (MAX_LINES in api/runs.rs). */
+export const MAX_LINES = 50;
 /** What the memo can carry: printable ASCII without the "|" separator (memo.rs). */
 const INVOICE_CHARS = /^[\x20-\x7e]*$/;
 
 /**
  * The original new-run form's checks, plus the service's own rules for the invoice reference
- * (required, plain characters, no "|") and the per-line ceiling, so the payer sees them here
- * instead of as an error after approving.
+ * (required, plain characters, no "|"), the per-line ceiling and the 50-line limit, so the payer
+ * sees them here instead of as an error after approving. A period that another run already
+ * covers needs the payer's confirmation (an extra run, such as a bonus) before going on.
  */
-export function useDraftCheck(draft: Draft | null, contractors: Contractor[]): DraftCheck {
+export function useDraftCheck(draft: Draft | null, contractors: Contractor[], runs?: Run[]): DraftCheck {
   return useMemo(() => {
     const included = draft ? contractors.filter((c) => draft.lines[c.id]?.include) : [];
     const lineErrors: DraftCheck["lineErrors"] = {};
@@ -198,8 +293,7 @@ export function useDraftCheck(draft: Draft | null, contractors: Contractor[]): D
       const cents = parseUsdToCents(l.amount);
       const invoice = l.invoice.trim();
       if (!l.amount.trim()) lineErrors[c.id] = amountError("Enter an amount, or untick this contractor.");
-      else if (cents === null)
-        lineErrors[c.id] = amountError("Use a number with up to 2 decimals, like 4800 or 4800.50.");
+      else if (cents === null) lineErrors[c.id] = amountError(usdAmountProblem(l.amount) ?? "Check this amount.");
       else if (cents <= 0) lineErrors[c.id] = amountError("The amount must be more than zero.");
       else if (cents > MAX_LINE_CENTS) lineErrors[c.id] = amountError("Keep each amount to $10,000,000 or less.");
       else if (!invoice)
@@ -207,19 +301,28 @@ export function useDraftCheck(draft: Draft | null, contractors: Contractor[]): D
       else if (invoice.length > INVOICE_MAX)
         lineErrors[c.id] = invoiceError(`Keep the invoice reference to ${INVOICE_MAX} characters.`);
       else if (!INVOICE_CHARS.test(invoice) || invoice.includes("|"))
-        lineErrors[c.id] = invoiceError("Use plain letters, digits, spaces and - / . # in the invoice reference.");
+        lineErrors[c.id] = invoiceError(
+          "Use plain characters in the invoice reference: no |, no accented letters and no emoji.",
+        );
     }
     let periodError: string | null = null;
     if (draft && !isValidRange(draft.from, draft.to))
       periodError = "The period must start on or before the day it ends.";
     else if (draft && Date.parse(draft.to) - Date.parse(draft.from) > 366 * 86_400_000)
       periodError = "Keep the period to a year or less.";
-    const noneError = included.length === 0 ? "Include at least one contractor." : null;
+    const countError =
+      included.length === 0
+        ? "Include at least one contractor."
+        : included.length > MAX_LINES
+          ? `A run can pay at most ${MAX_LINES} people, and ${included.length} are ticked. Untick some and pay them in a second run.`
+          : null;
     const totalCents = included.reduce(
       (sum, c) => sum + Math.max(0, parseUsdToCents(draft!.lines[c.id].amount) ?? 0),
       0,
     );
-    const valid = !!draft && !periodError && !noneError && Object.keys(lineErrors).length === 0;
-    return { included, lineErrors, periodError, noneError, totalCents, valid };
-  }, [draft, contractors]);
+    const overlaps = periodError ? [] : draftOverlaps(draft, runs);
+    const overlapUnconfirmed = overlaps.length > 0 && draft?.overlapAck !== overlapKey(overlaps);
+    const valid = !!draft && !periodError && !countError && !overlapUnconfirmed && Object.keys(lineErrors).length === 0;
+    return { included, lineErrors, periodError, countError, overlaps, overlapUnconfirmed, totalCents, valid };
+  }, [draft, contractors, runs]);
 }

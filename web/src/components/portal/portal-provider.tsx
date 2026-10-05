@@ -3,10 +3,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toDisplayError, type ApiError, type Statement } from "@/lib/api";
 import { classifyKey } from "@/lib/keys";
-import { KEY_ERRORS, fetchStatement, guessCurrency, keyErrorText, recentRange } from "@/components/portal/portal-data";
+import { forgetKeysOnService } from "@/components/books/forget-keys";
+import {
+  KEY_ERRORS,
+  NO_META,
+  fetchStatement,
+  guessCurrency,
+  keyErrorText,
+  parseInvite,
+  personName,
+  recentRange,
+  statementRequest,
+  type KeyMeta,
+} from "@/components/portal/portal-data";
 
 /** The unlocked key lives in this tab only and is sent nowhere but the Payslip service. */
 const KEY_STORAGE = "payslip.portal.key";
+/** The name and birthday an invite link or key file carried, kept beside the key for this tab. */
+const META_STORAGE = "payslip.portal.meta";
 const CURRENCY_STORAGE = "payslip.portal.currency";
 
 interface Recent {
@@ -21,8 +35,12 @@ interface PortalState {
   /** False until the tab's stored key and any invite link have been read. */
   ready: boolean;
   ufvk: string | null;
-  unlock: (ufvk: string) => void;
+  /** The name and birthday that came with the key, if any. */
+  meta: KeyMeta;
+  unlock: (ufvk: string, meta?: KeyMeta) => void;
   lock: (reason?: string | null) => void;
+  /** Asks the service to delete its read-only scan of this key, then locks the tab. */
+  forgetOnService: () => Promise<{ forgotten: boolean }>;
   /** Why the portal is locked, when it locked itself (a bad invite link or a refused key). */
   lockReason: string | null;
   /** The person's currency for the value at receipt (mainnet). */
@@ -54,27 +72,44 @@ function read(kind: "session" | "local", key: string): string | null {
   }
 }
 
+function readMeta(): KeyMeta {
+  try {
+    const m = JSON.parse(read("session", META_STORAGE) ?? "null") as Partial<KeyMeta> | null;
+    return {
+      label: typeof m?.label === "string" && m.label ? m.label : null,
+      birthday: typeof m?.birthday === "number" && m.birthday > 0 ? m.birthday : null,
+    };
+  } catch {
+    return NO_META;
+  }
+}
+
 export function PortalProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [ufvk, setUfvk] = useState<string | null>(null);
+  const [meta, setMeta] = useState<KeyMeta>(NO_META);
   const [lockReason, setLockReason] = useState<string | null>(null);
   const [currency, setCurrencyState] = useState("USD");
   const [recent, setRecent] = useState<Recent>({ loading: false });
   const [attempt, setAttempt] = useState(0);
   const range = useMemo(() => recentRange(), []);
 
-  const unlock = useCallback((key: string) => {
+  const unlock = useCallback((key: string, extra: KeyMeta = NO_META) => {
     setRecent({ loading: false });
     setLockReason(null);
     setUfvk(key);
+    setMeta(extra);
     store("session", KEY_STORAGE, key);
+    store("session", META_STORAGE, extra.label || extra.birthday ? JSON.stringify(extra) : null);
   }, []);
 
   const lock = useCallback((reason?: string | null) => {
     setUfvk(null);
+    setMeta(NO_META);
     setRecent({ loading: false });
     setLockReason(reason ?? null);
     store("session", KEY_STORAGE, null);
+    store("session", META_STORAGE, null);
   }, []);
 
   const setCurrency = useCallback((c: string) => {
@@ -82,28 +117,26 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     store("local", CURRENCY_STORAGE, c);
   }, []);
 
-  // An invite link (#key=<viewing key>) unlocks the tab, then the key leaves the address bar.
+  // An invite link (#key=<viewing key>, optionally &name= and &birthday=) unlocks the tab, then
+  // the key leaves the address bar.
   useEffect(() => {
     const fromInvite = (): boolean => {
-      const m = /^#key=(.*)$/.exec(window.location.hash);
-      if (!m) return false;
-      let raw = "";
-      try {
-        raw = decodeURIComponent(m[1]);
-      } catch {
-        raw = m[1];
-      }
+      if (!/^#key=/.test(window.location.hash)) return false;
+      const invite = parseInvite(window.location.hash);
       // After Next's own history effects have run, or the router writes the fragment back.
       const clean = window.location.pathname + window.location.search;
       setTimeout(() => window.history.replaceState(null, "", clean), 0);
-      const result = classifyKey(raw);
-      if (result.kind === "ufvk") unlock(result.value);
+      const result = classifyKey(invite.key);
+      if (result.kind === "ufvk") unlock(result.value, invite.meta);
       else lock(`This invite link does not hold a viewing key Payslip can use. ${result.reason}`);
       return true;
     };
     if (!fromInvite()) {
       const stored = read("session", KEY_STORAGE);
-      if (stored && classifyKey(stored).kind === "ufvk") setUfvk(stored);
+      if (stored && classifyKey(stored).kind === "ufvk") {
+        setUfvk(stored);
+        setMeta(readMeta());
+      }
     }
     setCurrencyState(read("local", CURRENCY_STORAGE) ?? guessCurrency());
     setReady(true);
@@ -116,7 +149,7 @@ export function PortalProvider({ children }: { children: ReactNode }) {
     if (!ufvk) return;
     const ctrl = new AbortController();
     setRecent((r) => ({ statement: r.statement, loading: true, startedAt: Date.now() }));
-    fetchStatement({ ufvk, from: range.from, to: range.to, currency }, ctrl.signal)
+    fetchStatement(statementRequest(ufvk, range, meta, currency), ctrl.signal)
       .then((statement) => {
         if (!ctrl.signal.aborted) setRecent({ statement, loading: false });
       })
@@ -127,13 +160,36 @@ export function PortalProvider({ children }: { children: ReactNode }) {
         else setRecent((r) => ({ statement: r.statement, error: e, loading: false }));
       });
     return () => ctrl.abort();
-  }, [ufvk, currency, range, attempt, lock]);
+  }, [ufvk, meta, currency, range, attempt, lock]);
+
+  const forgetOnService = useCallback(async () => {
+    if (!ufvk) return { forgotten: false };
+    // Locked in this tab whatever the service answers.
+    try {
+      return await forgetKeysOnService([ufvk]);
+    } finally {
+      lock();
+    }
+  }, [ufvk, lock]);
 
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
 
   const value = useMemo<PortalState>(
-    () => ({ ready, ufvk, unlock, lock, lockReason, currency, setCurrency, recent, range, reload }),
-    [ready, ufvk, unlock, lock, lockReason, currency, setCurrency, recent, range, reload],
+    () => ({
+      ready,
+      ufvk,
+      meta,
+      unlock,
+      lock,
+      forgetOnService,
+      lockReason,
+      currency,
+      setCurrency,
+      recent,
+      range,
+      reload,
+    }),
+    [ready, ufvk, meta, unlock, lock, forgetOnService, lockReason, currency, setCurrency, recent, range, reload],
   );
   return <PortalContext.Provider value={value}>{children}</PortalContext.Provider>;
 }
@@ -149,4 +205,10 @@ export function usePortalKey(): string {
   const { ufvk } = usePortal();
   if (!ufvk) throw new Error("usePortalKey needs an unlocked portal");
   return ufvk;
+}
+
+/** The person's name for headings and documents: the service's, else the invite's or key file's. */
+export function usePersonName(): string | null {
+  const { recent, meta } = usePortal();
+  return personName(recent.statement, meta);
 }

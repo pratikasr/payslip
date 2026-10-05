@@ -3,6 +3,7 @@ import { cn } from "cn";
 import { LogoMark } from "@/components/app/logo";
 import { Button } from "@/components/ui/button";
 import { GITHUB_URL, HACKATHON_URL, repoDir, repoFile } from "@/components/marketing/data";
+import { DemoLink } from "@/components/marketing/demo-link";
 import { OutLink } from "@/components/marketing/parts";
 import { lp } from "@/components/marketing/classes";
 
@@ -21,11 +22,12 @@ export function ClosingCta() {
         Private to the world, transparent to your accountant.
       </h2>
       <p className="mx-auto mt-4 max-w-[30rem] text-[15px] text-muted-foreground sm:text-base">
-        Run a payroll on Zcash testnet in the live demo, then open every payment in the explorer.
+        Run a payroll on Zcash testnet in the live demo, or read the demo company&apos;s books with the judge kit, then
+        open every payment in the explorer.
       </p>
       <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3 sm:max-w-none sm:flex-row sm:justify-center">
         <Button asChild size="lg" className="h-11 px-6 text-[15px]">
-          <Link href="/console">Try the live demo</Link>
+          <DemoLink />
         </Button>
         <Button asChild size="lg" variant="secondary" className="h-11 px-6 text-[15px]">
           <a href={GITHUB_URL} target="_blank" rel="noreferrer">
@@ -38,13 +40,13 @@ export function ClosingCta() {
   );
 }
 
-type FooterLink = { label: string; href: string; external?: boolean };
+type FooterLink = { label: string; href: string; external?: boolean; demo?: boolean };
 
 const COLUMNS: { title: string; links: FooterLink[] }[] = [
   {
     title: "Product",
     links: [
-      { label: "Live demo", href: "/console" },
+      { label: "Live demo", href: "/console", demo: true },
       { label: "Check a payslip", href: "/verify" },
       { label: "Contractor portal", href: "/portal" },
       { label: "Accountant books", href: "/books" },
@@ -93,7 +95,13 @@ export function SiteFooter() {
               <ul className="mt-3 space-y-2 text-sm">
                 {c.links.map((l) => (
                   <li key={l.label}>
-                    {l.external ? (
+                    {l.demo ? (
+                      <DemoLink
+                        liveLabel={l.label}
+                        kitLabel="Books with the judge kit"
+                        className="rounded-sm text-[#ededf3] transition-colors hover:text-primary"
+                      />
+                    ) : l.external ? (
                       <a
                         href={l.href}
                         target="_blank"

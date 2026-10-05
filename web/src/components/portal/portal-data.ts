@@ -1,16 +1,59 @@
 /*
   Data helpers for the contractor portal: the statement request with one automatic retry when
-  lightwalletd drops a connection, the date range the portal reads, the currencies the service
-  prices ZEC in, and short labels for payslips.
+  lightwalletd drops a connection, invite links, the date range the portal reads, the currencies
+  the service prices ZEC in, and short labels for payslips.
 */
-import { ApiError, api, type Statement, type StatementLine } from "@/lib/api";
-import { formatPeriodLabel } from "@/lib/format";
+import { ApiError, api, type ContractorStatementRequest, type Statement, type StatementLine } from "@/lib/api";
+import { formatDate, formatPeriodLabel, formatShortDate } from "@/lib/format";
+import { publicUrl } from "@/lib/public-url";
 
-export interface StatementRequest {
-  ufvk: string;
-  from: string;
-  to: string;
-  currency?: string;
+export type StatementRequest = ContractorStatementRequest;
+
+/** What an invite link or a key file can carry besides the key: never sent to the web host. */
+export interface KeyMeta {
+  /** The person's name as the payer wrote it; shown in this tab only. */
+  label: string | null;
+  /** The block the account was created at: where a scan of the key can start. */
+  birthday: number | null;
+}
+
+export const NO_META: KeyMeta = { label: null, birthday: null };
+
+/**
+ * Reads the key itself, or a whole invite link (…/portal#key=…&name=…&birthday=…), pasted or
+ * scanned. Only `key` is required; the name and birthday are optional extras an invite can carry.
+ */
+export function parseInvite(text: string): { key: string; meta: KeyMeta; invite: boolean } {
+  const trimmed = text.trim();
+  const m = /#(key=\S*)/.exec(trimmed);
+  if (!m) return { key: trimmed, meta: NO_META, invite: false };
+  const params = new URLSearchParams(m[1]);
+  const birthday = Number(params.get("birthday") ?? params.get("birthday_height") ?? "");
+  const name = (params.get("name") ?? "").trim();
+  return {
+    key: (params.get("key") ?? "").trim(),
+    meta: {
+      label: name ? name.slice(0, 80) : null,
+      birthday: Number.isInteger(birthday) && birthday > 0 ? birthday : null,
+    },
+    invite: true,
+  };
+}
+
+/** A statement request with the key's birthday when one is known. */
+export function statementRequest(
+  ufvk: string,
+  range: { from: string; to: string },
+  meta: KeyMeta,
+  currency?: string,
+): StatementRequest {
+  return {
+    ufvk,
+    from: range.from,
+    to: range.to,
+    ...(currency ? { currency } : {}),
+    ...(meta.birthday ? { birthday_height: meta.birthday } : {}),
+  };
 }
 
 /**
@@ -112,18 +155,23 @@ export function keyErrorText(err: ApiError): string {
 const RETRY_MS = 1500;
 
 /**
- * Fetches a contractor statement. lightwalletd sometimes drops a long-lived connection; the first
- * `lightwalletd_unreachable` is retried once before it is shown.
+ * Runs a call to the service, retrying once when lightwalletd dropped its connection (the service
+ * loses idle connections; the second try reconnects). Every statement and download goes through it.
  */
-export async function fetchStatement(body: StatementRequest, signal?: AbortSignal): Promise<Statement> {
+export async function retryOnce<T>(call: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   try {
-    return await api.contractorStatement(body, signal);
+    return await call();
   } catch (err) {
     if (!(err instanceof ApiError) || err.code !== "lightwalletd_unreachable" || signal?.aborted) throw err;
     await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
     if (signal?.aborted) throw err;
-    return api.contractorStatement(body, signal);
+    return call();
   }
+}
+
+/** Fetches a contractor statement, with the single retry. */
+export function fetchStatement(body: StatementRequest, signal?: AbortSignal): Promise<Statement> {
+  return retryOnce(() => api.contractorStatement(body, signal), signal);
 }
 
 /** Creates a payment proof for one payment, with the same single retry when lightwalletd drops. */
@@ -149,29 +197,37 @@ export async function createProof(ufvk: string, line: Pick<StatementLine, "txid"
   return proof;
 }
 
-/** The public link for a proof. The token rides in the fragment, which browsers never send to a server. */
-export function proofLink(token: string): string {
-  const origin = typeof window === "undefined" ? "" : window.location.origin;
-  return `${origin}/verify#${token}`;
+/**
+ * The public link for a proof, on the deployment other people can open (the configured portal, or
+ * this page's origin). The token rides in the fragment, which browsers never send to a server.
+ */
+export function proofLink(token: string, note?: string): string {
+  const extra = note?.trim() ? `&note=${encodeURIComponent(note.trim().slice(0, 120))}` : "";
+  return publicUrl(`/verify#${token}${extra}`);
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** "2026-10-05" -> "Oct 5" this year, "Oct 5, 2025" in another year (Mercury's list dates). */
+/**
+ * "2026-10-05" -> "5 Oct" this year, "5 Oct 2025" in another year: the app's one list date
+ * (lib/format.ts, formatShortDate and formatDate), day before month as everywhere else.
+ */
 export function monthDay(value: string | null | undefined, now = new Date()): string {
   if (!value) return "Not mined";
   const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value);
   if (Number.isNaN(d.getTime())) return value;
-  const base = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  return d.getUTCFullYear() === now.getUTCFullYear() ? base : `${base}, ${d.getUTCFullYear()}`;
+  return d.getUTCFullYear() === now.getUTCFullYear() ? formatShortDate(value) : formatDate(value);
 }
 
 export function payslipTitle(line: Pick<StatementLine, "period">): string {
   return `Payslip for ${formatPeriodLabel(line.period)}`;
 }
 
-export function payslipHref(line: Pick<StatementLine, "txid">): string {
-  return `/portal/payslips/${line.txid}`;
+/**
+ * The payslip page for a payment. A payment outside the last twelve months (from Tax documents)
+ * carries the period it was found in, so the payslip page can read that period instead.
+ */
+export function payslipHref(line: Pick<StatementLine, "txid">, range?: { from: string; to: string }): string {
+  const base = `/portal/payslips/${line.txid}`;
+  return range ? `${base}?from=${range.from}&to=${range.to}` : base;
 }
 
 /** Payslips newest pay period first, then by block time (a back-dated payroll sits under newer ones). */
@@ -181,9 +237,12 @@ export function newestFirst<T extends Pick<StatementLine, "block_time" | "date" 
     .sort((a, b) => b.period.localeCompare(a.period) || (b.block_time ?? b.date).localeCompare(a.block_time ?? a.date));
 }
 
-/** The name the statement carries for this key, or a neutral fallback. */
-export function personName(s: Statement | undefined): string | null {
-  return s?.account.label?.trim() || null;
+/**
+ * The person's name: what the service knows for this key, else the name the invite link or key
+ * file carried (a statements-only service knows no names). Null when neither has one.
+ */
+export function personName(s: Statement | undefined, meta?: KeyMeta | null): string | null {
+  return s?.account.label?.trim() || meta?.label?.trim() || null;
 }
 
 /** "Amara Okafor" -> "Amara". */

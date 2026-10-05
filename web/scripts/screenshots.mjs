@@ -101,7 +101,10 @@ try {
     await visit(page, "landing", "/", width);
     await visit(page, "console-home", "/console", width);
     await visit(page, "console-runs", "/console/runs", width);
-    if (runs[0]) await visit(page, "console-run", `/console/runs/${runs[0].id}`, width);
+    if (runs[0]) {
+      await visit(page, "console-run", `/console/runs/${runs[0].id}`, width);
+      await visit(page, "console-run-privacy", `/console/runs/${runs[0].id}#privacy`, width);
+    }
     await visit(page, "console-run-new", "/console/runs/new", width);
     await visit(page, "console-people", "/console/people", width);
     await visit(page, "console-access", "/console/access", width);

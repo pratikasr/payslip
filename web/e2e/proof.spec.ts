@@ -50,7 +50,11 @@ test("a contractor proves one payment and anyone can verify it", async ({ page, 
   await expect(verifier.getByRole("heading", { name: "What this proof shows" })).toBeVisible();
   await expect(verifier.getByText("Transaction", { exact: true })).toBeVisible();
   await expect(verifier.getByText(/^Viewing as/)).toHaveCount(0);
-  await expect(verifier.getByText("This payment was sent with Payslip, private payroll on Zcash.")).toBeVisible();
+  await expect(
+    verifier.getByText("Checked by Payslip, private payroll on Zcash, against the public chain."),
+  ).toBeVisible();
+  await expect(verifier.getByRole("heading", { name: "What it does not prove" })).toBeVisible();
+  await expect(verifier).toHaveTitle(/^Payslip for .* \| Payslip$/);
 
   // 3. The address check: the contractor's own address matches, another contractor's does not.
   const field = verifier.getByLabel(/Check the address it was paid to/);
@@ -58,7 +62,9 @@ test("a contractor proves one payment and anyone can verify it", async ({ page, 
   await verifier.getByRole("button", { name: "Check address" }).click();
   await expect(verifier.getByText("Matches the address you entered")).toBeVisible({ timeout: 60_000 });
   if (other) {
+    // Editing the field clears the old answer until the new address is checked.
     await field.fill(other);
+    await expect(verifier.getByText("Matches the address you entered")).toHaveCount(0);
     await verifier.getByRole("button", { name: "Check address" }).click();
     await expect(verifier.getByText("Not the address you entered")).toBeVisible({ timeout: 60_000 });
   }
@@ -81,6 +87,30 @@ test("a contractor proves one payment and anyone can verify it", async ({ page, 
     { timeout: 60_000 },
   );
   await expect(forger.getByText(/^Verified on Zcash/)).toHaveCount(0);
+
+  // 6. A changed transaction id names no payment: the page says the link is wrong, not "wait".
+  const flipped = token.slice(0, 11) + (token[11] === "A" ? "B" : "A") + token.slice(12);
+  await forger.goto(`${link.split("#")[0]}#${flipped}`, { waitUntil: "networkidle" });
+  await expect(forger.getByRole("alert").filter({ hasText: /payment|proof/ })).toContainText(
+    /could not find this payment on the Zcash chain|does not match the payment/,
+    { timeout: 60_000 },
+  );
+});
+
+test("a viewing key opened as a proof is refused in the browser and never sent", async ({ page }) => {
+  const keys = (await (await fetch(`${API}/api/viewing-keys`).catch(() => null))?.json().catch(() => null))?.keys as
+    { ufvk: string }[] | undefined;
+  const key = keys?.[0]?.ufvk ?? "uviewtest1" + "q".repeat(120);
+  const sent: string[] = [];
+  page.on("request", (r) => r.url().includes("/api/proofs/") && sent.push(r.url()));
+  for (const fragment of [key, `key=${encodeURIComponent(key)}`]) {
+    await page.goto(`/verify#${fragment}`, { waitUntil: "networkidle" });
+    await expect(page.getByRole("alert").filter({ hasText: /key/ })).toContainText(
+      "This is a key, not a payment proof",
+    );
+    expect(new URL(page.url()).hash).toBe("");
+  }
+  expect(sent).toEqual([]);
 });
 
 test("the verify page asks for a proof when the link carries none", async ({ page }) => {

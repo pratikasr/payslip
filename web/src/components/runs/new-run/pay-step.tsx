@@ -5,10 +5,11 @@ import { useState } from "react";
 import { CircleCheck } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
-import { useHealth } from "@/components/app/health-provider";
+import { useCoinUnit, useHealth } from "@/components/app/health-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card } from "@/components/ds/card";
 import { KeyValues } from "@/components/ds/kv";
+import { SimulatedRate } from "@/components/ds/simulated-rate";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,16 +21,28 @@ import {
 } from "@/components/ui/dialog";
 import type { StreamState } from "@/hooks/use-run-events";
 import { api, ApiError, toDisplayError, type PayLine, type Run, type RunLogEvent } from "@/lib/api";
-import { formatHeight, formatTime } from "@/lib/format";
+import { formatClock, formatHeight, formatTime } from "@/lib/format";
+import { lineConfirmedAt } from "@/lib/payroll";
+import { logSentence } from "@/lib/run-log";
 import { cn } from "cn";
+import { CancelRun } from "../cancel-run";
 import { Problem } from "../problem";
-import { confirmedCount, estimateZat, isPaying, LineTag, plural, retryOnce, runTitle } from "../run-meta";
+import {
+  canCancel,
+  confirmedCount,
+  estimateZat,
+  failureTitle,
+  isLineWarning,
+  isPaying,
+  LineStatus,
+  plural,
+  retryOnce,
+  runTitle,
+} from "../run-meta";
 import { useLineChanges } from "../use-line-changes";
-import { RatePill } from "./review-step";
+import { FlowTitle } from "./rail";
 
-function H1({ children }: { children: React.ReactNode }) {
-  return <h1 className="text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">{children}</h1>;
-}
+const H1 = FlowTitle;
 
 /** ZEC each line will get and the reserve left for network fees, from the run's funding record. */
 function funded(run: Run) {
@@ -108,12 +121,12 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       value:
         reserve !== null ? (
           <>
-            up to <Zec zat={reserve} short />
+            up to <Zec zat={reserve} />
           </>
         ) : (
           "Network fees"
         ),
-      hint: `Network fees, from the treasury. ${appFee > 0 ? `Payslip fee ${appFee / 100}%.` : "No Payslip fee."}`,
+      hint: `Network fees, from the reserve set aside with the run; what is unspent stays in the treasury. ${appFee > 0 ? `Payslip fee ${appFee / 100}%.` : "No Payslip fee."}`,
     },
   ];
 
@@ -127,9 +140,9 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-[0.8125rem] text-strong">Total for {plural(n, "contractor")}</p>
-          {testnet ? <RatePill>Simulated rate</RatePill> : null}
+          {testnet ? <SimulatedRate rateE6={run.funding?.rate_usd_per_zec_e6} /> : null}
         </div>
-        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2rem] leading-none font-[380]" />
+        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
         {zat !== null ? (
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             {run.total_zat ? null : "about "}
@@ -138,7 +151,7 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
         ) : null}
       </Card>
 
-      <LineList lines={run.lines} changed={new Set()} className="mt-6" />
+      <LineList lines={run.lines} run={run} changed={new Set()} className="mt-6" />
 
       {error ? (
         <Problem className="mt-5" error={error} title="Payments did not start" onRetry={pay} busy={busy} />
@@ -149,11 +162,12 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
           Pay {plural(n, "contractor")}
         </Button>
       </div>
+      {canCancel(run) ? <CancelRun run={run} onCancelled={onRun} /> : null}
 
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-lg font-normal">
+            <DialogTitle className="text-[1.1875rem] font-normal">
               Pay {plural(n, "contractor")} <Usd cents={run.total_usd_cents} />
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
@@ -200,8 +214,6 @@ function stage(run: Run): string {
   return "Finishing up.";
 }
 
-const HEX64 = /\b([0-9a-f]{8})[0-9a-f]{48}([0-9a-f]{8})\b/gi;
-
 function Paying({
   run,
   logs,
@@ -213,6 +225,7 @@ function Paying({
   stream: StreamState;
   changed: ReadonlySet<string>;
 }) {
+  const coin = useCoinUnit();
   const n = run.lines.length;
   const confirmed = confirmedCount(run.lines);
   const latest = logs.length ? logs[logs.length - 1] : null;
@@ -225,7 +238,7 @@ function Paying({
 
       <div className="mt-6">
         <p className="flex items-baseline gap-2" aria-live="polite">
-          <span key={confirmed} className="ps-rise text-[2rem] leading-none font-[380] tracking-[-0.02em]">
+          <span key={confirmed} className="ps-rise text-[2.125rem] leading-none font-[380] tracking-[-0.02em]">
             {confirmed}
           </span>
           <span className="text-[0.9375rem] text-muted-foreground">of {n} confirmed</span>
@@ -246,13 +259,13 @@ function Paying({
         </div>
       </div>
 
-      <LineList lines={run.lines} changed={changed} className="mt-6" />
+      <LineList lines={run.lines} run={run} changed={changed} className="mt-6" />
 
-      <div className="mt-5 space-y-2 text-sm text-muted-foreground">
+      <div className="mt-5 space-y-2 text-[0.8125rem] text-muted-foreground">
         {latest ? (
           <p className="[overflow-wrap:anywhere]">
             <span className="text-strong">Latest</span> · <time dateTime={latest.at}>{formatTime(latest.at)}</time> ·{" "}
-            {latest.message.replace(HEX64, "$1…$2")}
+            {logSentence(latest.message, coin)}
           </p>
         ) : null}
         <p className="flex items-center gap-2">
@@ -295,16 +308,23 @@ function Stopped({ run, onRun, changed }: { run: Run; onRun: (run: Run) => void;
   const paid = confirmedCount(run.lines);
   return (
     <div>
-      <H1>The run stopped</H1>
+      <H1>{failureTitle(run)}</H1>
       <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
         {paid > 0 ? `${paid} of ${run.lines.length} payments went through and stay paid. ` : ""}
         Resuming retries only what is left.
       </p>
       {run.error ? (
-        <Problem className="mt-5" error={run.error} onRetry={resume} retryLabel="Resume" busy={busy} />
+        <Problem
+          className="mt-5"
+          error={run.error}
+          onRetry={resume}
+          retryLabel="Resume"
+          busyLabel="Resuming"
+          busy={busy}
+        />
       ) : null}
       {error ? <Problem className="mt-3" error={error} title="Could not resume" /> : null}
-      <LineList lines={run.lines} changed={changed} className="mt-6" />
+      <LineList lines={run.lines} run={run} changed={changed} className="mt-6" />
       {!run.error ? (
         <div className="mt-6">
           <Button size="lg" onClick={resume} disabled={busy}>
@@ -312,17 +332,27 @@ function Stopped({ run, onRun, changed }: { run: Run; onRun: (run: Run) => void;
           </Button>
         </div>
       ) : null}
+      {canCancel(run) ? <CancelRun run={run} onCancelled={onRun} /> : null}
     </div>
   );
+}
+
+/** "08:13 UTC" for a line mined with a block time; nothing otherwise. */
+function paidClock(line: PayLine, run: Run | undefined): string | undefined {
+  if (!run || !line.confirmed_at) return undefined;
+  const at = lineConfirmedAt(line, run);
+  return at ? formatClock(at) : undefined;
 }
 
 /** One row per contractor: who, how much, and the payment's state with its txid and block. */
 export function LineList({
   lines,
+  run,
   changed,
   className,
 }: {
   lines: PayLine[];
+  run?: Run;
   changed: ReadonlySet<string>;
   className?: string;
 }) {
@@ -358,7 +388,8 @@ export function LineList({
               ) : null}
             </p>
             {l.error ? (
-              <p className="text-[0.8125rem] text-destructive">
+              // A line still in progress can carry a warning (the service is retrying it).
+              <p className={cn("text-[0.8125rem]", isLineWarning(l) ? "text-warning" : "text-destructive")}>
                 {l.error.message} {l.error.hint}
               </p>
             ) : null}
@@ -369,7 +400,7 @@ export function LineList({
               className={cn("text-[0.9375rem]", l.status === "failed" && "line-through")}
             />
             <span key={l.status} className={cn(changed.has(l.id) && "ps-rise")}>
-              <LineTag status={l.status} />
+              <LineStatus line={l} run={run} detail={paidClock(l, run)} />
             </span>
           </div>
         </li>
@@ -394,14 +425,14 @@ export function DoneStep({ run }: { run: Run }) {
       </p>
       <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
         <p className="text-[0.8125rem] text-strong">Paid to {plural(n, "contractor")}</p>
-        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2rem] leading-none font-[380]" />
+        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
         {run.total_zat ? (
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             <Zec zat={run.total_zat} short /> for {runTitle(run)}
           </p>
         ) : null}
       </Card>
-      <LineList lines={run.lines} changed={new Set()} className="mt-6" />
+      <LineList lines={run.lines} run={run} changed={new Set()} className="mt-6" />
       <div className="mt-6 flex flex-wrap gap-2.5">
         <Button asChild size="lg">
           <Link href={`/console/runs/${run.id}`}>View run</Link>

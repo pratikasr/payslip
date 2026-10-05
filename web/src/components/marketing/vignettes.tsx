@@ -4,13 +4,13 @@ import { cn } from "cn";
 import { Initials } from "@/components/ds/avatar";
 import { Tag } from "@/components/ds/tag";
 import { formatDateTime, formatHeight } from "@/lib/format";
-import { GITHUB_URL, RUN_284C } from "@/components/marketing/data";
+import { GITHUB_URL, SEP_RUN } from "@/components/marketing/data";
 import { RateFigure, TazFigure, UsdFigure } from "@/components/marketing/money";
 import { GoldDot, OutLink, TxLink } from "@/components/marketing/parts";
 
 /*
-  The product cards in the dark section, built in HTML from run 284c2421 on Zcash testnet
-  (src/components/marketing/data.ts). They render inside a .dark scope, so the tokens are dark.
+  The product cards in the dark section, built in HTML from run 09019bd8, the demo company's
+  September payroll on Zcash testnet, as the judge kit reads it (src/components/marketing/data.ts). They render inside a .dark scope, so the tokens are dark.
   No ids inside: on phones each card is rendered a second time inside its accordion item.
 */
 
@@ -40,7 +40,7 @@ function VHead({ title, sub, tag }: { title: ReactNode; sub: ReactNode; tag?: Re
   );
 }
 
-const run = RUN_284C;
+const run = SEP_RUN;
 
 export function RunVignette() {
   return (

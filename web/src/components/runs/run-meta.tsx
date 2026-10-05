@@ -1,16 +1,21 @@
-import { Tag, type TagTone } from "@/components/ds/tag";
-import type { PayLine, PayLineStatus, Run, RunStatus } from "@/lib/api";
+import { ShieldedMark, StatusTag, type StatusInfo } from "@/components/ds/status";
+import type { Contractor, Funding, FundingStatus, PayLine, PayLineStatus, Run, RunStatus } from "@/lib/api";
 import { formatDate, formatPeriodLabel } from "@/lib/format";
 
 /*
-  Shared vocabulary for payroll runs: one plain word per state, the filter groups on the runs
-  list, and the integer money math the review and pay steps use for estimates.
+  Shared vocabulary for payroll runs, used on every console screen (Home, People, the runs list,
+  the run page, the flow, Treasury and the sidebar): one plain word per state (runs, pay lines,
+  funding, payslip access), rendered by the one StatusTag (components/ds/status.tsx), the filter
+  groups on the runs list, and the integer money math the review and pay steps use for estimates.
+  docs/DESIGN.md section 7 lists every word.
 */
 
 /** Statuses after the payer clicked Pay: the executor records the swap, allocates, then pays. */
 export const IN_FLIGHT: ReadonlySet<RunStatus> = new Set(["swapping", "swapped", "allocating", "paying"]);
 
-const RUN_TAGS: Record<RunStatus, { label: string; tone: TagTone; dot?: boolean; help: string }> = {
+type TagInfo = StatusInfo;
+
+const RUN_TAGS: Record<RunStatus, TagInfo> = {
   draft: { label: "Draft", tone: "neutral", help: "Approved. Fund it to continue." },
   awaiting_funds: { label: "Awaiting funds", tone: "warning", help: "Waiting for the USDC deposit." },
   funded: { label: "Ready to pay", tone: "neutral", help: "Funds are in the treasury. Pay to send." },
@@ -20,40 +25,180 @@ const RUN_TAGS: Record<RunStatus, { label: string; tone: TagTone; dot?: boolean;
   paying: { label: "Paying", tone: "neutral", dot: true, help: "Sending one shielded payment per contractor." },
   paid: { label: "Paid", tone: "success", help: "Every payment is confirmed on chain." },
   failed: { label: "Failed", tone: "danger", help: "The run stopped. Open it to resume." },
+  cancelled: { label: "Cancelled", tone: "neutral", help: "Closed before any money reached it. Nobody was paid." },
 };
 
-export function runTag(status: RunStatus) {
-  return RUN_TAGS[status] ?? { label: status, tone: "neutral" as TagTone, help: "" };
-}
+/** Funding states after which no money is on its way: the quote must be replaced. */
+export const CLOSED_FUNDING: ReadonlySet<string> = new Set(["refunded", "failed", "expired"]);
 
-export function RunTag({ status, className }: { status: RunStatus; className?: string }) {
-  const t = runTag(status);
+/** True when the run is waiting on a quote that can no longer be paid (expired, refunded, failed). */
+export function fundingClosed(run: Pick<Run, "status" | "funding">): boolean {
   return (
-    <Tag tone={t.tone} dot={t.dot} title={t.help} className={className}>
-      {t.label}
-    </Tag>
+    (run.status === "awaiting_funds" || (run.status === "failed" && !pastFunding(run as Run))) &&
+    !!run.funding &&
+    CLOSED_FUNDING.has(run.funding.status)
   );
 }
 
-const LINE_TAGS: Record<PayLineStatus, { label: string; tone: TagTone; dot?: boolean; help: string }> = {
+const CLOSED_TAGS: Record<string, TagInfo> = {
+  expired: { label: "Quote expired", tone: "warning", help: "No deposit arrived in time. Get a new quote." },
+  refunded: { label: "Refunded", tone: "warning", help: "The venue sent the deposit back. Get a new quote." },
+  failed: { label: "Swap failed", tone: "danger", help: "The venue could not swap the deposit. Get a new quote." },
+};
+
+/** The run's state in one word: its status, or what happened to its funding when that is the news. */
+export function runTag(run: Pick<Run, "status" | "funding"> | RunStatus): TagInfo {
+  const r = typeof run === "string" ? { status: run, funding: null } : run;
+  if (fundingClosed(r)) return CLOSED_TAGS[r.funding!.status];
+  return RUN_TAGS[r.status] ?? { label: r.status, tone: "neutral", help: "" };
+}
+
+export function RunTag({ run, className }: { run: Pick<Run, "status" | "funding">; className?: string }) {
+  return <StatusTag status={runTag(run)} className={className} />;
+}
+
+const LINE_TAGS: Record<PayLineStatus, TagInfo> = {
   pending: { label: "Waiting", tone: "neutral", help: "Not started yet." },
   allocated: { label: "Ready to send", tone: "neutral", help: "Funds are in this contractor's account." },
   broadcast: { label: "Sent", tone: "neutral", dot: true, help: "Sent to the network, waiting to be mined." },
-  confirmed: { label: "Confirmed", tone: "neutral", help: "A shielded payment, mined in a block." },
+  confirmed: { label: "Paid", tone: "neutral", help: "A shielded payment, mined in a block." },
   failed: { label: "Failed", tone: "danger", help: "This payment did not go through. Resume the run to retry it." },
 };
 
-export function lineTag(status: PayLineStatus) {
-  return LINE_TAGS[status] ?? { label: status, tone: "neutral" as TagTone, help: "" };
+/**
+ * True when the line carries an error but is still in progress (the node refused a payment that
+ * is rebuilt when it expires, or the account cannot cover it yet): a warning, not a failure.
+ */
+export function isLineWarning(line: PayLine): boolean {
+  return !!line.error && line.status !== "failed" && line.status !== "confirmed";
 }
 
-export function LineTag({ status, className }: { status: PayLineStatus; className?: string }) {
-  const t = lineTag(status);
-  return (
-    <Tag tone={t.tone} dot={t.dot} title={t.help} className={className}>
-      {t.label}
-    </Tag>
-  );
+/** Plain titles for why a run stopped, by the service's error code; the message gives the detail. */
+const FAILURE_TITLES: Record<string, string> = {
+  broadcast_rejected: "The network kept refusing a payment",
+  line_underfunded: "A payment waited too long for its funds",
+  treasury_insufficient: "The treasury no longer holds this run's funds",
+  venue_refunded: "The venue refunded the deposit",
+  funding_expired: "The quote expired before a deposit arrived",
+  deposit_incomplete: "The deposit was smaller than the quote",
+  venue_failed: "The venue could not complete the swap",
+};
+
+/** What to call a failed run's problem, in plain words. */
+export function failureTitle(run: Pick<Run, "error">): string {
+  return (run.error && FAILURE_TITLES[run.error.code]) || "The run stopped";
+}
+
+/**
+ * Whether the payer can cancel the run (POST /api/runs/{id}/cancel): it is waiting for money or
+ * stopped before any arrived (no fill, no allocation, no payment). A draft is discarded instead.
+ * The service has the last word and says why when it refuses.
+ */
+export function canCancel(run: Run): boolean {
+  if (!["awaiting_funds", "funded", "failed"].includes(run.status)) return false;
+  if (run.allocation_txid) return false;
+  if (run.status === "failed" && run.failed_from && !["awaiting_funds", "funded", "draft"].includes(run.failed_from))
+    return false;
+  return run.lines.every((l) => l.amount_zat === null && !l.txid);
+}
+
+/** True for a line paid out as USDC (ADR-018) rather than held as ZEC. */
+export function isConverted(line: PayLine): boolean {
+  return line.settlement_choice === "convert_usdc" || !!line.settlement;
+}
+
+/**
+ * One pay line's state in one word, the same on every screen. A line that has not started reads
+ * from its run: a draft's lines are drafts, a cancelled run's were never sent.
+ */
+export function lineTag(line: PayLine, run?: Pick<Run, "status">): TagInfo {
+  // An error on a line still in progress is a warning: the service is still working on it.
+  if (line.error && isLineWarning(line))
+    return {
+      label: line.error.code === "waiting_for_funds" ? "Waiting for funds" : "Retrying",
+      tone: "warning",
+      dot: true,
+      help: line.error.message,
+    };
+  if (line.status === "confirmed" && isConverted(line))
+    return { ...LINE_TAGS.confirmed, label: "Paid in USDC", help: "Paid, then converted to USDC for this contractor." };
+  if (line.status === "pending" && run) {
+    if (run.status === "draft") return { label: "Draft", tone: "neutral", help: "The run is not funded yet." };
+    if (run.status === "cancelled") return { label: "Not sent", tone: "neutral", help: "The run was cancelled." };
+    if (run.status === "failed")
+      return { label: "Not sent", tone: "neutral", help: "The run stopped before this payment." };
+  }
+  return LINE_TAGS[line.status] ?? { label: line.status, tone: "neutral", help: "" };
+}
+
+export function LineTag({ line, run, className }: { line: PayLine; run?: Pick<Run, "status">; className?: string }) {
+  return <StatusTag status={lineTag(line, run)} className={className} />;
+}
+
+/**
+ * A pay line's state where payments are listed (Home, the run page, the flow, a person's
+ * history): a confirmed payment shows the gold Shielded mark, because nothing is wrong and what
+ * matters is that nobody else can read it; anything else shows its tag (waiting, sending,
+ * retrying, failed). A line paid out as USDC says so beside the mark.
+ */
+export function LineStatus({
+  line,
+  run,
+  className,
+  detail,
+}: {
+  line: PayLine;
+  run?: Pick<Run, "status">;
+  className?: string;
+  /** Shown after the mark for a confirmed line, for example the time it was paid. */
+  detail?: React.ReactNode;
+}) {
+  if (line.status === "confirmed" && !(line.error && isLineWarning(line))) {
+    return (
+      <ShieldedMark
+        className={className}
+        detail={isConverted(line) ? detail ? <>· USDC · {detail}</> : "· USDC" : detail ? <>· {detail}</> : undefined}
+      />
+    );
+  }
+  return <LineTag line={line} run={run} className={className} />;
+}
+
+const FUNDING_TAGS: Record<FundingStatus, TagInfo> = {
+  awaiting_deposit: {
+    label: "Awaiting deposit",
+    tone: "neutral",
+    help: "Waiting for the USDC deposit to reach the venue.",
+  },
+  deposit_seen: {
+    label: "Deposit seen",
+    tone: "neutral",
+    dot: true,
+    help: "The venue has the deposit and will swap it.",
+  },
+  processing: { label: "Swapping", tone: "neutral", dot: true, help: "The venue is converting USDC to ZEC." },
+  incomplete: { label: "Deposit too small", tone: "warning", help: "The venue received less than the quote." },
+  success: { label: "Received", tone: "neutral", help: "The coins reached the treasury for this run." },
+  refunded: { label: "Refunded", tone: "warning", help: "The venue sent the deposit back." },
+  failed: { label: "Swap failed", tone: "danger", help: "The venue could not complete the swap." },
+  expired: { label: "Quote expired", tone: "neutral", help: "No deposit arrived before the quote's deadline." },
+};
+
+/**
+ * A run's funding in the same words everywhere (Treasury, the audit trail, the Fund step). On
+ * testnet nothing arrives: the fixed-rate venue sets aside coins already in the treasury.
+ */
+export function fundingTag(funding: Pick<Funding, "status" | "venue">): TagInfo {
+  if (funding.venue === "testnet-fixed-rate" && funding.status === "success")
+    return { label: "Set aside", tone: "neutral", help: "Coins already in the treasury were set aside for this run." };
+  return FUNDING_TAGS[funding.status] ?? { label: funding.status, tone: "neutral", help: "" };
+}
+
+/** Whether a contractor holds their payslip key: shared (with the day) or not yet. */
+export function accessTag(c: Pick<Contractor, "fvk_shared_at">): TagInfo {
+  return c.fvk_shared_at
+    ? { label: "Shared", tone: "neutral", help: "Their invite link was sent; they can read their own payslips." }
+    : { label: "Not shared", tone: "neutral", help: "Send their invite link so they can read their payslips." };
 }
 
 /** Filter chips on the runs list. */
@@ -168,6 +313,29 @@ export function estimateZat(amountsCents: number[], rateE6: number | null | unde
 /** Rate of the run's funding, when it has one. */
 export function fundingRate(run: Run): number | null {
   return run.funding?.rate_usd_per_zec_e6 ?? null;
+}
+
+/** Venue states in which a quote's deposit address is still in play (its rate still applies). */
+const LIVE_QUOTE: ReadonlySet<string> = new Set(["awaiting_deposit", "deposit_seen", "processing", "incomplete"]);
+
+/** The rate a live quote locked (mainnet), for estimates before the fill; null otherwise. */
+export function liveQuoteRate(run: Run): number | null {
+  const f = run.funding;
+  if (!f || f.venue === "testnet-fixed-rate" || !LIVE_QUOTE.has(f.status)) return null;
+  return f.quote_rate_e6 && f.quote_rate_e6 > 0 ? f.quote_rate_e6 : null;
+}
+
+/**
+ * Ids of the lines whose contractor was archived after the run was made: the service says so on
+ * newer versions (contractor_archived); otherwise they are missing from the active people list.
+ */
+export function archivedLineIds(run: Run, contractors: Contractor[] | undefined): ReadonlySet<string> {
+  const active = contractors ? new Set(contractors.map((c) => c.id)) : null;
+  return new Set(
+    run.lines
+      .filter((l) => l.contractor_archived === true || (active !== null && !active.has(l.contractor_id)))
+      .map((l) => l.id),
+  );
 }
 
 /** Lines that were sent, in the order they appear. */

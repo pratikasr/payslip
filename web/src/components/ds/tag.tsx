@@ -33,7 +33,7 @@ export function Tag({
     <span
       title={title}
       className={cn(
-        "inline-flex h-[22px] items-center gap-1.5 rounded-[4px] px-2 text-xs whitespace-nowrap",
+        "inline-flex h-6 items-center gap-1.5 rounded-[4px] px-2 text-[0.8125rem] whitespace-nowrap",
         TONES[tone],
         className,
       )}

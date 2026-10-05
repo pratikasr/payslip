@@ -137,7 +137,7 @@ export default function QrScanner({ onResult }: { onResult: (value: string) => v
 
   return (
     <div className="space-y-3">
-      <div className="relative aspect-square w-full overflow-hidden rounded-lg border bg-black sm:aspect-video">
+      <div className="relative aspect-square max-h-[50dvh] w-full overflow-hidden rounded-lg border bg-black sm:aspect-video">
         <video ref={video} className="size-full object-cover" playsInline muted aria-label="Camera preview" />
         {status === "scanning" ? (
           <div
