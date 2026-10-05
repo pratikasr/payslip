@@ -106,7 +106,7 @@ Requirements: Rust 1.94 or newer (`rustup update stable`), Node 22 or newer with
    ./target/release/payslip-service init
    ```
 
-3. Fund the treasury with testnet coins: paste the treasury address into https://faucet.testnet.valargroup.dev/ (0.125 TAZ per day). One faucet payout covers several demo runs.
+3. Fund the treasury with testnet coins: paste the treasury address into https://faucet.testnet.valargroup.dev/ (0.125 TAZ per IP address per day). One payout covers several six-contractor runs (each draws about 0.025 TAZ at the testnet fixed rate). Wait for one confirmation, under a minute on testnet.
 
 4. Start the service (leave it running):
 
@@ -123,7 +123,7 @@ Requirements: Rust 1.94 or newer (`rustup update stable`), Node 22 or newer with
    pnpm start
    ```
 
-6. Open http://localhost:3000. Under Payer, add contractors (or run `scripts/seed-testnet-contractors.sh` from the repository root to add six with test addresses), create a run, confirm funding, and execute it. Then open a contractor's viewing key on the Contractor page and every key on the Accountant page.
+6. Open http://127.0.0.1:3000 (prefer this to `localhost`, which on some machines resolves to an IPv6 address another local app may hold). If port 3000 is taken, run `pnpm start -p 3100` and add `PAYSLIP_WEB_ORIGIN=http://127.0.0.1:3100` to `service/.env`, then restart the service. Under Payer, add contractors (or run `scripts/seed-testnet-contractors.sh` from the repository root to add six with test addresses), create a run, confirm funding, and execute it. Then open a contractor's viewing key on the Contractor page and every key on the Accountant page.
 
 The whole six-contractor flow also runs from one command, which is the script used for the mainnet demo: `scripts/mainnet-demo.sh scripts/demo/testnet-rehearsal.env`.
 

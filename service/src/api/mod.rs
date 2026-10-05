@@ -34,6 +34,10 @@ pub struct AppState {
     pub venue: Arc<dyn SwapVenue>,
     pub executor: Executor,
     pub contractor_lock: tokio::sync::Mutex<()>,
+    /// A lightwalletd connection of its own, so health never waits behind a wallet sync.
+    pub lwd: tokio::sync::Mutex<crate::wallet::lwd::Client>,
+    /// The last wallet snapshot, served by health while the wallet thread is busy syncing.
+    pub last_wallet: std::sync::Mutex<Option<WalletInfo>>,
 }
 
 pub type AppStateRef = Arc<AppState>;
@@ -55,6 +59,7 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
     let payer = Payer::open(&cfg).await.context("opening the payer wallet")?;
     let venue = venue::build(&cfg)?;
     let executor = Executor::new(cfg.clone(), db.clone(), payer.clone(), venue.clone());
+    let lightwalletd_url = cfg.lightwalletd_url.clone();
     Ok(Arc::new(AppState {
         viewers: ViewerRegistry::new(&cfg),
         cfg,
@@ -63,6 +68,8 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         venue,
         executor,
         contractor_lock: tokio::sync::Mutex::new(()),
+        lwd: tokio::sync::Mutex::new(crate::wallet::lwd::connect(&lightwalletd_url)?),
+        last_wallet: std::sync::Mutex::new(None),
     }))
 }
 
@@ -98,6 +105,11 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
         loop {
             if let Err(e) = bg.payer.sync().await {
                 tracing::warn!("background sync failed: {e:#}");
+            }
+            if let Ok(info) = bg.payer.wallet_info().await {
+                if let Ok(mut last) = bg.last_wallet.lock() {
+                    *last = Some(info);
+                }
             }
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
@@ -152,8 +164,23 @@ pub fn clock_warning(skew: i64) -> Option<String> {
 }
 
 async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
-    let info = s.payer.wallet_info().await?;
-    let tip = tokio::time::timeout(Duration::from_secs(10), s.payer.tip_time()).await;
+    // The wallet thread may be busy with a long sync; answer from the last snapshot rather than
+    // keep the caller waiting.
+    let (info, syncing) = match tokio::time::timeout(Duration::from_secs(3), s.payer.wallet_info()).await {
+        Ok(Ok(info)) => {
+            if let Ok(mut last) = s.last_wallet.lock() {
+                *last = Some(info.clone());
+            }
+            (Some(info), false)
+        }
+        Ok(Err(e)) => return Err(e.into()),
+        Err(_) => (s.last_wallet.lock().ok().and_then(|l| l.clone()), true),
+    };
+    let tip = tokio::time::timeout(Duration::from_secs(10), async {
+        let mut client = s.lwd.lock().await;
+        crate::wallet::lwd::tip_time(&mut client).await
+    })
+    .await;
     let (chain_tip, skew, err) = match tip {
         Ok(Ok((t, time))) => (
             Some(t),
@@ -165,16 +192,18 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
     };
     let warnings: Vec<String> = skew.and_then(clock_warning).into_iter().collect();
     Ok(Json(Health {
-        status: if err.is_none() && warnings.is_empty() {
-            "ok"
-        } else {
+        status: if err.is_some() || !warnings.is_empty() {
             "degraded"
+        } else if syncing {
+            "syncing"
+        } else {
+            "ok"
         },
         network: s.cfg.network.as_str(),
         lightwalletd: s.cfg.lightwalletd_url.clone(),
         chain_tip,
-        wallet_synced_height: info.synced_height,
-        birthday_height: info.birthday_height,
+        wallet_synced_height: info.as_ref().map(|i| i.synced_height).unwrap_or(0),
+        birthday_height: info.as_ref().map(|i| i.birthday_height).unwrap_or(0),
         venue: s.venue.kind().as_str(),
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,

@@ -20,6 +20,10 @@ export function NetworkBadge({ className, compact }: { className?: string; compa
       ? `Degraded: ${(health.warnings ?? []).join(" ") || "lightwalletd is unreachable."}`
       : `Zcash ${health.network}. Chain tip ${formatHeight(health.chain_tip)}, wallet synced to ${formatHeight(health.wallet_synced_height)}.`;
     if (degraded && !compact) text = `${networkLabel(health.network)}, degraded`;
+    if (!degraded && health.status === "syncing") {
+      if (!compact) text = `${networkLabel(health.network)}, syncing`;
+      title = `Zcash ${health.network}. The service is syncing its wallet; balances update when it finishes.`;
+    }
   } else if (error) {
     dot = "bg-danger";
     text = compact ? "Offline" : "Service offline";

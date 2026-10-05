@@ -25,7 +25,24 @@ What the unit and integration tests cover:
 
 ## Round 2: end to end
 
-Pending: Playwright walk of the 90-second demo script on testnet.
+| Date | Command | Outcome |
+| --- | --- | --- |
+| 2026-10-05 | `cd web && E2E_BASE_URL=http://127.0.0.1:3100 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e` against a testnet service on a clean database (`scripts/fresh-testnet-env.sh e2e-2`) | passed in 3.5 minutes |
+
+`web/e2e/demo.spec.ts` walks the SPEC demo script through the browser: onboard six contractors through the Add contractor dialog, create the run with USD amounts and invoice references, Confirm funding (testnet fixed-rate venue), Execute run, wait for all six lines to confirm over SSE, then check every txid on testnet.zecblock.com at the height the run recorded, open a contractor's viewing key from Share viewing key and read their statement on the Contractor page, export all viewing keys as JSON and import the file on the Accountant page, confirm the run row reads Reconciled, and export the CSV and check it contains all six txids.
+
+Result (docs/proof/e2e-round2-85ea4bdc.json): run 85ea4bdc, allocation 892d24141d13bef604cdbea1896c31c8cf2f33e29a14ca6974847095d2bcbffc at 4,465,851, payments at 4,465,853:
+
+| Contractor | Txid |
+| --- | --- |
+| Amara Okafor | d52d00151afe302b854d75e2280624b4a686efb31e10192f37d0484e4d3e2b6d |
+| Mateo Fernandez | 2422da6829685a6ee0991d6f594691bda11e8280ee912bdf185244feeac129a1 |
+| Priya Raman | 80217b62f5f3fc81b8203b4e3cf49d8085e23eee0a784f06c0b4372e22b474e6 |
+| Jonas Lindqvist | 6f9d47750f1de75492af264a5de8abfb5129793b02af32569bc62f68f2b9a533 |
+| Mei Chen | 7882ca13f0390c397df0c44b96253d675dbbd64032830c17b62ad76f6dc17cc8 |
+| Kwame Mensah | 7ed690c2b2eba1e82e5927e351f497f6d69520954de528b09000882b15daf92d |
+
+Two earlier attempts failed on test code, not the app: a lookup matched the hidden mobile copy of a list, and the reconciliation table's accessible name sits on its scroll region. Both locators were fixed.
 
 ## Round 3: adversarial
 
@@ -70,7 +87,22 @@ Failures found and fixed in this round, each with a regression test:
 
 ## Round 4: fresh clone
 
-Pending.
+2026-10-05. Cloned `https://github.com/pratikasr/payslip.git` at 02f1c78 into an empty directory and followed the README Quick start word for word.
+
+| Step | Outcome |
+| --- | --- |
+| 1. Clone, write `service/.env` with `printf` | ok |
+| 2. `cargo build --release`, `payslip-service init` | built in 70 s; printed the treasury address and birthday |
+| 3. Fund the treasury | The Valar faucet allows one payout per IP per day and had already paid this machine, so 0.03 TAZ was sent from the project's existing testnet treasury instead (tx 570b35d30e2f56bf30f73c7b6ab919609e7ac9aac5b1b8e7eb2f973871d84c45); spendable after one block |
+| 4. `payslip-service serve` | healthy on 127.0.0.1:8080 |
+| 5. `pnpm install`, `pnpm build`, `pnpm start` | install 6 s, build 23 s, serving on port 3000 |
+| 6. The demo flow in the browser | `pnpm e2e` from the fresh clone against its own service and web app passed in 3.4 minutes (six payments confirmed at 4,465,875); `scripts/seed-testnet-contractors.sh` also works from the fresh clone |
+
+Gaps found and fixed:
+
+- The first draft of the Quick start appended to a copy of `.env.example`, whose empty `PAYSLIP_SEED_PASSPHRASE=` line comes first and wins in dotenv. Fixed before the run: the README writes `.env` with `printf`.
+- `http://localhost:3000` opened a different app on this machine: `localhost` resolved to IPv6 `::1`, where another local server listened, while Next.js served on all interfaces. The README now opens `http://127.0.0.1:3000` and explains how to use another port with `PAYSLIP_WEB_ORIGIN`.
+- Health waited behind the wallet thread during a long sync. It now uses its own lightwalletd connection and a cached wallet snapshot, answers within three seconds, and reports `syncing`.
 
 ## Round 5: demo rehearsal
 

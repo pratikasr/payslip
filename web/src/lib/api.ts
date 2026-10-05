@@ -16,8 +16,8 @@ export interface ApiErrorBody {
 }
 
 export interface Health {
-  /** "degraded" when lightwalletd is unreachable or a warning exists. */
-  status: "ok" | "degraded" | string;
+  /** "degraded" when lightwalletd is unreachable or a warning exists; "syncing" while the wallet catches up. */
+  status: "ok" | "degraded" | "syncing" | string;
   network: Network;
   lightwalletd: string;
   chain_tip: number;
