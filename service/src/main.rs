@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, Context};
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
@@ -48,10 +48,13 @@ enum Command {
         #[arg(long)]
         birthday: Option<u32>,
     },
-    /// Testnet only: print N unified addresses from the separate dev contractor seed.
+    /// Print N unified addresses from the separate demo contractor seed (mainnet needs
+    /// --allow-mainnet).
     DevContractors {
         #[arg(long, default_value_t = 6)]
         count: u32,
+        #[arg(long)]
+        allow_mainnet: bool,
     },
     /// Print the payer-side unified address of ZIP-32 account N.
     AccountAddress {
@@ -60,10 +63,12 @@ enum Command {
     },
     /// Testing helper: print a mainnet UFVK derived from an all-zero test seed (no funds).
     DevMainnetUfvk,
-    /// Testnet only: sweep the dev contractor wallets back to the treasury for reuse.
+    /// Sweep the demo contractor wallets back to the treasury (mainnet needs --allow-mainnet).
     DevSweep {
         #[arg(long, default_value_t = 6)]
         count: u32,
+        #[arg(long)]
+        allow_mainnet: bool,
     },
 }
 
@@ -176,7 +181,7 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", usk.to_unified_full_viewing_key().encode(&params));
             Ok(())
         }
-        Command::DevSweep { count } => {
+        Command::DevSweep { count, allow_mainnet } => {
             let passphrase = cfg
                 .seed_passphrase
                 .clone()
@@ -190,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
                 count,
                 &info.treasury.unified_address,
                 info.birthday_height,
+                allow_mainnet,
             )
             .await?
             {
@@ -197,15 +203,12 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Command::DevContractors { count } => {
-            if cfg.network != payslip::config::ZcashNetwork::Testnet {
-                bail!("dev-contractors is a testnet helper");
-            }
+        Command::DevContractors { count, allow_mainnet } => {
             let passphrase = cfg
                 .seed_passphrase
                 .clone()
                 .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE first"))?;
-            for (i, ua) in payslip::devseed::contractor_addresses(&cfg, &passphrase, count)
+            for (i, ua) in payslip::devseed::contractor_addresses(&cfg, &passphrase, count, allow_mainnet)
                 .await?
                 .iter()
                 .enumerate()

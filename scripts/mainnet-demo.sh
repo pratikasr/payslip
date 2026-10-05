@@ -79,8 +79,10 @@ else
 fi
 
 DEV_ADDRESSES=""
-if [ "$ZCASH_NETWORK" = "testnet" ] && [ -z "${DEMO_CONTRACTORS_FILE:-}" ]; then
-  DEV_ADDRESSES=$("$BIN" dev-contractors --count 6 2>/dev/null | cut -f2 | tr '\n' ' ')
+if [ "${DEMO_GENERATED_WALLETS:-}" = "yes" ] || { [ "$ZCASH_NETWORK" = "testnet" ] && [ -z "${DEMO_CONTRACTORS_FILE:-}" ]; }; then
+  ALLOW=""
+  [ "$ZCASH_NETWORK" = "mainnet" ] && ALLOW="--allow-mainnet"
+  DEV_ADDRESSES=$("$BIN" dev-contractors --count 6 $ALLOW 2>/dev/null | cut -f2 | tr '\n' ' ')
 fi
 
 export API ROOT OUT YES DEV_ADDRESSES START
@@ -108,14 +110,18 @@ def call(method, path, body=None, raw=False, timeout=900):
 
 cfile = os.environ.get("DEMO_CONTRACTORS_FILE") or ""
 example = os.path.join(ROOT, "scripts/demo/contractors.example.json")
+if not cfile and NET != "testnet":
+    sys.exit("Set DEMO_CONTRACTORS_FILE in the config: start from scripts/demo/contractors.mainnet.example.json.")
 spec = json.load(open(os.path.join(ROOT, cfile) if cfile else example))
 people = spec["contractors"]
-if not cfile:
-    if NET != "testnet":
-        sys.exit("Set DEMO_CONTRACTORS_FILE: mainnet needs the contractors' real unified addresses.")
-    addrs = os.environ["DEV_ADDRESSES"].split()
-    for p, a in zip(people, addrs):
+generated = os.environ.get("DEV_ADDRESSES", "").split()
+for p, a in zip(people, generated):
+    if not p.get("unified_address"):
         p["unified_address"] = a
+for p in people:
+    if p.get("payout_address") == "$DEMO_REFUND_ADDRESS":
+        p["payout_address"] = os.environ.get("DEMO_REFUND_ADDRESS") or sys.exit(
+            f"{p['name']} converts to USDC at DEMO_REFUND_ADDRESS; set it in the config.")
 missing = [p["name"] for p in people if not p.get("unified_address")]
 if missing:
     sys.exit(f"Missing unified_address for: {', '.join(missing)}")
@@ -213,4 +219,7 @@ mine = next((r for r in rec["runs"] if r["run_id"] == rid), None)
 stamp(f"Accountant reconciliation for this run: {mine['status'] if mine else 'not found'}"
       + (f", variance ${mine['variance_usd_cents']/100:,.2f}, explained ${mine['explained_usd_cents']/100:,.2f}" if mine and mine.get('variance_usd_cents') is not None else ""))
 print("\n".join(md))
+if generated:
+    print("\nThe contractors are generated demo wallets. After recording, return their ZEC to the treasury with:")
+    print(f"  cd service && ./target/release/payslip-service dev-sweep{' --allow-mainnet' if NET == 'mainnet' else ''}")
 PY

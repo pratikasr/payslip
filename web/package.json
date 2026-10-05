@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "screenshots": "node scripts/screenshots.mjs",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "2.2.11",

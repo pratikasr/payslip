@@ -1,6 +1,8 @@
-//! Testnet only: a separate development seed that stands in for six contractors' own wallets,
-//! so the full flow runs on testnet with no outside input. It is never used on mainnet and
-//! never holds payer funds.
+//! Demo contractor wallets: a separate seed that stands in for the contractors' own wallets, so
+//! the full flow runs with no outside input. On testnet it is the default. On mainnet it is used
+//! only when the operator passes `--allow-mainnet` (the operator decides whether the demo pays
+//! generated wallets or real contractors); payouts to these wallets can be swept back to the
+//! treasury afterwards. It never holds the payer seed.
 
 use anyhow::{anyhow, bail};
 use secrecy08::ExposeSecret;
@@ -19,9 +21,14 @@ pub struct DevContractorWallet {
 
 /// Derives `count` contractor wallets (ZIP-32 accounts 0..count of the dev seed), creating the
 /// encrypted dev seed on first use.
-pub fn contractor_wallets(cfg: &Config, passphrase: &str, count: u32) -> anyhow::Result<Vec<DevContractorWallet>> {
-    if cfg.network != ZcashNetwork::Testnet {
-        bail!("the dev contractor seed exists only on testnet");
+pub fn contractor_wallets(
+    cfg: &Config,
+    passphrase: &str,
+    count: u32,
+    allow_mainnet: bool,
+) -> anyhow::Result<Vec<DevContractorWallet>> {
+    if cfg.network != ZcashNetwork::Testnet && !allow_mainnet {
+        bail!("demo contractor wallets on mainnet need --allow-mainnet");
     }
     let file = SeedFile::new(cfg.data_dir.join("dev-contractors.seed.age"));
     if !file.exists() {
@@ -46,8 +53,13 @@ pub fn contractor_wallets(cfg: &Config, passphrase: &str, count: u32) -> anyhow:
         .collect()
 }
 
-pub async fn contractor_addresses(cfg: &Config, passphrase: &str, count: u32) -> anyhow::Result<Vec<String>> {
-    Ok(contractor_wallets(cfg, passphrase, count)?
+pub async fn contractor_addresses(
+    cfg: &Config,
+    passphrase: &str,
+    count: u32,
+    allow_mainnet: bool,
+) -> anyhow::Result<Vec<String>> {
+    Ok(contractor_wallets(cfg, passphrase, count, allow_mainnet)?
         .into_iter()
         .map(|w| w.address)
         .collect())
@@ -61,10 +73,11 @@ pub async fn sweep_to_treasury(
     count: u32,
     treasury: &str,
     birthday: u32,
+    allow_mainnet: bool,
 ) -> anyhow::Result<Vec<(u32, String)>> {
     use crate::wallet::{parse_shielded_address, txid_hex, WalletCore, WalletHandle};
-    if cfg.network != ZcashNetwork::Testnet {
-        bail!("dev-sweep is a testnet helper");
+    if cfg.network != ZcashNetwork::Testnet && !allow_mainnet {
+        bail!("sweeping demo contractor wallets on mainnet needs --allow-mainnet");
     }
     let seed = SeedFile::new(cfg.data_dir.join("dev-contractors.seed.age")).unlock(passphrase)?;
     let params = cfg.network.params();
@@ -87,9 +100,8 @@ pub async fn sweep_to_treasury(
                 w.sync().await?;
                 let mut out = vec![];
                 for i in 0..count {
-                    let memo =
-                        crate::memo::to_memo_bytes("Payslip testnet: dev contractor wallet returned to the treasury")
-                            .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let memo = crate::memo::to_memo_bytes("Payslip demo: contractor wallet returned to the treasury")
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
                     match w.sweep(i, to.clone(), Some(memo)) {
                         Ok(txid) => {
                             w.broadcast(txid).await?;

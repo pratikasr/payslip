@@ -1,0 +1,13 @@
+{
+  "period_start": "2026-09-01",
+  "period_end": "2026-09-30",
+  "contractors": [
+    {"name": "Amara Okafor", "email": "amara.okafor@example.com", "unified_address": "", "amount_usd_cents": 480, "invoice_ref": "INV-2026-014"},
+    {"name": "Mateo Fernandez", "email": "mateo.fernandez@example.com", "unified_address": "", "amount_usd_cents": 625, "invoice_ref": "MF-0923"},
+    {"name": "Priya Raman", "email": "priya.raman@example.com", "unified_address": "", "amount_usd_cents": 540, "invoice_ref": "PR-INV-31",
+     "settlement_choice": "convert_usdc", "payout_chain": "base", "payout_address": "$DEMO_REFUND_ADDRESS"},
+    {"name": "Jonas Lindqvist", "email": "jonas.lindqvist@example.com", "unified_address": "", "amount_usd_cents": 710, "invoice_ref": "JL-2026-09"},
+    {"name": "Mei Chen", "email": "mei.chen@example.com", "unified_address": "", "amount_usd_cents": 395, "invoice_ref": "INV-0047"},
+    {"name": "Kwame Mensah", "email": "kwame.mensah@example.com", "unified_address": "", "amount_usd_cents": 288, "invoice_ref": "KM-SEP-26"}
+  ]
+}
