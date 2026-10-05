@@ -1,13 +1,13 @@
-import { AppHeader } from "@/components/app/app-header";
 import { HealthProvider } from "@/components/app/health-provider";
 
+/**
+ * The public payslip has no app chrome and no demo bar: it is what a landlord, a bank or a visa
+ * office opens from a proof link. HealthProvider only names the coin (TAZ on testnet, ZEC).
+ */
 export default function VerifyLayout({ children }: { children: React.ReactNode }) {
   return (
     <HealthProvider>
-      <AppHeader />
-      <main id="main" className="mx-auto w-full max-w-3xl px-4 pt-6 pb-16 sm:px-6 sm:pt-8">
-        {children}
-      </main>
+      <main id="main">{children}</main>
     </HealthProvider>
   );
 }

@@ -46,35 +46,35 @@ async function tabTo(page: Page, name: RegExp, max = 80): Promise<void> {
   throw new Error(`could not reach ${name} with Tab`);
 }
 
-test("landing: skip link, then Launch app by keyboard", async ({ page }) => {
+test("landing: skip link, then Try the live demo by keyboard", async ({ page }) => {
   await page.goto("/", { waitUntil: "networkidle" });
   await page.keyboard.press("Tab");
   expect(await focusedName(page)).toBe("Skip to content");
   expect(await focusVisible(page)).toBe(true);
-  await tabTo(page, /^Launch app$/);
+  await tabTo(page, /^Try the live demo$/);
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/console$/);
 });
 
-test("contractor statement with the keyboard alone", async ({ page }) => {
+test("contractor portal unlocks with the keyboard alone", async ({ page }) => {
   const keys = (await (await fetch(`${API}/api/viewing-keys`)).json()).keys as {
     role: string;
     ufvk: string;
     label: string;
   }[];
   const contractor = keys.find((k) => k.role === "contractor")!;
-  await page.goto("/app/contractor", { waitUntil: "networkidle" });
+  await page.goto("/portal", { waitUntil: "networkidle" });
   await tabTo(page, /^Viewing key$/);
   await page.keyboard.insertText(contractor.ufvk);
-  await tabTo(page, /^Show statement$/);
+  await tabTo(page, /^Open payslips$/);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#statement-title")).toContainText(contractor.label, { timeout: 180_000 });
-  // The export actions are reachable next.
-  await tabTo(page, /Export CSV/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(/^Welcome, /, { timeout: 180_000 });
+  // A payslip is reachable next.
+  await tabTo(page, /Payslip for /);
 });
 
 test("Add contractor dialog: focus moves in, Escape closes, focus returns", async ({ page }) => {
-  await page.goto("/app/payer/contractors", { waitUntil: "networkidle" });
+  await page.goto("/console/people", { waitUntil: "networkidle" });
   await expect(page.getByRole("button", { name: "Add contractor" }).first()).toBeVisible();
   await tabTo(page, /^Add contractor$/);
   await page.keyboard.press("Enter");
@@ -92,11 +92,12 @@ test("Add contractor dialog: focus moves in, Escape closes, focus returns", asyn
   expect(await focusedName(page)).toMatch(/Add contractor/);
 });
 
-test("new run form can be filled and its errors are announced", async ({ page }) => {
-  await page.goto("/app/payer/runs/new", { waitUntil: "networkidle" });
-  await tabTo(page, /^Amount for .* \(USD\)$/);
+test("run payroll amounts can be filled and their errors are announced", async ({ page }) => {
+  await page.goto("/console/runs/new", { waitUntil: "networkidle" });
+  await tabTo(page, /^Amount for .*, US dollars$/);
+  await page.keyboard.press("Control+A");
   await page.keyboard.insertText("0");
-  await tabTo(page, /^Create run$/);
+  await tabTo(page, /^Continue$/);
   await page.keyboard.press("Enter");
   // A zero amount is refused with an inline error linked to the field.
   const invalid = page.locator('[aria-invalid="true"]').first();

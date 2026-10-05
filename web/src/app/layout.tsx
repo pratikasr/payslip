@@ -1,11 +1,20 @@
 import type { Metadata, Viewport } from "next";
-import { GeistMono } from "geist/font/mono";
-import { GeistSans } from "geist/font/sans";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
 import { PresenterMode } from "@/components/app/presenter-mode";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { presenterBootScript } from "@/lib/presenter";
 import "./globals.css";
+
+// Inter with its optical-size axis stands in for Mercury's Arcadia (proprietary): light weights for
+// titles and money, 400 for body. IBM Plex Mono for keys and transaction ids.
+const inter = Inter({ subsets: ["latin"], axes: ["opsz"], variable: "--font-inter", display: "swap" });
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: {
@@ -18,14 +27,14 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f6f7f9" },
-    { media: "(prefers-color-scheme: dark)", color: "#0e1116" },
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#171721" },
   ],
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${plexMono.variable}`}>
       <head>
         {/* Presenter mode before first paint; see src/lib/presenter.ts. */}
         <script dangerouslySetInnerHTML={{ __html: presenterBootScript }} />

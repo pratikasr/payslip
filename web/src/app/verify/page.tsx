@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { VerifyProofView } from "@/components/proof/verify-view";
+import { PublicPayslip } from "@/components/verify/public-payslip";
 
 export const metadata: Metadata = {
-  title: "Verify a payment",
+  title: "Payslip",
   description: "Check one Zcash payment against the chain with a Payslip payment proof.",
 };
 
 export default function VerifyPage() {
-  return <VerifyProofView />;
+  return <PublicPayslip />;
 }

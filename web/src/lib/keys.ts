@@ -103,7 +103,7 @@ export function classifyKey(raw: string): KeyClassification {
     return {
       kind: "rejected",
       reason:
-        "This is a payment address, not a viewing key. An address receives funds; a viewing key reads them. The payer shares the viewing key from the Contractors page.",
+        "This is a payment address, not a viewing key. An address receives funds; a viewing key reads them. The payer shares the viewing key from the Payslip access page.",
       spending: false,
     };
   }

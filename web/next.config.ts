@@ -25,6 +25,20 @@ const nextConfig: NextConfig = {
     // Import only the Radix primitives used, not the whole radix-ui barrel.
     optimizePackageImports: ["radix-ui"],
   },
+  // The app moved from /app/<role> to one product per role (docs/DESIGN.md section 15); old
+  // links and bookmarks keep working.
+  async redirects() {
+    return [
+      { source: "/app", destination: "/console", permanent: true },
+      { source: "/app/payer", destination: "/console", permanent: true },
+      { source: "/app/payer/contractors", destination: "/console/people", permanent: true },
+      { source: "/app/payer/runs", destination: "/console/runs", permanent: true },
+      { source: "/app/payer/runs/new", destination: "/console/runs/new", permanent: true },
+      { source: "/app/payer/runs/:id", destination: "/console/runs/:id", permanent: true },
+      { source: "/app/contractor", destination: "/portal", permanent: true },
+      { source: "/app/accountant", destination: "/books", permanent: true },
+    ];
+  },
   webpack: (config) => {
     config.resolve = config.resolve ?? {};
     config.resolve.alias = {

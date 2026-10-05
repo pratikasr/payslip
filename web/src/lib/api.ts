@@ -391,6 +391,10 @@ export interface ReconciliationRun {
   unspent_zat: number;
   variance_usd_cents: number | null;
   explained_usd_cents: number | null;
+  /** Variance minus explained; within rounding_tolerance_cents for a reconciled run. */
+  difference_usd_cents?: number | null;
+  /** One cent per pay line plus one: each line's ZEC is rounded to the zatoshi. */
+  rounding_tolerance_cents?: number;
   status: ReconciliationStatus;
 }
 

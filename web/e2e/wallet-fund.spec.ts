@@ -206,7 +206,7 @@ async function prepare(page: Page, reject: boolean) {
 
 /** Opens the run, connects the wallet through RainbowKit and presses send. */
 async function connectAndSend(page: Page) {
-  await page.goto(`/app/payer/runs/${RUN_ID}`);
+  await page.goto(`/console/runs/new?run=${RUN_ID}`);
   await expect(page.getByRole("button", { name: "Copy deposit address" })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText(`${DEPOSIT.slice(0, 10)}…${DEPOSIT.slice(-8)}`)).toBeVisible();
   await page.getByRole("button", { name: "Connect Wallet" }).click();

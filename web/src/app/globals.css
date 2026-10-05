@@ -5,33 +5,44 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Payslip tokens. Hex values and contrast ratios are documented in
-  docs/DESIGN.md. One accent (Zcash gold) is used for primary actions and
-  focus; status colors are semantic, never decorative.
+  Payslip tokens, modelled on Mercury's app (measured on demo.mercury.com,
+  5 Oct 2026; see docs/DESIGN.md section 15) with Zcash gold in place of
+  Mercury's indigo. One accent: gold fills the primary action and marks what
+  is shielded. Status colours are semantic, never decorative.
 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
+  --color-hairline: var(--hairline);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-strong: var(--strong);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-primary-edge: var(--primary-edge);
+  --color-primary-soft: var(--primary-soft);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-raised: var(--raised);
+  --color-sidebar: var(--sidebar);
+  --color-chip: var(--chip);
+  --color-avatar: var(--avatar);
+  --color-banner: var(--banner);
+  --color-banner-foreground: var(--banner-foreground);
   --color-link: var(--link);
   --color-success: var(--success);
   --color-success-bg: var(--success-bg);
@@ -55,74 +66,89 @@
 
 :root {
   --radius: 0.5rem;
-  --background: #f6f7f9;
-  --foreground: #14171c;
+  --background: #ffffff;
+  --foreground: #1e1e2a;
+  --strong: #363644;
+  --muted-foreground: #5e5f6c;
+  --faint: #8b8c98;
   --card: #ffffff;
-  --card-foreground: #14171c;
+  --card-foreground: #1e1e2a;
   --popover: #ffffff;
-  --popover-foreground: #14171c;
+  --popover-foreground: #1e1e2a;
+  --raised: #f6f6f9;
+  --sidebar: #fbfcfd;
+  --chip: #efeff3;
+  --avatar: #e3f0f2;
+  --banner: #30303c;
+  --banner-foreground: #f0f0f5;
   --primary: #f4b728;
-  --primary-edge: #b3820e;
-  --primary-foreground: #1c1503;
-  --secondary: #edeff2;
-  --secondary-foreground: #14171c;
-  --muted: #edeff2;
-  --muted-foreground: #575f6d;
-  --accent: #edeff2;
-  --accent-foreground: #14171c;
-  --destructive: #b42318;
-  --danger-bg: #fceae8;
-  --success: #12703a;
-  --success-bg: #e6f4eb;
+  --primary-edge: #d9a21c;
+  --primary-foreground: #1e1e2a;
+  --primary-soft: #fdf1d4;
+  --secondary: #efeff3;
+  --secondary-foreground: #1e1e2a;
+  --muted: #f4f4f7;
+  --accent: #f4f4f7;
+  --accent-foreground: #1e1e2a;
+  --destructive: #b0175f;
+  --danger-bg: #fbe8f0;
+  --success: #036e43;
+  --success-bg: #e3f3eb;
   --warning: #8a5a00;
   --warning-bg: #fdf3d7;
   --info: #2f4a7a;
   --info-bg: #e8eef8;
-  --link: #8a5a00;
-  --border: #dee1e6;
-  --input: #8c94a2;
-  --ring: #9a6400;
-  --redact: #2a2f38;
-  /*
-    Chart data hue (violet), outside every status tone so a series never reads
-    as a status. Validated with the dataviz six checks on #ffffff and #151920;
-    --viz-soft is the lighter ordinal step ("not paid yet"), >= 2:1 on card.
-  */
-  --viz: #4a3aa7;
-  --viz-soft: #a99fe0;
+  --link: #8a6100;
+  --border: #e3e3e9;
+  --hairline: #ececf1;
+  --input: #8b8c98;
+  --ring: #b3820e;
+  --redact: #1e1e2a;
+  --viz: #d9a21c;
+  --viz-soft: #f4dfa6;
 }
 
 .dark {
-  --background: #0e1116;
-  --foreground: #e8ebf0;
-  --card: #151920;
-  --card-foreground: #e8ebf0;
-  --popover: #151920;
-  --popover-foreground: #e8ebf0;
+  --background: #171721;
+  --foreground: #f4f5f9;
+  --strong: #dddde5;
+  --muted-foreground: #a6a6b2;
+  --faint: #7f7f8b;
+  --card: #1e1e2a;
+  --card-foreground: #f4f5f9;
+  --popover: #272735;
+  --popover-foreground: #f4f5f9;
+  --raised: #232330;
+  --sidebar: #1a1a24;
+  --chip: #2a2a37;
+  --avatar: #253338;
+  --banner: #0b0b12;
+  --banner-foreground: #ededf3;
   --primary: #f4b728;
   --primary-edge: #f4b728;
-  --primary-foreground: #1c1503;
-  --secondary: #1d222b;
-  --secondary-foreground: #e8ebf0;
-  --muted: #1d222b;
-  --muted-foreground: #9ba3b1;
-  --accent: #1d222b;
-  --accent-foreground: #e8ebf0;
-  --destructive: #ff8a80;
-  --danger-bg: #33171a;
-  --success: #5ccb8a;
-  --success-bg: #12291c;
+  --primary-foreground: #1e1e2a;
+  --primary-soft: #3a3020;
+  --secondary: #2a2a37;
+  --secondary-foreground: #f4f5f9;
+  --muted: #232330;
+  --accent: #272735;
+  --accent-foreground: #f4f5f9;
+  --destructive: #fc92b4;
+  --danger-bg: #3a1a28;
+  --success: #77c599;
+  --success-bg: #18302a;
   --warning: #f6c453;
   --warning-bg: #2e2512;
-  --info: #9db7e8;
-  --info-bg: #17223a;
-  --link: #f6c453;
-  --border: #2a303a;
-  --input: #5f6876;
+  --info: #8da4f5;
+  --info-bg: #1d2340;
+  --link: #f4b728;
+  --border: #2f2f3c;
+  --hairline: #262632;
+  --input: #6c6c7a;
   --ring: #f4b728;
-  --redact: #c9ced6;
-  --viz: #9085e9;
-  --viz-soft: #5a50a8;
+  --redact: #c3c3cc;
+  --viz: #f4b728;
+  --viz-soft: #6b5520;
 }
 
 @layer base {
@@ -161,6 +187,25 @@
 }
 
 @layer utilities {
+  /*
+    Money, set the way Mercury sets it: tabular digits, tightened 3%, cents
+    smaller and raised (src/components/ds/money.tsx).
+  */
+  .money {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+  }
+  .money-cents {
+    font-size: 0.68em;
+    vertical-align: 0.38em;
+    letter-spacing: 0;
+    margin-left: 0.5px;
+  }
+  .money-tail {
+    opacity: 0.55;
+  }
   /* Numbers in tables and totals line up digit for digit. */
   .num {
     font-variant-numeric: tabular-nums;
@@ -178,9 +223,8 @@
 }
 
 /*
-  Motion. Every animation here answers a change (a line confirmed, a key
-  applied) or is the landing page's one orchestrated moment. The reduced
-  motion rule in the base layer cuts each to its end state.
+  Motion. Every animation here answers a change (a line confirmed). The
+  reduced motion rule in the base layer cuts each to its end state.
 */
 @keyframes ps-rise {
   from {
@@ -200,80 +244,11 @@
     background-color: transparent;
   }
 }
-@keyframes ps-unseal {
-  from {
-    transform: scaleX(1);
-  }
-  to {
-    transform: scaleX(0);
-  }
-}
-@keyframes ps-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-@keyframes ps-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-@keyframes ps-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
 .ps-rise {
   animation: ps-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 .ps-flash {
   animation: ps-flash 1600ms ease-out both;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .ps-pulse {
-    animation: ps-pulse 1.6s ease-in-out infinite;
-  }
-}
-
-/* Landing: a viewing key lifts each redaction bar (src/components/landing/unseal-demo.tsx). */
-@keyframes ps-edge {
-  from {
-    border-color: var(--border);
-  }
-  to {
-    border-color: var(--primary-edge);
-  }
-}
-.ps-unseal-bar {
-  transform-origin: right center;
-  animation: ps-unseal 560ms cubic-bezier(0.65, 0, 0.35, 1) both;
-}
-.ps-reveal {
-  animation: ps-fade-in 360ms ease-out both;
-}
-.ps-swap-out {
-  animation: ps-fade-out 240ms ease-out 550ms both;
-}
-.ps-swap-in {
-  animation: ps-fade-in 240ms ease-out 550ms both;
-}
-.ps-edge {
-  animation: ps-edge 400ms ease-out 550ms both;
-}
-.unseal:not([data-play]) :is(.ps-unseal-bar, .ps-reveal, .ps-swap-in, .ps-swap-out, .ps-edge) {
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .unseal :is(.ps-unseal-bar, .ps-reveal, .ps-swap-in, .ps-swap-out, .ps-edge) {
-    animation-delay: 0s !important;
-    animation-play-state: running !important;
-  }
 }
 
 /*
@@ -288,10 +263,9 @@ html[data-present] [data-secondary] {
   display: none !important;
 }
 
-/* A payer who hid the setup guide never sees it flash in before the page hydrates. */
-html[data-guide-hidden] [data-setup-guide],
-html[data-present] [data-setup-guide] {
-  display: none;
+/* Privacy mode (the eye in the top bar) blurs every amount on screen. */
+html[data-private] .money {
+  filter: blur(7px);
 }
 
 /*
@@ -321,6 +295,16 @@ html[data-present] [data-setup-guide] {
     --info: #000000;
     --info-bg: #ffffff;
     --link: #000000;
+    --strong: #000000;
+    --faint: #555555;
+    --chip: #ffffff;
+    --avatar: #ffffff;
+    --primary-soft: #ffffff;
+    --raised: #ffffff;
+    --hairline: #cccccc;
+    --sidebar: #ffffff;
+    --popover: #ffffff;
+    --popover-foreground: #000000;
   }
   html,
   body {
