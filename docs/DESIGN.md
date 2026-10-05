@@ -436,14 +436,16 @@ A short page with Open the app and Home.
 | Route | Performance | Accessibility | Best practices |
 | --- | --- | --- | --- |
 | `/` | 96 | 100 | 100 |
-| `/app` | 96 | 100 | 96 |
-| `/app/payer` | 90 | 100 | 96 |
-| `/app/payer/contractors` | 90 | 100 | 96 |
-| `/app/payer/runs` | 94 | 100 | 96 |
-| `/app/payer/runs/new` | 90 | 100 | 96 |
-| `/app/payer/runs/[id]` | 90 | 100 | 96 |
-| `/app/contractor` | 95 | 100 | 96 |
-| `/app/accountant` | 93 | 100 | 96 |
+| `/app` | 96 | 100 | 100 |
+| `/app/payer` | 95 | 100 | 100 |
+| `/app/payer/contractors` | 94 | 100 | 100 |
+| `/app/payer/runs` | 95 | 100 | 100 |
+| `/app/payer/runs/new` | 95 | 100 | 100 |
+| `/app/payer/runs/[id]` | 93 | 100 | 100 |
+| `/app/contractor` | 94 | 100 | 100 |
+| `/app/accountant` | 94 | 100 | 100 |
+
+Final pass after the screenshot reviews, with the service running on testnet and real runs loaded (the first pass, with the service down, scored best practices 96 for console errors). Two fixes came out of it: the run page renders the run on the server for its first paint (performance 89 to 93, LCP 3.8 s to 3.2 s), and the payer overview's statistics list no longer holds a paragraph inside its `<dl>` (accessibility 96 to 100).
 
   The app routes lose 4 best-practice points for console errors logged by the browser when the service is unreachable, which it was during that run.
 - First-load JavaScript: 106 kB shared; landing 126 kB; heaviest route (accountant) 172 kB. wagmi, viem and RainbowKit load only when the Fund step needs them; the QR scanner and its WebAssembly load only when a scan dialog opens.

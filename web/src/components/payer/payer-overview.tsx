@@ -170,16 +170,18 @@ export function PayerOverview() {
                 <Skeleton className="h-5 w-48" />
               </div>
             ) : (
-              <dl className="grid grid-cols-2 gap-6 p-4 sm:grid-cols-4">
-                <Stat label="Active contractors">
-                  <span className="num">{formatCount(contractors.data.length)}</span>
-                </Stat>
-                <Stat label="Viewing keys shared">
-                  <span className="num">
-                    {formatCount(contractors.data.filter((c) => c.fvk_shared_at).length)} of{" "}
-                    {formatCount(contractors.data.length)}
-                  </span>
-                </Stat>
+              <div className="grid grid-cols-2 gap-6 p-4 sm:grid-cols-4">
+                <dl className="col-span-2 grid grid-cols-2 gap-6">
+                  <Stat label="Active contractors">
+                    <span className="num">{formatCount(contractors.data.length)}</span>
+                  </Stat>
+                  <Stat label="Viewing keys shared">
+                    <span className="num">
+                      {formatCount(contractors.data.filter((c) => c.fvk_shared_at).length)} of{" "}
+                      {formatCount(contractors.data.length)}
+                    </span>
+                  </Stat>
+                </dl>
                 {contractors.data.some((c) => !c.fvk_shared_at) ? (
                   <div className="col-span-2 flex items-center sm:col-span-2">
                     <p className="text-sm text-muted-foreground">
@@ -190,7 +192,7 @@ export function PayerOverview() {
                     </p>
                   </div>
                 ) : null}
-              </dl>
+              </div>
             )}
           </Panel>
         </>

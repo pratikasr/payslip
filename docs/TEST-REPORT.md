@@ -11,7 +11,9 @@ Every round runs against real Zcash testnet (NU7, `testnet.zec.rocks:443`) unles
 | 2026-10-05 | `cd service && cargo test` | 36 unit tests and 10 executor tests passed; the 4 testnet tests skip without network variables |
 | 2026-10-05 | `cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet` | 4 passed against live testnet lightwalletd |
 | 2026-10-05 | `cd service && cargo audit` | 1,290 advisories checked against 531 crates: no vulnerabilities, exit 0 |
-| pending | `cd web && pnpm lint && pnpm typecheck && pnpm build` | recorded when the web app lands |
+| 2026-10-05 | `cd web && pnpm lint && pnpm typecheck && pnpm format:check && pnpm build` | clean: eslint with zero warnings allowed, tsc strict, prettier, production build |
+| 2026-10-05 | Lighthouse 13 (mobile profile, production build, testnet data) on all nine routes | performance 93 to 96, accessibility 100, best practices 100 (table in docs/DESIGN.md section 11) |
+| 2026-10-05 | GitHub Actions on main (service: fmt, clippy, test, audit; web: lint, typecheck, build) | green from 0bc26dc onwards; the workflow was then disabled at the operator's request until the final commit |
 
 What the unit and integration tests cover:
 

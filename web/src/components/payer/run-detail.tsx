@@ -45,10 +45,10 @@ function newer(a: Run | undefined, b: Run | undefined): Run | undefined {
 
 const EXECUTING = new Set(["swapping", "swapped", "allocating", "paying"]);
 
-export function RunDetail({ runId }: { runId: string }) {
+export function RunDetail({ runId, initial }: { runId: string; initial?: Run }) {
   const fetched = useResource((s) => api.run(runId, s), `run-${runId}`);
-  const [local, setLocal] = useState<Run | undefined>(undefined);
-  const stream = useRunEvents(runId, !!fetched.data);
+  const [local, setLocal] = useState<Run | undefined>(initial);
+  const stream = useRunEvents(runId, !!fetched.data || !!initial);
   const history = useResource((s) => api.runLog(runId, s), `run-log-${runId}`);
   const run = newer(newer(fetched.data, stream.run), local);
   const onRun = useCallback((r: Run) => setLocal((prev) => newer(prev, r)), []);
