@@ -1,6 +1,6 @@
 # Demo
 
-The 90-second demo script from `docs/SPEC.md`, the exact click path that performs it, two timed testnet rehearsals from clean databases, and the runbook for the recorded mainnet run.
+The 90-second demo script from `docs/SPEC.md`, the exact click path that performs it in the redesigned app (docs/DESIGN.md section 15), the timed testnet rehearsals from clean databases, and the runbook for the recorded mainnet run.
 
 ## Click path
 
@@ -8,22 +8,23 @@ Start: the service running (`payslip-service serve`), the web app running (`pnpm
 
 | # | Where | Click | What the viewer sees |
 | --- | --- | --- | --- |
-| 1 | `/app/payer/contractors` | Add contractor, then Name, Email, Unified address, Hold ZEC (or Convert to USDC with chain and payout address), Add contractor. Repeat for six | Six rows, accounts 1 to 6. Each contractor gets their own ZIP-32 account |
-| 2 | Same page | Share viewing key on one contractor | The account's unified full viewing key as text and QR, with Copy key and Download |
-| 3 | `/app/payer/runs/new` | Fill Amount and Invoice reference per contractor, Create run | The run page for "Run for Sep 2026" with a Fund, Execute, Paid stepper |
-| 4 | Run page, Fund step | Testnet: Confirm funding. Mainnet: Pay USDC from (chain), Refund address, Get deposit address, then Connect Wallet and Send <amount> USDC (or Switch to <chain> and send); amount, token and deposit address are pre-filled. Then wait for the venue | Funding status moves through deposit seen and swapping to funded; the fill rate appears in the run summary |
-| 5 | Run page | Execute run | Live progress over SSE: allocation broadcast and confirmed, then six payments, each row turning Confirmed with its txid, explorer link and height |
-| 6 | Run page, "Who can see this run" | Open any txid's explorer link | Left: what a public chain would show (sender, recipient, amount per line). Right and in the explorer: shielded transactions, no amount, no parties |
-| 7 | `/app/contractor` | Paste the key from step 2, Show statement | That contractor's statement only: date, ZEC, USD basis, rate, invoice, period, txid, height, running totals; Export CSV and Print / Save as PDF |
-| 8 | `/app/payer/contractors` | Export all viewing keys for accountant, Download JSON | A JSON file with seven keys (treasury and six contractors) |
-| 9 | `/app/accountant` | Import file, Choose export file, then Reconcile 7 keys | Per-run reconciliation: funded USD, ZEC acquired, fill rate, paid, fees, unspent, variance and explained, status Reconciled; every pay line; unlabelled transactions listed |
-| 10 | Same page | Export CSV | The reconciliation and every line as CSV |
+| 1 | `/` | Try the live demo | The company console. The dark bar's "Viewing as" menu switches between Company, Contractor and Accountant |
+| 2 | `/console/people` | Add contractor, then Name, Email, Unified address, Hold ZEC (or Convert to USDC with chain and payout address), Add contractor. Repeat for six | Six people, accounts 1 to 6, each with their own ZIP-32 account. Adding one opens their detail drawer |
+| 3 | `/console/access` | QR code and link on one contractor | An invite link that carries that person's viewing key in the URL fragment, as text and QR |
+| 4 | `/console/runs/new` (Run payroll) | Amounts: the month and each person's USD and invoice reference, Continue | Review and approve: the total for six contractors, funding source and rate, what contractors get, fees and every pay line |
+| 5 | Review step | Approve | Nothing moved before this. The run is created and the flow moves to Fund |
+| 6 | Fund step | Testnet: Fund from treasury, then confirm. Mainnet: choose the USDC chain, get the quote (rate locked, "You send exactly", "Contractors get", fees), Connect Wallet and send; the deposit address and amount are pre-filled | Funding moves to funded; the fill rate becomes the run's USD basis |
+| 7 | Pay step | Pay 6 contractors, then confirm in the dialog that restates people, total, ZEC and fees | Live progress: "N of 6 confirmed", each row turning Confirmed with its txid and block, then "Paid to 6 contractors" and View run |
+| 8 | Run page, Privacy view tab | Open any txid's explorer link | Left: what a public chain would show (illustration). Right and in the explorer: shielded transactions, no amount, no parties |
+| 9 | Contractor portal from the invite link (step 3) | Payslips, then a payslip, Share proof | That person's payslips only; the payslip document; a proof link that opens one payment at `/verify` |
+| 10 | `/books` (Viewing as Accountant) | Load this company's keys (or Import key file) | Reconciliation: Every run reconciled, funded, paid, variance, explained and unexplained, with any cent of rounding shown under Difference |
+| 11 | Books, Exports | Payslip CSV, Xero or QuickBooks | The reconciliation and every line as CSV in the chosen layout |
 
 The same path is automated in `web/e2e/demo.spec.ts`, which is how the rehearsals below were run and timed.
 
 ## Testnet rehearsals
 
-Both from a clean database (`scripts/fresh-testnet-env.sh`, which keeps only the encrypted seeds), one straight after the other, on 5 Oct 2026 UTC. Times in seconds; "wall clock" covers the whole path including waiting for the chain.
+Rehearsals 1 and 2 ran through the first version of the web app; rehearsal 3 through the redesigned one. Rehearsals 1 and 2 used a clean database (`scripts/fresh-testnet-env.sh`, which keeps only the encrypted seeds), one straight after the other, on 5 Oct 2026 UTC. Times in seconds; "wall clock" covers the whole path including waiting for the chain.
 
 | Step | Rehearsal 1 | Rehearsal 2 |
 | --- | ---: | ---: |
@@ -59,6 +60,17 @@ Rehearsal 2, run 2c3c69da-45f1-4a8c-92ef-6f61f0d991f4, allocation 73620ccfad58..
 | Mei Chen | eb0290bd999ad7d8ca9fb1af4a871a6056e6f4786e2c6e6270d7171bbcd11fdf | 4,465,911 |
 | Kwame Mensah | 36b5db028e261887534a28d9f559965bf2bf99e95365c25ecd1e1952dd30f338 | 4,465,911 |
 
+Rehearsal 3, through the redesigned app, from a new seed whose wallet holds no other runs (so the contractor, the accountant and the company see the same single run), 5 Oct 2026: run 09019bd8-d31d-400b-a779-050afeb3083e, allocation 91087ec36cce... at 4,466,910 (full record: [proof/rehearsal-3.json](proof/rehearsal-3.json)). Timings in seconds: onboard six 7, approve 0, fund 5, pay and six confirmations 80, explorer check 1, contractor portal 5, accountant books 25, CSV 3; 2.2 minutes wall clock.
+
+| Contractor | Txid | Height |
+| --- | --- | ---: |
+| Amara Okafor | b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3 | 4,466,912 |
+| Mateo Fernandez | 24e99d9802a6cb0573ea309e4e2e614477ce933ebf879971fce86f7f19b2216a | 4,466,912 |
+| Priya Raman | 4a90a0894343a365e7a116457c0230bb57a350a70df82a6209c91078ff110498 | 4,466,912 |
+| Jonas Lindqvist | f2e6094e0bed1b4784e9d778bd38f30dc89beb2f5b907d4d861b73f6dcfa0919 | 4,466,912 |
+| Mei Chen | 866266aeab8424ad048492bdc7027a9e6f900beabf4fd5b5f25d5c221705289c | 4,466,912 |
+| Kwame Mensah | 04cffca310a3362df7fd53ccea6e8938a15c2bcd3e57c489bb856adaa96d32c4 | 4,466,912 |
+
 Earlier testnet runs of the same flow: the driver script `scripts/mainnet-demo.sh` (run 284c2421, [proof/testnet-rehearsal-284c2421.md](proof/testnet-rehearsal-284c2421.md)) and the Round 2 end-to-end test (run 85ea4bdc, [proof/e2e-round2-85ea4bdc.json](proof/e2e-round2-85ea4bdc.json)).
 
 ## Mainnet run
@@ -83,7 +95,7 @@ scripts/mainnet-demo.sh scripts/demo/mainnet.env          # stops before funding
 scripts/mainnet-demo.sh scripts/demo/mainnet.env --yes    # requests the deposit address and waits
 ```
 
-Then in the browser open the run page (`http://127.0.0.1:3000/app/payer/runs/<run id>`, the id is printed). The deposit request already exists, so the Fund step shows the deposit address: Connect Wallet, then Send <amount> USDC. The script follows the venue and the payments and writes `scripts/demo/out/proof-mainnet-<run>.md` with the six txids and heights, plus the statement and reconciliation CSVs. Copy the proof table into the README.
+Then in the browser open the run (`http://127.0.0.1:3000/console/runs/new?run=<run id>`, the id is printed). The deposit request already exists, so the Fund step shows the deposit address: Connect Wallet, then Send <amount> USDC. The script follows the venue and the payments and writes `scripts/demo/out/proof-mainnet-<run>.md` with the six txids and heights, plus the statement and reconciliation CSVs. Copy the proof table into the README.
 
 After recording, generated contractor wallets can be swept back: `cd service && ./target/release/payslip-service dev-sweep --allow-mainnet`.
 

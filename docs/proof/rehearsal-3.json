@@ -1,0 +1,49 @@
+{
+  "run_id": "09019bd8-d31d-400b-a779-050afeb3083e",
+  "allocation": {
+    "txid": "91087ec36cce8ef64e28f71214bbd3fae457ba60a42effe54cb27ae7721a6c24",
+    "height": 4466910
+  },
+  "lines": [
+    {
+      "name": "Amara Okafor",
+      "txid": "b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3",
+      "height": 4466912
+    },
+    {
+      "name": "Mateo Fernandez",
+      "txid": "24e99d9802a6cb0573ea309e4e2e614477ce933ebf879971fce86f7f19b2216a",
+      "height": 4466912
+    },
+    {
+      "name": "Priya Raman",
+      "txid": "4a90a0894343a365e7a116457c0230bb57a350a70df82a6209c91078ff110498",
+      "height": 4466912
+    },
+    {
+      "name": "Jonas Lindqvist",
+      "txid": "f2e6094e0bed1b4784e9d778bd38f30dc89beb2f5b907d4d861b73f6dcfa0919",
+      "height": 4466912
+    },
+    {
+      "name": "Mei Chen",
+      "txid": "866266aeab8424ad048492bdc7027a9e6f900beabf4fd5b5f25d5c221705289c",
+      "height": 4466912
+    },
+    {
+      "name": "Kwame Mensah",
+      "txid": "04cffca310a3362df7fd53ccea6e8938a15c2bcd3e57c489bb856adaa96d32c4",
+      "height": 4466912
+    }
+  ],
+  "seconds": {
+    "onboard six contractors": 7,
+    "enter amounts, review and approve": 0,
+    "fund (testnet fixed-rate venue)": 5,
+    "pay and wait for six confirmations": 80,
+    "verify six txids and heights on a public explorer": 1,
+    "contractor portal from an invite link": 5,
+    "accountant reconciliation with every key": 25,
+    "CSV export": 3
+  }
+}

@@ -26,7 +26,7 @@ Read at a normal pace this runs about two and a half minutes. Film your face for
 
 "The contractor pastes their key and gets a statement, with what each payment was worth when it arrived, in their own currency, ready for Koinly or their accountant. If they need to prove one payment to a landlord or a bank, they send a link that opens that one payment and nothing else."
 
-"The accountant imports every key and gets a reconciliation: dollars funded against dollars paid for every run, with the difference explained to the cent. Exports go straight into Xero or QuickBooks."
+"The accountant imports every key and gets a reconciliation: dollars funded against dollars paid for every run, with the difference explained by network fees and unspent ZEC, down to rounding of a cent per payment. Exports go straight into Xero or QuickBooks."
 
 **4. Proof (1:40)**
 
@@ -55,7 +55,7 @@ Record during the mainnet run, following the click path in [DEMO.md](DEMO.md). S
 | 1:15 | A txid in zecblock.com | "This is what the world sees. A shielded transaction. No amount, no sender, no recipient." |
 | 1:30 | Contractor page, paste key, statement | "The contractor pastes their key. Their statement comes straight from the chain, with each payment's market value when it arrived. Export to Koinly or CoinTracker, or print it." |
 | 1:55 | Prove this payment, then the /verify page | "To prove one payment to a landlord, the contractor sends this link. It opens that payment, checked against the chain, and nothing else." |
-| 2:15 | Accountant page, import keys, Reconciled | "The accountant imports every key. Every run reconciles: funded against paid, the difference explained to the cent. Export to Xero or QuickBooks." |
+| 2:15 | Accountant page, import keys, Reconciled | "The accountant imports every key. Every run reconciles: funded against paid, the difference explained down to rounding. Export to Xero or QuickBooks." |
 | 2:45 | Landing headline | "Private to the world, transparent to your accountant." |
 
 ## First users before the deadline

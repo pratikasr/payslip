@@ -2,6 +2,8 @@
 
 The design system, the research it is based on, and the behaviour of every screen in `web/`. Written 5 Oct 2026. The code is the source of truth for exact values; this document says what they are and why.
 
+Section 15 supersedes the visual direction, tokens, layout and navigation in sections 2 to 9 and 14: on 5 Oct 2026 the owner rejected the first look as too basic and approved a redesign modelled on Mercury's app. The earlier sections remain as the record of what was tried.
+
 ## Contents
 
 1. Research notes
@@ -557,3 +559,36 @@ Captured with `screenshots.mjs`, `screenshots-states.mjs` (now also insights as 
 | Run summary left a lone figure on a second row | Five columns at desktop width |
 | Empty workspace showed three "Create a run" actions | Insights appear once a run exists; the guide and the runs panel cover the first run |
 | "6of 6" read as one word by screen readers | A real space between the count and its label |
+
+## 15. Redesign: Payslip in Mercury's style (supersedes the look in sections 2 to 9 and 14)
+
+### Why
+
+The owner judged the first build too basic: default Next.js and shadcn styling, every section an identical bordered panel, top tabs inside top tabs, and a demo role switcher as the main navigation. Five research agents studied Request Finance, Ontop, Wise, Remitly, Revolut Business, Mercury, Ramp, Brex, Deel, Rippling, the Zcash brand and crypto payroll tools, and audited the app. The owner then asked to copy an existing product's design, not one hundred percent. Mercury's app was chosen as the model because its demo app is public (demo.mercury.com) and it is the benchmark for a calm, trustworthy finance interface. The approved mockup covered the landing page, company home, approve payroll, contractor home and public payslip.
+
+### What was copied, and what changed
+
+- **Copied from Mercury:** the app shell (220px sidebar on a barely tinted ground, a quiet top bar, a centred content column about 970px wide), the two-way product switch at the top of the sidebar ("Banking | Books" becomes "Payroll | Books"), bookmarks with figures, the dark demo bar with its "Viewing as" menu, light large type (28px titles at weight 380, 15px body), money with raised cents and tabular figures, pill buttons, hairline cards with 12px corners and no shadows, tables straight on the page, the full-screen review screen with a step rail, the right-side detail drawer with a timeline, the public invoice page, and the "Choose where your books live" export layout.
+- **Changed for Payslip:** Zcash gold `#F4B728` replaces Mercury's indigo and appears only on the one primary action per screen and on "Shielded" tags; Payslip's own mark (two rings and a gold sealed bar) and words; Inter (with its optical-size axis) stands in for Mercury's proprietary Arcadia, with IBM Plex Mono for keys and txids; ZEC amounts show 8 decimals with the last four dimmed; testnet rates are a small "Simulated rate" label; Wise's quote card (locked rate, "You send exactly", "Contractors get", fees) is used for funding.
+
+### Tokens
+
+`web/src/app/globals.css`. Light: page `#ffffff`, sidebar `#fbfcfd`, raised `#f6f6f9`, chip `#efeff3`, ink `#1e1e2a`, strong `#363644`, muted text `#5e5f6c`, faint `#8b8c98`, border `#e3e3e9`, hairline `#ececf1`, gold `#f4b728` with ink text, link `#8a6100`, success `#036e43`, danger `#b0175f`. Dark (Mercury's, tinted toward ink): page `#171721`, card `#1e1e2a`, popover `#272735`, sidebar `#1a1a24`, ink `#f4f5f9`, muted text `#a6a6b2`, success `#77c599`, danger `#fc92b4`, gold unchanged. Radius 8px for controls, 12px for cards, full pills for buttons, 4px for tags. Privacy mode (the eye in the top bar) blurs every `.money` element.
+
+### Structure
+
+| Product | Route | Shell | Pages |
+| --- | --- | --- | --- |
+| Landing | `/` | marketing header, dark hero and product section | hero with sealed payroll, product accordion, proof strip, how it works, who sees what, security, pricing, FAQ, footer |
+| Company console | `/console` | ConsoleShell (sidebar) | Home, Payroll runs, run page (Pay lines, Privacy view, Audit trail), People with drawer, Payslip access, Treasury |
+| Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts, Review and approve, Fund, Pay |
+| Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Tax documents |
+| Accountant books | `/books` | BooksShell (Books side of the switch) | Reconciliation, Ledger, Exceptions, Exports |
+| Public payslip | `/verify` | none | one document card on a soft grid |
+
+The old `/app/...` routes redirect to these. Money never moves without a review step that restates people, total, coin, rate and fees.
+
+### Components
+
+`web/src/components/ds/` (Card, CardHeader, CardFoot, Tag, Initials, PageTitle, ActionRow, SectionHeader, KeyValues), `web/src/components/shell/` (AppShell, ConsoleShell, PortalShell, BooksShell, FocusShell, DemoBar, PrivacyToggle), `web/src/components/app/amount.tsx` (Usd, Zec, Fiat, Rate). Area components live in `components/console`, `components/runs`, `components/portal`, `components/verify`, `components/books` and `components/marketing`.
+

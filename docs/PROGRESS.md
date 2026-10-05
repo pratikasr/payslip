@@ -2,6 +2,16 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 5 Oct 2026, redesign in Mercury's style and a clean demo wallet
+
+- The owner judged the first look too basic. Five research agents studied Request Finance, Ontop, Wise, Remitly, Revolut Business, Mercury, Ramp, Brex, Deel, Rippling, the Zcash brand and crypto payroll tools and audited the app; the owner chose to copy Mercury's design, not one hundred percent. Decision and system recorded in docs/DESIGN.md section 15.
+- Rebuilt every screen: the landing page; the company console (home, payroll runs, a full-screen Run payroll flow with a review and approve step before any money moves, the run page with Pay lines, Privacy view and Audit trail, People with a detail drawer, Payslip access with invite links, Treasury); the contractor portal (unlock by key, QR or invite link, home, payslips, payslip document with Share proof, tax downloads); the accountant books (reconciliation, ledger, exceptions, Xero and QuickBooks exports); and the public payslip page. Old /app routes redirect.
+- Service: reconciliation now reports `difference_usd_cents` and `rounding_tolerance_cents`, so a cent of rounding is shown rather than hidden; "to the cent" claims removed from the docs. `invalid_invoice_ref` documented.
+- Clean demo wallet: a new testnet seed (data folder `demo-clean-2`, birthday 4,466,858) holding the leftover test coins, so the contractor, accountant and company see the same single run. Rehearsal 3 through the new app: run 09019bd8-d31d-400b-a779-050afeb3083e, six payments at 4,466,912, 2.2 minutes (docs/proof/rehearsal-3.json). Judge kit regenerated from this wallet.
+- Checks: service fmt, clippy, unit and executor tests; web format, lint, typecheck, build; browser suite 31 of 31 (demo walkthrough, runs, console, portal, proofs, books, landing, keyboard, camera QR, wallet funding); mobile Lighthouse on the main pages 91 to 96 performance, 100 accessibility and best practices; 102 screenshots with no horizontal scroll.
+- Next: the owner reviews the screenshots, then push; then the human steps below.
+- Blocked: mainnet funds and DEMO_REFUND_ADDRESS; a hosting account for the public statements page; a NEAR account to receive the swap fee (optional); the Colosseum account and videos (human).
+
 ## 5 Oct 2026, judge-ready features and frontend polish
 
 - Payment proofs (ADR-021): a contractor creates a link that discloses one payment and nothing else; `GET /api/proofs/{token}` verifies it against the chain with no key. Live testnet test: Amara's payment 3c5513c5... opens with the proof, a one-bit change or the other action opens nothing, the treasury key has nothing to prove. Web: Prove on each statement line, public `/verify#pp1...` page that prints as a payslip with a QR code.

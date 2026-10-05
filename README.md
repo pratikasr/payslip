@@ -37,6 +37,7 @@ The same flow, run on Zcash testnet (NU7) through the API and the web app. Open 
 
 | Run | What | Evidence |
 | --- | --- | --- |
+| 09019bd8 | Six contractors through the redesigned app, from a clean demo wallet (the judge kit's wallet) | [docs/proof/rehearsal-3.json](docs/proof/rehearsal-3.json): six payments at height 4,466,912, reconciled within a cent of rounding; first payment [b597daba...](https://testnet.zecblock.com/tx/b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3) |
 | 284c2421 | Six contractors through `scripts/mainnet-demo.sh` (rehearsal) | [docs/proof/testnet-rehearsal-284c2421.md](docs/proof/testnet-rehearsal-284c2421.md): six payments at heights 4,465,683 to 4,465,684, reconciled |
 | 9145b60b | First API run, three contractors | Payments [3c5513c5...](https://testnet.zecblock.com/tx/3c5513c5aaee0def9244a5fb02a32681a0c9b0046a0e1a16b1964c8ede83bd08) (4,465,671), [a21fabe2...](https://testnet.zecblock.com/tx/a21fabe27fc81085dd47b5e59bf04f466bda90ec12b24f151248484593691b62), [3952333d...](https://testnet.zecblock.com/tx/3952333d5466eed83b3fc3bad1ee82865708e54500c0d0520bad5d90d0464026) (4,465,672) |
 | d9248c70 | A contractor who converts to USDC (simulated on testnet) | [118c665f...](https://testnet.zecblock.com/tx/118c665f71d082eba1f02777f3d271fc111716725ee4b256c6c3b9bcccae33ca) (4,465,711): ZEC to the venue deposit, memo on the change output |
@@ -48,14 +49,14 @@ Round-by-round results: [docs/TEST-REPORT.md](docs/TEST-REPORT.md). The demo cli
 Payslip's claim is "private to the world, transparent to your accountant". Each half can be checked without trusting us:
 
 1. **Private to the world.** Open any txid above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient.
-2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). In Payslip, Accountant, import that file and reconcile: every run, every line, funded against paid, read from the chain. Contractor, paste one key: that person's statement and nothing else. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
+2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). In Payslip, choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet whose only payroll is the rehearsal in [docs/proof/rehearsal-3.json](docs/proof/rehearsal-3.json), so every role sees the same run. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
 Hosted statements page: VERIFY: URL after deploying the service with `PAYSLIP_MODE=statements` and the web app (needs a hosting account). To run the same thing locally, with no seed and no wallet:
 
 ```
-cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4465600 cargo run --release -- serve
-cd web && pnpm install && pnpm build && pnpm start      # http://localhost:3000/app/accountant
+cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4466850 cargo run --release -- serve
+cd web && pnpm install && pnpm build && pnpm start      # http://localhost:3000/books
 ```
 
 `PAYSLIP_VIEWER_BIRTHDAY_HEIGHT` is where scans of unknown keys start; the kit's `birthday_height` keeps the first scan short. A statements-only service holds nothing that can spend. It scans the chain with the keys you paste and answers statements, reconciliations and payment proofs.
@@ -182,7 +183,7 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M2 Wallet core (accounts, FVK export, sync, send with memo) | done, verified on testnet |
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
-| M5 Web dashboards | done, verified on testnet |
+| M5 Web dashboards | done, redesigned in Mercury's style (docs/DESIGN.md section 15), verified on testnet |
 | M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; needs the USDC deposit |
 | M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account |
 
