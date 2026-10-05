@@ -20,7 +20,7 @@ use crate::{
     payer::TREASURY_INDEX,
     runs::validate_period,
     statements::{self, Classified, ExportFormat, KeyInfo},
-    viewer::{fingerprint_of, ViewingKey},
+    viewer::{fingerprint_of, ScanKey, ViewingKey},
 };
 
 pub fn routes() -> Router<AppStateRef> {
@@ -29,6 +29,7 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/api/statements/contractor.csv", post(contractor_csv))
         .route("/api/statements/accountant", post(accountant_json))
         .route("/api/statements/accountant.csv", post(accountant_csv))
+        .route("/api/statements/forget", post(forget))
 }
 
 #[derive(Deserialize)]
@@ -107,9 +108,36 @@ async fn known_keys(s: &AppStateRef) -> ApiResult<HashMap<String, Known>> {
 struct Scanned {
     keys: Vec<KeyInfo>,
     contractor_ids: Vec<Option<String>>,
+    /// Every output the keys see, and the tip they were classified against.
+    outputs: Vec<crate::viewer::ScanOutput>,
+    tip: u32,
+    dates: (time::Date, time::Date),
+    /// The outputs classified for the requested period.
     classified: Classified,
     scanned_to: u32,
+    /// Per key (same order as `keys`): the height its scan starts at.
+    scanned_from: Vec<Option<u32>>,
     period: (String, String),
+}
+
+impl Scanned {
+    /// The lowest height any key was scanned from: nothing earlier is in the statement.
+    fn scanned_from_height(&self) -> Option<u32> {
+        self.scanned_from.iter().flatten().copied().min()
+    }
+
+    fn accounts_json(&self) -> Value {
+        Value::Array(
+            self.keys
+                .iter()
+                .zip(&self.scanned_from)
+                .map(|(k, from)| {
+                    json!({"fingerprint": k.fingerprint, "account_index": k.account_index, "label": k.label,
+                           "role": k.role, "scanned_from_height": from})
+                })
+                .collect(),
+        )
+    }
 }
 
 async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str, birthday: Option<u32>) -> ApiResult<Scanned> {
@@ -140,12 +168,33 @@ async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str, birthd
             parsed.push(key);
         }
     }
+    if let Some(b) = birthday {
+        let floor = s.cfg.network.ironwood_activation_height();
+        if b < floor {
+            return Err(ApiError::bad_request(
+                "invalid_birthday_height",
+                format!("A scan cannot start below block {floor}, where the Ironwood pool Payslip pays into began."),
+                format!("Use the birthday height from the key file, or leave it out to start at {floor}."),
+            ));
+        }
+        let tip = {
+            let mut client = s.lwd.lock().await;
+            crate::wallet::lwd::tip(&mut client).await.map_err(ApiError::from)?
+        };
+        let tip = u32::from(tip);
+        if b > tip {
+            return Err(ApiError::bad_request(
+                "invalid_birthday_height",
+                format!("Block {b} is above the chain tip ({tip}), so a scan cannot start there."),
+                format!("Use the birthday height from the key file (between {floor} and {tip}), or leave it out."),
+            ));
+        }
+    }
     let known = known_keys(s).await?;
-    let default_birthday = match (birthday, s.payer.as_ref()) {
-        (Some(b), _) => b,
-        (None, Some(p)) => p.wallet_info().await?.birthday_height,
-        (None, None) => s.cfg.viewer_birthday_height,
-    };
+    // A key this deployment does not know scans from the earlier of the requested height and
+    // PAYSLIP_VIEWER_BIRTHDAY_HEIGHT (Ironwood activation if neither): never from the payer
+    // wallet's own birthday, which says nothing about someone else's key.
+    let default_birthday = s.cfg.viewer_scan_start(birthday);
     let mut keys = vec![];
     let mut contractor_ids = vec![];
     let mut to_scan = vec![];
@@ -154,7 +203,12 @@ async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str, birthd
             Some(kn) => {
                 keys.push(kn.info.clone());
                 contractor_ids.push(kn.contractor_id.clone());
-                to_scan.push((k, kn.info.label.clone().unwrap_or_default(), kn.birthday));
+                to_scan.push(ScanKey {
+                    key: k,
+                    label: kn.info.label.clone().unwrap_or_default(),
+                    birthday: kn.birthday,
+                    rescan_if_earlier: false,
+                });
             }
             None => {
                 keys.push(KeyInfo {
@@ -164,27 +218,54 @@ async fn scan(s: &AppStateRef, raw_keys: &[String], from: &str, to: &str, birthd
                     role: "unknown".into(),
                 });
                 contractor_ids.push(None);
-                to_scan.push((k, "Imported key".into(), default_birthday));
+                // Only a height the request asked for rescans a cached key; the default start
+                // applies to a key seen for the first time.
+                to_scan.push(ScanKey {
+                    key: k,
+                    label: "Imported key".into(),
+                    birthday: default_birthday,
+                    rescan_if_earlier: birthday.is_some(),
+                });
             }
         }
     }
+    // Scans are the expensive requests: wait for a slot, but not forever.
+    let _slot = tokio::time::timeout(std::time::Duration::from_secs(120), s.scan_slots.acquire())
+        .await
+        .map_err(|_| {
+            ApiError::unavailable(
+                "scanner_busy",
+                "Every scan slot is busy with other viewing keys.",
+                "Try again in a minute.",
+            )
+        })?
+        .map_err(ApiError::internal)?;
     let result = s
         .viewers
-        .scan(to_scan)
+        .scan_keys(to_scan)
         .await
         .map_err(|e| ApiError::from(e.context("scanning with the viewing keys")))?;
+    statements::infer_treasury(&result.outputs, &mut keys);
     let classified = statements::classify(s.cfg.network, &result.outputs, &keys, result.chain_tip, Some((f, t)));
+    let scanned_from = keys
+        .iter()
+        .map(|k| result.scanned_from.get(&k.fingerprint).copied())
+        .collect();
     Ok(Scanned {
         keys,
         contractor_ids,
+        outputs: result.outputs,
+        tip: result.chain_tip,
+        dates: (f, t),
         classified,
         scanned_to: result.scanned_to_height,
+        scanned_from,
         period: (from.to_string(), to.to_string()),
     })
 }
 
 /// Run metadata for runs this service knows, keyed by run id.
-async fn runs_index(s: &AppStateRef, c: &Classified) -> ApiResult<Value> {
+async fn runs_index(s: &AppStateRef, c: &Classified, extra: &[&str]) -> ApiResult<Value> {
     let mut ids: Vec<&str> = c
         .lines
         .iter()
@@ -192,6 +273,7 @@ async fn runs_index(s: &AppStateRef, c: &Classified) -> ApiResult<Value> {
         .map(|l| l.run_id.as_str())
         .collect();
     ids.extend(c.run_records.iter().map(|r| r.run_id.as_str()));
+    ids.extend(extra.iter().copied());
     ids.sort();
     ids.dedup();
     let mut out = serde_json::Map::new();
@@ -221,14 +303,7 @@ fn csv_response(body: String, filename: &str) -> Response {
 }
 
 async fn contractor_statement(s: &AppStateRef, req: &ContractorReq) -> ApiResult<(Scanned, Value)> {
-    let sc = scan(
-        s,
-        std::slice::from_ref(&req.ufvk),
-        &req.from,
-        &req.to,
-        req.birthday_height,
-    )
-    .await?;
+    // Checked before the scan: a bad currency must not cost a chain scan.
     let currency = crate::prices::parse_currency(req.currency.as_deref()).ok_or_else(|| {
         ApiError::bad_request(
             "invalid_currency",
@@ -242,7 +317,14 @@ async fn contractor_statement(s: &AppStateRef, req: &ContractorReq) -> ApiResult
             ),
         )
     })?;
-    let mut sc = sc;
+    let mut sc = scan(
+        s,
+        std::slice::from_ref(&req.ufvk),
+        &req.from,
+        &req.to,
+        req.birthday_height,
+    )
+    .await?;
     let market = attach_market_values(s, &mut sc.classified, &currency).await;
     let k = &sc.keys[0];
     let body = json!({
@@ -250,6 +332,7 @@ async fn contractor_statement(s: &AppStateRef, req: &ContractorReq) -> ApiResult
         "network": s.cfg.network.as_str(),
         "account": {"fingerprint": k.fingerprint, "account_index": k.account_index, "label": k.label, "role": k.role},
         "period": {"from": sc.period.0, "to": sc.period.1},
+        "scanned_from_height": sc.scanned_from_height(),
         "scanned_to_height": sc.scanned_to,
         "generated_at": db::now(),
         "lines": sc.classified.lines,
@@ -257,7 +340,7 @@ async fn contractor_statement(s: &AppStateRef, req: &ContractorReq) -> ApiResult
         "totals": statements::totals(&sc.classified.lines),
         "unlabelled": sc.classified.unlabelled,
         "funding": sc.classified.funding,
-        "runs": runs_index(s, &sc.classified).await?,
+        "runs": runs_index(s, &sc.classified, &[]).await?,
     });
     Ok((sc, body))
 }
@@ -362,10 +445,7 @@ async fn contractor_csv(
         &[ExportFormat::Payslip, ExportFormat::Koinly, ExportFormat::CoinTracker],
     )?;
     let (sc, _) = contractor_statement(&s, &req).await?;
-    let csv = match format {
-        ExportFormat::Payslip => statements::contractor_csv(&sc.classified),
-        f => statements::contractor_tool_csv(&sc.classified, f),
-    };
+    let csv = statements::contractor_export(&sc.classified, format, s.cfg.network);
     let hash = hex::encode(Sha256::digest(csv.as_bytes()));
     db::record_statement(
         &s.db,
@@ -398,17 +478,24 @@ async fn accountant_view(
     req: &AccountantReq,
 ) -> ApiResult<(Scanned, Vec<statements::RunReconciliation>, Value)> {
     let sc = scan(s, &req.ufvks, &req.from, &req.to, req.birthday_height).await?;
-    let runs = statements::reconcile(&sc.classified);
+    // Each run is reconciled over everything the keys have seen, not only this period's lines
+    // (a run paid either side of midnight still has all its payments); the period decides
+    // which runs are listed.
+    let all = statements::classify(s.cfg.network, &sc.outputs, &sc.keys, sc.tip, None);
+    let runs = statements::reconcile(&all, Some(sc.dates));
     let funded: i64 = runs.iter().filter_map(|r| r.funded_usd_cents).map(|v| v as i64).sum();
     let paid: i64 = runs.iter().map(|r| r.paid_usd_cents as i64).sum();
     let paid_zat: u64 = runs.iter().map(|r| r.paid_zat).sum();
     let count: usize = runs.iter().map(|r| r.lines).sum();
+    let run_ids: Vec<&str> = runs.iter().map(|r| r.run_id.as_str()).collect();
+    let run_index = runs_index(s, &sc.classified, &run_ids).await?;
     let body = json!({
         "network": s.cfg.network.as_str(),
         "period": {"from": sc.period.0, "to": sc.period.1},
+        "scanned_from_height": sc.scanned_from_height(),
         "scanned_to_height": sc.scanned_to,
         "generated_at": db::now(),
-        "accounts": sc.keys,
+        "accounts": sc.accounts_json(),
         "runs": runs,
         "run_records": sc.classified.run_records,
         "lines": sc.classified.lines,
@@ -416,8 +503,10 @@ async fn accountant_view(
         "unlabelled": sc.classified.unlabelled,
         "funding": sc.classified.funding,
         "totals": {"funded_usd_cents": funded, "paid_usd_cents": paid, "variance_usd_cents": funded - paid, "paid_zat": paid_zat, "count": count},
-        "run_index": runs_index(s, &sc.classified).await?,
-        "treasury_key_present": sc.keys.iter().any(|k| k.role == "treasury"),
+        "run_index": run_index,
+        // True when a treasury key was supplied: known as the treasury, or it decrypted a run
+        // funding record (in statements mode no key is known in advance).
+        "treasury_key_present": sc.keys.iter().any(|k| k.role == "treasury") || !all.run_records.is_empty(),
     });
     Ok((sc, runs, body))
 }
@@ -477,4 +566,34 @@ async fn accountant_csv(
             sc.period.1
         ),
     ))
+}
+
+#[derive(Deserialize)]
+struct ForgetReq {
+    ufvks: Vec<String>,
+}
+
+/// Deletes the cached scan of exactly this key set: the viewer database that keeps the keys so
+/// the next statement is incremental. The next request with the same keys scans from scratch.
+async fn forget(State(s): State<AppStateRef>, Json(req): Json<ForgetReq>) -> ApiResult<Json<Value>> {
+    if req.ufvks.is_empty() || req.ufvks.len() > 200 {
+        return Err(ApiError::bad_request(
+            "invalid_viewing_key",
+            "Send the same 1 to 200 viewing keys the statements used.",
+            "Paste the keys exactly as you sent them for the statement, one per entry.",
+        ));
+    }
+    let mut keys = vec![];
+    for k in &req.ufvks {
+        keys.push(ViewingKey::parse(&s.cfg.network, k)?);
+    }
+    let fps: Vec<&str> = keys.iter().map(|k| k.fingerprint.as_str()).collect();
+    match s.viewers.forget(&fps).await? {
+        Ok(forgotten) => Ok(Json(json!({ "forgotten": forgotten }))),
+        Err(crate::viewer::ForgetBusy) => Err(ApiError::conflict(
+            "scan_in_progress",
+            "A statement for these keys is being scanned right now.",
+            "Try again when it finishes.",
+        )),
+    }
 }

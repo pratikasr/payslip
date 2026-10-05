@@ -18,12 +18,35 @@ pub fn connect(url: &str) -> anyhow::Result<Client> {
         .with_context(|| format!("invalid LIGHTWALLETD_URL {url}"))?
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(120))
-        .tcp_keepalive(Some(Duration::from_secs(30)));
+        .tcp_keepalive(Some(Duration::from_secs(30)))
+        // HTTP/2 pings keep an idle connection open (servers close quiet ones after some
+        // minutes) and reveal a dead one before a request is sent on it.
+        .http2_keep_alive_interval(Duration::from_secs(30))
+        .keep_alive_timeout(Duration::from_secs(20))
+        .keep_alive_while_idle(true);
     if url.starts_with("https://") {
         endpoint = endpoint.tls_config(ClientTlsConfig::new().with_webpki_roots())?;
     }
     let channel = endpoint.connect_lazy();
     Ok(CompactTxStreamerClient::new(channel).max_decoding_message_size(64 * 1024 * 1024))
+}
+
+/// True when an error is the connection to lightwalletd failing (closed, reset, refused), as
+/// opposed to lightwalletd answering with an error: worth reconnecting and trying again.
+pub fn is_transport_error(e: &anyhow::Error) -> bool {
+    let m = format!("{e:#}").to_ascii_lowercase();
+    [
+        "transport error",
+        "close_notify",
+        "connection reset",
+        "connection refused",
+        "broken pipe",
+        "connection closed",
+        "operation was canceled",
+        "h2 protocol error",
+    ]
+    .iter()
+    .any(|p| m.contains(p))
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -187,5 +210,40 @@ pub async fn broadcast(client: &mut Client, raw: Vec<u8>) -> anyhow::Result<Resu
             code: resp.error_code,
             message: resp.error_message,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Audit JD-04: the errors a dropped or refused connection produces are recognised as
+    /// transport failures (worth a reconnect); an answer from lightwalletd is not.
+    #[tokio::test]
+    async fn dropped_connections_are_transport_errors() {
+        // A server that accepts and immediately closes every connection.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((sock, _)) = listener.accept().await {
+                drop(sock);
+            }
+        });
+        let mut client = connect(&format!("http://{addr}")).unwrap();
+        let err = tip(&mut client).await.unwrap_err();
+        assert!(is_transport_error(&err), "{err:#}");
+        // Nothing listening at all.
+        let free = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed = free.local_addr().unwrap();
+        drop(free);
+        let mut client = connect(&format!("http://{closed}")).unwrap();
+        let err = tip(&mut client).await.unwrap_err();
+        assert!(is_transport_error(&err), "{err:#}");
+        // The error seen on idle TLS connections in the audit.
+        let idle =
+            anyhow::anyhow!("sync failed: transport error: peer closed connection without sending TLS close_notify");
+        assert!(is_transport_error(&idle));
+        let answered = anyhow::anyhow!("GetTreeState at 99999998: the requested block is not in the main chain");
+        assert!(!is_transport_error(&answered));
     }
 }

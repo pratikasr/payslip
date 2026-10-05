@@ -57,6 +57,15 @@ struct Hooks {
     drop_first_from: Option<u32>,
     /// create_transfer fails like a full disk.
     disk_full: bool,
+    /// Charge a converting payment (one transparent output plus memo-carrying change) the
+    /// real ZIP-317 fee, CONVERT_FEE_ZAT, as the wallet does.
+    convert_fee: bool,
+    /// ZEC the venue delivered to the treasury, per txid (the mainnet path of record_fill).
+    received: HashMap<String, u64>,
+    /// lightwalletd refuses every broadcast from this account.
+    reject_broadcast_from: Option<u32>,
+    /// Every payment from this account fails for lack of spendable funds.
+    insufficient_from: Option<u32>,
 }
 
 #[derive(Default, Clone)]
@@ -177,7 +186,16 @@ impl ChainOps for FakeChain {
         if self.hooks.lock().unwrap().disk_full {
             anyhow::bail!("database or disk is full");
         }
-        let fee = if pays.len() <= 1 {
+        if self.hooks.lock().unwrap().insufficient_from == Some(from) {
+            return Ok(Err(SpendError::InsufficientFunds {
+                available: 0,
+                required: pays.iter().map(|p| p.zat).sum(),
+            }));
+        }
+        let converting = pays.len() == 1 && pays[0].memo.is_none() && change_memo.is_some();
+        let fee = if converting && self.hooks.lock().unwrap().convert_fee {
+            payslip::runs::CONVERT_FEE_ZAT
+        } else if pays.len() <= 1 {
             LINE_FEE_ZAT
         } else {
             5_000 * (pays.len() as u64 + 1)
@@ -250,6 +268,15 @@ impl ChainOps for FakeChain {
         if hang {
             std::future::pending::<()>().await;
         }
+        {
+            let from = self.s.lock().unwrap().txs.get(txid).map(|t| t.from);
+            if from.is_some() && self.hooks.lock().unwrap().reject_broadcast_from == from {
+                return Err(anyhow::Error::new(payslip::wallet::lwd::BroadcastError {
+                    code: -26,
+                    message: "bad-txns-orchard-anchor-invalid".into(),
+                }));
+            }
+        }
         let mut s = self.s.lock().unwrap();
         let tx = s.txs.get_mut(txid).ok_or_else(|| anyhow::anyhow!("unknown tx"))?;
         if tx.fee == u64::MAX {
@@ -273,8 +300,8 @@ impl ChainOps for FakeChain {
             .get(txid)
             .map(|t| if t.fee == u64::MAX { 0 } else { t.fee }))
     }
-    async fn received_in_tx(&self, _txid: &str, _account: u32) -> anyhow::Result<u64> {
-        Ok(0)
+    async fn received_in_tx(&self, txid: &str, _account: u32) -> anyhow::Result<u64> {
+        Ok(self.hooks.lock().unwrap().received.get(txid).copied().unwrap_or(0))
     }
 }
 
@@ -464,7 +491,11 @@ async fn crash_before_broadcast_rebroadcasts_the_same_transaction() {
     // the machine, then kill the task.
     let mut r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
     for _ in 0..2000 {
-        if r.status == "allocating" && !chain.txs_from(0).is_empty() {
+        // The hook is consumed only once the broadcast is in progress (and hanging).
+        if r.status == "allocating"
+            && !chain.txs_from(0).is_empty()
+            && chain.hooks.lock().unwrap().hang_broadcast_from.is_none()
+        {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -757,4 +788,724 @@ async fn converting_line_pays_the_venue_deposit_and_carries_the_memo_on_change()
         .unwrap();
     let conv: serde_json::Value = serde_json::from_str(line.settlement_state.as_deref().unwrap()).unwrap();
     assert_eq!(conv["status"], "simulated");
+}
+
+/// A 1Click-like venue whose status follows a script, one entry per poll (the last repeats).
+struct PollVenue {
+    script: Mutex<Vec<&'static str>>,
+}
+
+#[async_trait]
+impl SwapVenue for PollVenue {
+    fn kind(&self) -> VenueKind {
+        VenueKind::NearIntents
+    }
+    async fn indicative_rate_e6(&self) -> Result<u64, VenueError> {
+        Ok(400_000_000)
+    }
+    async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
+        Ok(Funding {
+            venue: "near-intents-1click".into(),
+            status: "awaiting_deposit".into(),
+            deposit_address: Some("0xdep".into()),
+            requested_usd_cents: req.usd_cents,
+            ..Default::default()
+        })
+    }
+    async fn status(&self, f: &Funding) -> Result<Funding, VenueError> {
+        let next = {
+            let mut s = self.script.lock().unwrap();
+            if s.len() > 1 {
+                s.remove(0)
+            } else {
+                s[0]
+            }
+        };
+        Ok(Funding {
+            status: next.into(),
+            ..f.clone()
+        })
+    }
+    async fn submit_deposit(&self, f: &Funding, tx: &str) -> Result<Funding, VenueError> {
+        Ok(Funding {
+            status: "deposit_seen".into(),
+            deposit_tx_hash: Some(tx.into()),
+            ..f.clone()
+        })
+    }
+}
+
+/// The web moves to the Pay step only when the run turns `funded`. That must happen whatever
+/// venue statuses the 5-second polls happen to observe (audit finding SL-01).
+#[tokio::test]
+async fn funding_completes_whatever_statuses_the_polls_see() {
+    for (label, report_deposit, script) in [
+        (
+            "web wallet reports the deposit, then polls",
+            true,
+            vec!["deposit_seen", "processing", "success"],
+        ),
+        (
+            "the deposit is seen between two polls",
+            false,
+            vec!["processing", "success"],
+        ),
+        (
+            "a poll lands on deposit_seen",
+            false,
+            vec!["deposit_seen", "processing", "success"],
+        ),
+    ] {
+        let (_d, pool) = fresh_db().await;
+        let chain = FakeChain::new(0);
+        let exec = executor(
+            &pool,
+            &chain,
+            Arc::new(PollVenue {
+                script: Mutex::new(script),
+            }),
+        );
+        let run_id = seed_run(&pool).await;
+        exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+            .await
+            .unwrap();
+        if report_deposit {
+            exec.submit_deposit(&run_id, &format!("0x{}", "ab".repeat(32)))
+                .await
+                .unwrap();
+        }
+        for _ in 0..4 {
+            exec.refresh_funding(&run_id).await.unwrap();
+        }
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        assert_eq!(r.status, "funded", "{label}");
+    }
+}
+
+// =============================================================================================
+// Audit fixes (service-logic SL-02 to SL-12, 5 Oct 2026). Several are ported from the auditor's
+// tests; each asserts the corrected behaviour.
+
+use payslip::runs::{CHANGE_CARRY_ZAT, CONVERT_FEE_ZAT};
+
+/// `n` contractors starting at account `first`, the first `convert` of them converting to USDC.
+async fn seed(pool: &Pool, first: u32, n: u32, convert: u32, key: &str) -> String {
+    let mut lines = vec![];
+    for i in 0..n {
+        let conv = i < convert;
+        let c = db::insert_contractor(
+            pool,
+            &NewContractor {
+                name: format!("C{}", first + i),
+                email: None,
+                unified_address: format!("contractor:{}", first + i),
+                settlement_choice: if conv { "convert_usdc" } else { "hold_zec" }.into(),
+                payout_chain: conv.then(|| "base".into()),
+                payout_address: conv.then(|| "0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into()),
+            },
+            first + i,
+            1000,
+        )
+        .await
+        .unwrap();
+        lines.push(NewLine {
+            contractor_id: c.id,
+            amount_usd_cents: 480_000 + 1_000 * i as u64,
+            invoice_ref: format!("INV-{}", first + i),
+        });
+    }
+    db::insert_run(pool, Some(key), "2026-09-01", "2026-09-30", &lines)
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+/// Mines a block every few milliseconds for up to `ticks` blocks or until the run settles.
+async fn drive_for(pool: &Pool, chain: &FakeChain, exec: &Executor, run_id: &str, ticks: u32) -> db::RunRow {
+    for _ in 0..ticks {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let r = db::get_run(pool, run_id).await.unwrap().unwrap();
+        if (r.status == "paid" || r.status == "failed") && !exec.is_running(run_id) {
+            return r;
+        }
+    }
+    db::get_run(pool, run_id).await.unwrap().unwrap()
+}
+
+fn funding_of(r: &db::RunRow) -> Funding {
+    serde_json::from_str(r.venue_state.as_deref().unwrap()).unwrap()
+}
+
+/// A 1Click-like venue whose quotes carry `deadline` and whose status is always `status`.
+struct DeadlineVenue {
+    status: &'static str,
+    deadline: String,
+    quotes: AtomicU32,
+}
+
+impl DeadlineVenue {
+    fn lapsed(status: &'static str) -> Self {
+        DeadlineVenue {
+            status,
+            deadline: "2026-01-01T00:00:00Z".into(),
+            quotes: AtomicU32::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl SwapVenue for DeadlineVenue {
+    fn kind(&self) -> VenueKind {
+        VenueKind::NearIntents
+    }
+    async fn indicative_rate_e6(&self) -> Result<u64, VenueError> {
+        Ok(1_354_930_000)
+    }
+    async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
+        let n = self.quotes.fetch_add(1, Ordering::SeqCst);
+        Ok(Funding {
+            venue: "near-intents-1click".into(),
+            status: "awaiting_deposit".into(),
+            deposit_address: Some(format!("0xdeposit{n}")),
+            deadline: Some(self.deadline.clone()),
+            requested_usd_cents: req.usd_cents,
+            ..Default::default()
+        })
+    }
+    async fn status(&self, f: &Funding) -> Result<Funding, VenueError> {
+        Ok(Funding {
+            status: self.status.into(),
+            ..f.clone()
+        })
+    }
+    async fn submit_deposit(&self, f: &Funding, _tx: &str) -> Result<Funding, VenueError> {
+        Ok(f.clone())
+    }
+}
+
+/// SL-02: a quote that lapsed (deadline passed, venue says expired, or refunded) fails the run
+/// with the hint "Fund the run again". The payer can do exactly that, or cancel the run, after
+/// which its contractors can be archived.
+#[tokio::test]
+async fn a_lapsed_quote_can_be_funded_again_or_cancelled() {
+    for status in ["awaiting_deposit", "expired", "refunded"] {
+        let (_d, pool) = fresh_db().await;
+        let chain = FakeChain::new(100_000_000);
+        let exec = executor(&pool, &chain, Arc::new(DeadlineVenue::lapsed(status)));
+        let run_id = seed(&pool, 1, 3, 0, "k").await;
+        exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+            .await
+            .unwrap();
+        exec.start(&run_id).await.unwrap();
+        let r = drive_for(&pool, &chain, &exec, &run_id, 200).await;
+        assert_eq!(r.status, "failed", "[{status}]");
+        assert!(
+            r.error_hint.as_deref().unwrap().contains("Fund the run again"),
+            "[{status}] {r:?}"
+        );
+        // Fund again: a fresh quote and deposit address.
+        exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+            .await
+            .unwrap_or_else(|e| panic!("[{status}] fund again: {e:?}"));
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        assert_eq!(r.status, "awaiting_funds", "[{status}]");
+        assert_eq!(funding_of(&r).deposit_address.as_deref(), Some("0xdeposit1"));
+        assert!(r.error_code.is_none());
+        // Or give up on it: cancelled, and no longer an active run.
+        exec.cancel(&run_id).await.unwrap();
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        assert_eq!(r.status, "cancelled");
+        let line = db::lines(&pool, &run_id).await.unwrap().remove(0);
+        assert!(!db::contractor_in_active_run(&pool, &line.contractor_id).await.unwrap());
+        assert_eq!(exec.start(&run_id).await.unwrap_err().body.code, "run_cancelled");
+        assert_eq!(
+            exec.fund(&run_id, None, None).await.unwrap_err().body.code,
+            "run_cancelled"
+        );
+    }
+}
+
+/// SL-02: the web wallet reported the deposit, then the venue refunded it. "Request a new
+/// deposit address" (fund again) works.
+#[tokio::test]
+async fn a_refunded_deposit_can_be_requoted() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(
+        &pool,
+        &chain,
+        Arc::new(PollVenue {
+            script: Mutex::new(vec!["refunded"]),
+        }),
+    );
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    exec.submit_deposit(&run_id, &format!("0x{}", "ab".repeat(32)))
+        .await
+        .unwrap();
+    exec.refresh_funding(&run_id).await.unwrap();
+    assert_eq!(
+        funding_of(&db::get_run(&pool, &run_id).await.unwrap().unwrap()).status,
+        "refunded"
+    );
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    let f = funding_of(&db::get_run(&pool, &run_id).await.unwrap().unwrap());
+    assert_eq!((f.status.as_str(), f.deposit_tx_hash), ("awaiting_deposit", None));
+}
+
+/// SL-10: while the first quote's deposit address is open, a second fund call does not
+/// replace it (a deposit already sent there would be tracked by no run).
+#[tokio::test]
+async fn a_live_deposit_address_is_not_replaced() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let deadline = (time::OffsetDateTime::now_utc() + time::Duration::hours(1))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let exec = executor(
+        &pool,
+        &chain,
+        Arc::new(DeadlineVenue {
+            status: "awaiting_deposit",
+            deadline,
+            quotes: AtomicU32::new(0),
+        }),
+    );
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    let err = exec
+        .fund(&run_id, Some("arb".into()), Some("0xrefund".into()))
+        .await
+        .unwrap_err();
+    assert_eq!(err.body.code, "quote_still_open");
+    assert!(err.body.message.contains("0xdeposit0"));
+    let f = funding_of(&db::get_run(&pool, &run_id).await.unwrap().unwrap());
+    assert_eq!(f.deposit_address.as_deref(), Some("0xdeposit0"));
+}
+
+/// SL-11: GET /funding past the venue's deadline reports the quote expired instead of
+/// offering a dead deposit address.
+#[tokio::test]
+async fn polling_after_the_deadline_reports_expiry() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(&pool, &chain, Arc::new(DeadlineVenue::lapsed("awaiting_deposit")));
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    exec.refresh_funding(&run_id).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(funding_of(&r).status, "expired");
+    assert_eq!(r.status, "awaiting_funds");
+}
+
+/// SL-02 cancel: refused while the venue holds a deposit for the run, allowed for an open
+/// address (the log says where a late deposit goes), a testnet run funded by mistake, and
+/// never for a run that received ZEC.
+#[tokio::test]
+async fn cancel_only_runs_that_received_no_money() {
+    // The venue is swapping the deposit: cancelling would leave that money untracked.
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(
+        &pool,
+        &chain,
+        Arc::new(PollVenue {
+            script: Mutex::new(vec!["processing"]),
+        }),
+    );
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    assert_eq!(exec.cancel(&run_id).await.unwrap_err().body.code, "deposit_in_progress");
+    assert_eq!(
+        db::get_run(&pool, &run_id).await.unwrap().unwrap().status,
+        "awaiting_funds"
+    );
+
+    // An open deposit address with nothing sent: cancel, and a deposit report is refused.
+    let (_d, pool) = fresh_db().await;
+    let exec = executor(
+        &pool,
+        &chain,
+        Arc::new(PollVenue {
+            script: Mutex::new(vec!["awaiting_deposit"]),
+        }),
+    );
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    exec.cancel(&run_id).await.unwrap();
+    exec.cancel(&run_id).await.unwrap(); // idempotent
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "cancelled");
+    assert_eq!(
+        exec.submit_deposit(&run_id, &format!("0x{}", "cd".repeat(32)))
+            .await
+            .unwrap_err()
+            .body
+            .code,
+        "run_cancelled"
+    );
+    let events: Vec<String> = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.message)
+        .collect();
+    assert!(events.iter().any(|m| m.contains("unassigned balance")), "{events:?}");
+
+    // Testnet: funded from the treasury's own balance, nothing moved yet.
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+    exec.cancel(&run_id).await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "cancelled");
+
+    // A paid run stays on record.
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    assert_eq!(exec.cancel(&run_id).await.unwrap_err().body.code, "run_has_funds");
+}
+
+/// A mainnet-like 1Click fill for exactly the requested USD, with USDC conversions. The test
+/// decides how much ZEC arrives.
+struct FillVenue;
+
+#[async_trait]
+impl SwapVenue for FillVenue {
+    fn kind(&self) -> VenueKind {
+        VenueKind::NearIntents
+    }
+    async fn indicative_rate_e6(&self) -> Result<u64, VenueError> {
+        Ok(400_000_000) // $400 per ZEC
+    }
+    async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
+        Ok(Funding {
+            venue: "near-intents-1click".into(),
+            status: "awaiting_deposit".into(),
+            deposit_address: Some("0xdep".into()),
+            requested_usd_cents: req.usd_cents,
+            ..Default::default()
+        })
+    }
+    async fn status(&self, f: &Funding) -> Result<Funding, VenueError> {
+        Ok(Funding {
+            status: "success".into(),
+            funded_usd_cents: Some(f.requested_usd_cents),
+            delivered_txids: vec!["d1".into()],
+            ..f.clone()
+        })
+    }
+    async fn submit_deposit(&self, f: &Funding, _tx: &str) -> Result<Funding, VenueError> {
+        Ok(f.clone())
+    }
+    async fn quote_conversion(
+        &self,
+        req: &payslip::venue::ConversionRequest,
+    ) -> Result<payslip::venue::Conversion, VenueError> {
+        Ok(payslip::venue::Conversion {
+            venue: "near-intents-1click".into(),
+            status: "quoted".into(),
+            deposit_address: "t1venue".into(),
+            amount_zat: req.amount_zat,
+            payout_chain: req.payout_chain.clone(),
+            payout_address: req.payout_address.clone(),
+            ..Default::default()
+        })
+    }
+}
+
+/// SL-04: the USD the service asks for always covers the run it funds, however many lines
+/// convert to USDC (each needs 25,000 zat of overhead, not 10,000), into a fresh treasury,
+/// even when the fill comes in 3% under the indicative price.
+#[tokio::test]
+async fn the_funding_request_covers_converting_lines() {
+    for factor_pct in [100u64, 97] {
+        for convert in [0u32, 3, 4, 6] {
+            let (_d, pool) = fresh_db().await;
+            let chain = FakeChain::new(0);
+            chain.hooks.lock().unwrap().convert_fee = true;
+            let exec = executor(&pool, &chain, Arc::new(FillVenue));
+            let run_id = seed(&pool, 1, 6, convert, "k").await;
+            exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+                .await
+                .unwrap();
+            let f = funding_of(&db::get_run(&pool, &run_id).await.unwrap().unwrap());
+            let delivered =
+                payslip::money::usd_cents_to_zat(f.requested_usd_cents, 400_000_000).unwrap() * factor_pct / 100;
+            chain.hooks.lock().unwrap().received.insert("d1".into(), delivered);
+            chain.s.lock().unwrap().spendable.insert(0, delivered);
+            exec.start(&run_id).await.unwrap();
+            let r = drive_for(&pool, &chain, &exec, &run_id, 600).await;
+            assert_eq!(
+                (r.status.as_str(), r.error_code.as_deref()),
+                ("paid", None),
+                "{convert} of 6 converting at {factor_pct}% of the indicative fill: {:?}",
+                r.error_message
+            );
+            // Converting accounts keep exactly the change carry; held ones end at zero.
+            for i in 1..=6u32 {
+                let left = chain.spendable(i).await.unwrap();
+                let expect = if i <= convert { CHANGE_CARRY_ZAT } else { 0 };
+                assert_eq!(left, expect, "account {i}");
+            }
+        }
+    }
+    let _ = CONVERT_FEE_ZAT;
+}
+
+/// SL-05: switching a contractor to Convert to USDC after their run was funded does not
+/// change that run: it pays the way it was funded (held ZEC to their address) and finishes.
+#[tokio::test]
+async fn a_settlement_change_after_funding_does_not_change_the_run() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().convert_fee = true;
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    let line = db::lines(&pool, &run_id).await.unwrap().remove(0);
+    db::update_contractor(
+        &pool,
+        &line.contractor_id,
+        &NewContractor {
+            name: line.contractor_name.clone(),
+            email: None,
+            unified_address: "contractor:new".into(),
+            settlement_choice: "convert_usdc".into(),
+            payout_chain: Some("base".into()),
+            payout_address: Some("0x000000000000000000000000000000000000dEaD".into()),
+        },
+    )
+    .await
+    .unwrap();
+    exec.start(&run_id).await.unwrap();
+    let r = drive_for(&pool, &chain, &exec, &run_id, 3000).await;
+    assert_eq!(r.status, "paid", "{r:?}");
+    let l = db::lines(&pool, &run_id).await.unwrap().remove(0);
+    assert_eq!(l.settlement_choice, "hold_zec");
+    assert_eq!(chain.external("contractor:1"), l.amount_zec.unwrap() as u64);
+    assert_eq!(chain.external("contractor:new"), 0);
+}
+
+/// SL-05: a payment its account cannot cover does not wait silently for ever: the line and
+/// the run carry `line_underfunded` with a hint.
+#[tokio::test]
+async fn an_underfunded_payment_fails_with_an_error() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().insufficient_from = Some(2);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    let r = drive_for(&pool, &chain, &exec, &run_id, 3000).await;
+    assert_eq!(
+        (r.status.as_str(), r.error_code.as_deref()),
+        ("failed", Some("line_underfunded"))
+    );
+    let l = db::lines(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|l| l.account_index == 2)
+        .unwrap();
+    assert_eq!(l.error_code.as_deref(), Some("line_underfunded"));
+    // Fixed, then executed again: it resumes and pays.
+    chain.hooks.lock().unwrap().insufficient_from = None;
+    exec.start(&run_id).await.unwrap();
+    assert_eq!(drive_for(&pool, &chain, &exec, &run_id, 3000).await.status, "paid");
+}
+
+/// SL-07: lightwalletd refuses one contractor's payment every time. The line shows the node's
+/// reason at once, and after three refused rebuilds the run stops with `broadcast_rejected`.
+#[tokio::test]
+async fn a_payment_the_node_keeps_refusing_fails_the_run_with_its_reason() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().reject_broadcast_from = Some(2);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    // Soon after the payment is built the line carries the node's reason.
+    let mut flagged = false;
+    for _ in 0..400 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let l = db::lines(&pool, &run_id)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|l| l.account_index == 2)
+            .unwrap();
+        if l.error_code.as_deref() == Some("broadcast_rejected") {
+            assert!(l.error_message.unwrap().contains("bad-txns-orchard-anchor-invalid"));
+            assert_eq!(l.status, "broadcast");
+            flagged = true;
+            break;
+        }
+    }
+    assert!(flagged, "the refusal shows on the line");
+    let r = drive_for(&pool, &chain, &exec, &run_id, 1500).await;
+    assert_eq!(
+        (r.status.as_str(), r.error_code.as_deref()),
+        ("failed", Some("broadcast_rejected"))
+    );
+    assert!(r.error_message.unwrap().contains("bad-txns-orchard-anchor-invalid"));
+    assert_eq!(chain.txs_from(2).len(), 3, "built three times, then stopped");
+    // The other lines were paid.
+    let paid = db::lines(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|l| l.status == "confirmed")
+        .count();
+    assert_eq!(paid, 2);
+}
+
+/// SL-08: fees_zat is the fees of mined transactions; a payment that expired unmined and was
+/// rebuilt paid no fee.
+#[tokio::test]
+async fn fees_count_only_mined_transactions() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().drop_first_from = Some(2);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    let r = drive_for(&pool, &chain, &exec, &run_id, 4000).await;
+    assert_eq!(r.status, "paid");
+    assert_eq!(chain.txs_from(2).len(), 2, "one payment was dropped and rebuilt");
+    let s = chain.s.lock().unwrap();
+    let mined_fees: u64 = s.txs.values().filter(|t| t.mined_at.is_some()).map(|t| t.fee).sum();
+    assert_eq!(r.fees_zat as u64, mined_fees);
+}
+
+/// SL-09: a contractor archived after a draft run was created is not paid by it: funding is
+/// refused with a hint to discard the draft.
+#[tokio::test]
+async fn an_archived_contractor_is_not_paid_by_a_draft_run() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    let line = db::lines(&pool, &run_id).await.unwrap().remove(0);
+    db::archive_contractor(&pool, &line.contractor_id).await.unwrap();
+    let err = exec.fund(&run_id, None, None).await.unwrap_err();
+    assert_eq!(err.body.code, "contractor_archived");
+    assert!(err.body.hint.contains("Discard"));
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "draft");
+    assert!(db::delete_draft_run(&pool, &run_id).await.unwrap());
+}
+
+/// SL-12: after a restart, a run the payer executed while it awaited its deposit is resumed;
+/// a run that was only funded (never executed) is not paid by a restart.
+#[tokio::test]
+async fn resume_all_resumes_executed_runs_only() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let venue = || -> Arc<dyn SwapVenue> {
+        Arc::new(PollVenue {
+            script: Mutex::new(vec!["awaiting_deposit"]),
+        })
+    };
+    let exec = executor(&pool, &chain, venue());
+    let waiting = seed(&pool, 1, 3, 0, "a").await;
+    exec.fund(&waiting, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    exec.start(&waiting).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(exec.is_running(&waiting));
+    // Funded on testnet but never executed.
+    let texec = executor(&pool, &chain, testnet_venue());
+    let funded_only = seed(&pool, 4, 3, 0, "b").await;
+    texec.fund(&funded_only, None, None).await.unwrap();
+    // The process restarts.
+    let exec2 = executor(&pool, &chain, venue());
+    exec2.resume_all().await;
+    assert!(exec2.is_running(&waiting), "the executed run resumes");
+    assert!(!exec2.is_running(&funded_only), "funding alone never pays");
+}
+
+/// A crash after the allocation is built and stored, before its txid reaches payslip.db: the
+/// restarted service pays every line once.
+#[tokio::test]
+async fn crash_after_building_the_allocation_pays_once() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().panic_after_create_from = Some(0);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed(&pool, 1, 3, 0, "k").await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    for _ in 0..200 {
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        if !exec.is_running(&run_id) {
+            break;
+        }
+    }
+    assert!(db::get_run(&pool, &run_id)
+        .await
+        .unwrap()
+        .unwrap()
+        .allocation_txid
+        .is_none());
+    let exec2 = executor(&pool, &chain, testnet_venue());
+    exec2.resume_all().await;
+    let r = drive_for(&pool, &chain, &exec2, &run_id, 4000).await;
+    assert_eq!(r.status, "paid");
+    let mined = chain.txs_from(0).iter().filter(|t| t.mined_at.is_some()).count();
+    assert_eq!(mined, 1, "one allocation mined");
+    for l in db::lines(&pool, &run_id).await.unwrap() {
+        assert_eq!(chain.external(&l.unified_address), l.amount_zec.unwrap() as u64);
+    }
+}
+
+/// Two runs funded against a treasury that covers one: the second fails with
+/// `treasury_insufficient` and a hint instead of waiting for ever.
+#[tokio::test]
+async fn a_second_run_on_a_short_treasury_fails_with_a_hint() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(1_300_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let a = seed(&pool, 1, 3, 0, "a").await;
+    let b = seed(&pool, 4, 3, 0, "b").await;
+    exec.fund(&a, None, None).await.unwrap();
+    if exec.fund(&b, None, None).await.is_err() {
+        return; // refused up front: fine
+    }
+    exec.start(&a).await.unwrap();
+    exec.start(&b).await.unwrap();
+    for _ in 0..3000 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let ra = db::get_run(&pool, &a).await.unwrap().unwrap();
+        let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
+        let done = |r: &db::RunRow, id: &str| (r.status == "paid" || r.status == "failed") && !exec.is_running(id);
+        if done(&ra, &a) && done(&rb, &b) {
+            break;
+        }
+    }
+    let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
+    assert!(rb.status == "failed" || rb.status == "paid", "{rb:?}");
 }

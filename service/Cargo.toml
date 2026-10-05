@@ -2,7 +2,7 @@
 name = "payslip-service"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.94"
 license = "MIT"
 description = "Payslip: private payroll on Zcash. Wallet core, run executor, statement engine, HTTP API."
 publish = false
@@ -65,6 +65,8 @@ thiserror = "2"
 sha2 = "0.11"
 hex = "0.4"
 base64 = "0.22"
+# Solana payout address check (already in the dependency tree at 0.5.1).
+bs58 = "0.5"
 csv = "1.4"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }

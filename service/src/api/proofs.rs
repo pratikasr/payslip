@@ -71,6 +71,8 @@ async fn create(State(s): State<AppStateRef>, Json(req): Json<CreateReq>) -> Api
         "network": s.cfg.network.as_str(),
         "txid": txid_hex(&txid),
         "height": height.map(u32::from),
+        // A proof of an unmined payment verifies as valid only once the transaction is mined.
+        "mined": height.is_some(),
         "proofs": proofs,
     })))
 }
@@ -133,7 +135,7 @@ async fn verify(
         .filter(|a| !a.trim().is_empty())
         .map(|a| proof::address_matches(&params, a, &opened.recipient));
     Ok(Json(verified_json(
-        &s,
+        s.cfg.network,
         &token,
         &opened,
         height,
@@ -143,8 +145,9 @@ async fn verify(
     )))
 }
 
-fn verified_json(
-    s: &AppStateRef,
+/// The verifier's answer for an opened proof.
+pub fn verified_json(
+    network: ZcashNetwork,
     token: &ProofToken,
     o: &OpenedOutput,
     height: Option<BlockHeight>,
@@ -152,14 +155,19 @@ fn verified_json(
     block_time: Option<i64>,
     address_check: Option<Option<bool>>,
 ) -> Value {
-    let params = s.cfg.network.params();
+    let params = network.params();
     let txid = txid_hex(&token.txid);
     let confirmations = height.map(|h| u32::from(tip).saturating_sub(u32::from(h)) + 1);
+    let mined = height.is_some();
     json!({
-        "valid": true,
-        "network": s.cfg.network.as_str(),
+        // The proof opened a real output of this transaction (the decrypted note matches its
+        // commitment on chain) and the transaction is in a block. An unmined transaction can
+        // still be dropped, so its proof is not valid yet (ADR-024).
+        "valid": mined,
+        "mined": mined,
+        "network": network.as_str(),
         "txid": txid,
-        "explorer_url": s.cfg.network.explorer_tx_url(&txid),
+        "explorer_url": network.explorer_tx_url(&txid),
         "height": height.map(u32::from),
         "confirmations": confirmations,
         "block_time": block_time
@@ -172,8 +180,16 @@ fn verified_json(
         "address_valid": address_check.map(|c| c.is_some()),
         "memo": memo_json(&o.memo),
         "discloses": "This one payment: its amount, the address it was paid to and its memo. Not the sender, not the payer's other payments, and no viewing key.",
+        "proves": PROVES,
+        "does_not_prove": DOES_NOT_PROVE,
     })
 }
+
+/// What a valid proof establishes (ADR-024).
+const PROVES: &str = "A shielded payment of this amount to this address, carrying this memo, is in this transaction on chain, at the height shown.";
+
+/// What it does not: the memo is the sender's own claim.
+const DOES_NOT_PROVE: &str = "Who sent it, or that it came from a Payslip payer. The memo (run, period, invoice, USD basis) was written by the sender and is not checked against any payroll record; anyone can send ZEC with such a memo.";
 
 fn memo_json(bytes: &[u8; 512]) -> Value {
     match memo::decode_bytes(Some(bytes)) {
@@ -184,6 +200,8 @@ fn memo_json(bytes: &[u8; 512]) -> Value {
             "invoice_ref": p.invoice_ref,
             "usd_basis_cents": p.usd_basis_cents,
             "rate_usd_per_zec_e6": p.rate_e6,
+            // Written by whoever sent the payment; nothing checks it against a payroll.
+            "asserted_by_sender": true,
         }),
         Decoded::Payslip(_) => json!({ "kind": "payslip_internal" }),
         Decoded::Unlabelled { text, .. } => match text {
@@ -218,5 +236,71 @@ async fn fetch(s: &AppStateRef, txid: TxId) -> ApiResult<(Transaction, Option<Bl
             format!("Transaction {} is not on {}.", txid_hex(&txid), s.cfg.network.as_str()),
             "Check the txid and the network.",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memo::{PayLineMemo, Period};
+
+    fn opened() -> OpenedOutput {
+        let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
+        let fvk = orchard::keys::FullViewingKey::from(&sk);
+        let memo_text = PayslipMemo::PayLine(PayLineMemo {
+            run_id: uuid::Uuid::nil(),
+            period: Period::new(2026, 9).unwrap(),
+            invoice_ref: "INV-1".into(),
+            usd_basis_cents: 480_000,
+            rate_e6: 1_350_000_000,
+        })
+        .encode()
+        .unwrap();
+        let memo = *memo::to_memo_bytes(&memo_text).unwrap().as_array();
+        OpenedOutput {
+            pool: proof::Pool::Ironwood,
+            action_index: 0,
+            value_zat: 355_555,
+            recipient: fvk.address_at(0u32, zip32::Scope::External),
+            memo,
+            ock: [1; 32],
+        }
+    }
+
+    fn token() -> ProofToken {
+        ProofToken {
+            mainnet: false,
+            pool: proof::Pool::Ironwood,
+            action_index: 0,
+            txid: TxId::from_bytes([3; 32]),
+            ock: [1; 32],
+        }
+    }
+
+    /// Audit SL-19: a payment still in the mempool can be dropped, so its proof is not valid
+    /// yet; the answer says what the proof does and does not establish.
+    #[test]
+    fn unmined_payments_do_not_verify_and_the_memo_is_the_senders_claim() {
+        let tip = BlockHeight::from_u32(4_465_800);
+        let pending = verified_json(ZcashNetwork::Testnet, &token(), &opened(), None, tip, None, None);
+        assert_eq!(pending["valid"], false);
+        assert_eq!(pending["mined"], false);
+        assert_eq!(pending["confirmations"], Value::Null);
+        let mined = verified_json(
+            ZcashNetwork::Testnet,
+            &token(),
+            &opened(),
+            Some(BlockHeight::from_u32(4_465_671)),
+            tip,
+            Some(1_791_200_530),
+            None,
+        );
+        assert_eq!(mined["valid"], true);
+        assert_eq!(mined["mined"], true);
+        assert_eq!(mined["confirmations"], 130);
+        assert_eq!(mined["memo"]["kind"], "pay_line");
+        assert_eq!(mined["memo"]["asserted_by_sender"], true);
+        assert!(mined["does_not_prove"].as_str().unwrap().contains("Who sent it"));
+        assert!(mined["proves"].as_str().unwrap().contains("on chain"));
     }
 }

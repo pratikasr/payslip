@@ -15,7 +15,7 @@ use zcash_protocol::consensus::{BlockHeight, Network};
 use crate::{
     config::{Config, ZcashNetwork},
     error::ApiError,
-    wallet::{WalletCore, WalletHandle},
+    wallet::{lwd, WalletCore, WalletHandle},
 };
 
 /// A validated unified full viewing key.
@@ -129,9 +129,10 @@ impl ViewingKey {
                         format!("Use the {svc_net} key from the same payer, or open the {key_net} Payslip deployment."),
                     ));
                 }
+                tracing::debug!("viewing key did not decode: {e}");
                 Err(ApiError::bad_request(
                     "invalid_viewing_key",
-                    format!("That is not a valid unified full viewing key ({e})."),
+                    "That is not a valid unified full viewing key: it may be cut short or mistyped.",
                     paste_hint,
                 ))
             }
@@ -164,6 +165,8 @@ pub struct ScanResult {
     pub scanned_to_height: u32,
     pub chain_tip: u32,
     pub outputs: Vec<ScanOutput>,
+    /// Per key fingerprint: the height its scan starts at (its earliest requested birthday).
+    pub scanned_from: HashMap<String, u32>,
 }
 
 struct Viewer {
@@ -217,60 +220,151 @@ impl ViewerRegistry {
     }
 
     /// Imports the keys (with their birthdays), syncs, and returns every output that involves
-    /// them. `keys` are (key, label, birthday height).
+    /// them. `keys` are (key, label, birthday height). A key already scanned from a later height
+    /// is rescanned from the earlier one. If the caller stops waiting, the scan stops at its next
+    /// network round trip; the next request for the same keys resumes it.
     pub async fn scan(&self, keys: Vec<(ViewingKey, String, u32)>) -> anyhow::Result<ScanResult> {
+        self.scan_keys(
+            keys.into_iter()
+                .map(|(key, label, birthday)| ScanKey {
+                    key,
+                    label,
+                    birthday,
+                    rescan_if_earlier: true,
+                })
+                .collect(),
+        )
+        .await
+    }
+
+    /// Like [`ViewerRegistry::scan`], with a choice per key: `rescan_if_earlier` false keeps an
+    /// existing cache of the key whatever `birthday` says (the caller has only a default start,
+    /// not a height it was asked for).
+    pub async fn scan_keys(&self, keys: Vec<ScanKey>) -> anyhow::Result<ScanResult> {
         if keys.is_empty() {
             anyhow::bail!("no viewing keys");
         }
-        let mut fps: Vec<&str> = keys.iter().map(|k| k.0.fingerprint.as_str()).collect();
-        fps.sort();
-        fps.dedup();
-        let set_key = hex::encode(&Sha256::digest(fps.join(",").as_bytes())[..12]);
-        let viewer = self.viewer(&set_key).await?;
+        let fps: Vec<&str> = keys.iter().map(|k| k.key.fingerprint.as_str()).collect();
+        let viewer = self.viewer(&set_key_of(&fps)).await?;
         let path = viewer.path.clone();
         viewer
             .handle
-            .run(move |w| {
+            .run_cancellable(move |w| {
                 Box::pin(async move {
-                    let mut by_uuid: HashMap<uuid::Uuid, String> = HashMap::new();
-                    for (key, label, birthday) in &keys {
-                        let id = w
-                            .ensure_ufvk_account(label, &key.ufvk, BlockHeight::from_u32(*birthday))
-                            .await?;
-                        by_uuid.insert(id.expose_uuid(), key.fingerprint.clone());
-                    }
-                    let report = w.sync().await?;
-                    let mut outputs = read_outputs(&path, &by_uuid)?;
-                    // Fill block times the wallet did not record.
-                    let mut times: HashMap<u32, i64> = HashMap::new();
-                    for o in outputs.iter_mut() {
-                        if let (None, Some(h)) = (o.block_time, o.mined_height) {
-                            if let Some(t) = times.get(&h) {
-                                o.block_time = Some(*t);
-                                continue;
-                            }
-                            let block = w
-                                .client()
-                                .get_block(BlockId {
-                                    height: u64::from(h),
-                                    hash: vec![],
-                                })
-                                .await
-                                .with_context(|| format!("GetBlock {h}"))?
-                                .into_inner();
-                            times.insert(h, i64::from(block.time));
-                            o.block_time = Some(i64::from(block.time));
+                    match scan_once(w, &keys, &path).await {
+                        // An idle connection the server closed (it drops idle HTTP/2 streams
+                        // after some minutes): reconnect and try once more before answering.
+                        Err(e) if lwd::is_transport_error(&e) => {
+                            tracing::info!("lightwalletd connection dropped ({e:#}); reconnecting");
+                            w.reconnect()?;
+                            scan_once(w, &keys, &path).await
                         }
+                        other => other,
                     }
-                    Ok(ScanResult {
-                        scanned_to_height: report.fully_scanned,
-                        chain_tip: report.chain_tip,
-                        outputs,
-                    })
                 })
             })
             .await?
     }
+
+    /// The cache database of exactly this key set (it may not exist).
+    pub fn cache_file(&self, fingerprints: &[&str]) -> PathBuf {
+        self.dir.join(format!("{}.db", set_key_of(fingerprints)))
+    }
+
+    /// Deletes the cached scan of exactly this key set (the viewer database that holds the
+    /// keys). Returns false when there was none. Refused while a scan of the set is running.
+    pub async fn forget(&self, fingerprints: &[&str]) -> anyhow::Result<Result<bool, ForgetBusy>> {
+        let set_key = set_key_of(fingerprints);
+        let mut map = self.viewers.lock().await;
+        if let Some(v) = map.get(&set_key) {
+            // The map holds one reference; a running scan holds another.
+            if Arc::strong_count(v) > 1 {
+                return Ok(Err(ForgetBusy));
+            }
+            map.remove(&set_key);
+        }
+        let path = self.dir.join(format!("{set_key}.db"));
+        let existed = path.exists();
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let p = self.dir.join(format!("{set_key}.db{suffix}"));
+            match std::fs::remove_file(&p) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(anyhow::Error::from(e).context(format!("deleting {}", p.display()))),
+            }
+        }
+        Ok(Ok(existed))
+    }
+}
+
+/// One key to scan and where its scan starts.
+#[derive(Clone, Debug)]
+pub struct ScanKey {
+    pub key: ViewingKey,
+    pub label: String,
+    pub birthday: u32,
+    /// Rescan a key already cached from a later height from `birthday`. True when the height
+    /// was asked for; false when it is only a default.
+    pub rescan_if_earlier: bool,
+}
+
+/// A scan of the key set is running, so its cache cannot be deleted now.
+#[derive(Debug)]
+pub struct ForgetBusy;
+
+/// The cache name of a key set: the same keys in any order share one viewer database.
+fn set_key_of(fingerprints: &[&str]) -> String {
+    let mut fps = fingerprints.to_vec();
+    fps.sort();
+    fps.dedup();
+    hex::encode(&Sha256::digest(fps.join(",").as_bytes())[..12])
+}
+
+/// One attempt at importing the keys, syncing and reading back their outputs.
+async fn scan_once(w: &mut WalletCore, keys: &[ScanKey], path: &PathBuf) -> anyhow::Result<ScanResult> {
+    let mut by_uuid: HashMap<uuid::Uuid, String> = HashMap::new();
+    let mut scanned_from = HashMap::new();
+    for k in keys {
+        let (id, from) = w
+            .ensure_ufvk_account(
+                &k.label,
+                &k.key.ufvk,
+                BlockHeight::from_u32(k.birthday),
+                k.rescan_if_earlier,
+            )
+            .await?;
+        by_uuid.insert(id.expose_uuid(), k.key.fingerprint.clone());
+        scanned_from.insert(k.key.fingerprint.clone(), u32::from(from));
+    }
+    let report = w.sync().await?;
+    let mut outputs = read_outputs(path, &by_uuid)?;
+    // Fill block times the wallet did not record.
+    let mut times: HashMap<u32, i64> = HashMap::new();
+    for o in outputs.iter_mut() {
+        if let (None, Some(h)) = (o.block_time, o.mined_height) {
+            if let Some(t) = times.get(&h) {
+                o.block_time = Some(*t);
+                continue;
+            }
+            let block = w
+                .client()
+                .get_block(BlockId {
+                    height: u64::from(h),
+                    hash: vec![],
+                })
+                .await
+                .with_context(|| format!("GetBlock {h}"))?
+                .into_inner();
+            times.insert(h, i64::from(block.time));
+            o.block_time = Some(i64::from(block.time));
+        }
+    }
+    Ok(ScanResult {
+        scanned_to_height: report.fully_scanned,
+        chain_tip: report.chain_tip,
+        outputs,
+        scanned_from,
+    })
 }
 
 fn uuid_from_row(v: rusqlite::types::ValueRef<'_>) -> Option<uuid::Uuid> {

@@ -2764,6 +2764,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "bip0039",
+ "bs58",
  "clap",
  "csv",
  "dotenvy",

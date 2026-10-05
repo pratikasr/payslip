@@ -10,7 +10,7 @@
 //! rebuilt.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -59,21 +59,80 @@ pub fn line_overhead_zat(l: &LineRow) -> u64 {
     }
 }
 
+/// Venue statuses that mean the deposit has arrived: the run is funded from here on.
+fn deposit_received(status: &str) -> bool {
+    matches!(status, "deposit_seen" | "processing" | "success")
+}
+
 fn conversion_of(l: &LineRow) -> Option<crate::venue::Conversion> {
     l.settlement_state.as_deref().and_then(|s| serde_json::from_str(s).ok())
 }
 
-/// Upper estimate of all network fees for a run with `n` lines: n pay line transactions and one
-/// allocation transaction with n + 1 outputs and up to two extra inputs.
-pub fn fee_estimate_zat(n: usize) -> u64 {
-    n as u64 * LINE_FEE_ZAT + MARGINAL_FEE_ZAT * (n as u64 + 3).max(2)
+/// Upper estimate of what a run needs on top of its pay lines, for `n` lines of which
+/// `converting` convert to USDC: each line's overhead as the allocation funds it (its payment
+/// fee, plus the change carry for a converting line, see [`line_overhead_zat`]) and one
+/// allocation transaction with n + 1 outputs and up to two extra inputs. This is exactly the
+/// overhead `record_fill` checks the treasury against.
+pub fn fee_estimate_zat(n: usize, converting: usize) -> u64 {
+    let converting = converting.min(n) as u64;
+    let held = n as u64 - converting;
+    held * LINE_FEE_ZAT + converting * (CONVERT_FEE_ZAT + CHANGE_CARRY_ZAT) + MARGINAL_FEE_ZAT * (n as u64 + 3)
 }
 
-/// USD to request from the venue: the payroll plus 1.5 times the fee estimate at `rate_e6`,
-/// rounded up to the cent. The surplus stays in the treasury and is reported as unspent.
-pub fn funding_request_cents(total_usd_cents: u64, n: usize, rate_e6: u64) -> u64 {
-    let fee_cents = money::zat_to_usd_cents(fee_estimate_zat(n) * 3 / 2, rate_e6).max(1);
+/// USD to request from the venue: the payroll plus 1.5 times the overhead estimate at `rate_e6`,
+/// rounded up to the cent. Pay lines are converted at the actual fill rate, so the payroll
+/// itself is always covered; only the overhead must fit in the headroom. Valued at the fill
+/// rate, 1.5 times the estimate still covers it when the venue fee, Payslip's app fee and
+/// slippage together take up to a third of the swap. The surplus stays in the treasury and is
+/// reported as unspent.
+pub fn funding_request_cents(total_usd_cents: u64, n: usize, converting: usize, rate_e6: u64) -> u64 {
+    let fee_cents = money::zat_to_usd_cents(fee_estimate_zat(n, converting) * 3 / 2, rate_e6).max(1);
     total_usd_cents + fee_cents + 1
+}
+
+/// Minutes after a quote's deadline before Payslip treats it as expired. 1Click refunds a
+/// deposit that arrives after the deadline; the grace covers one sent at the last moment.
+pub const DEADLINE_GRACE_MINUTES: i64 = 10;
+
+/// A quote still awaiting its deposit after its deadline (plus the grace) is expired: the
+/// deposit address is dead and the payer may request a new quote. Any other venue status wins.
+pub fn apply_deadline(mut f: Funding, now: OffsetDateTime) -> Funding {
+    if f.status == "awaiting_deposit" {
+        if let Some(deadline) = f
+            .deadline
+            .as_deref()
+            .and_then(|d| OffsetDateTime::parse(d, &Rfc3339).ok())
+        {
+            if now > deadline + time::Duration::minutes(DEADLINE_GRACE_MINUTES) {
+                f.status = "expired".into();
+            }
+        }
+    }
+    f
+}
+
+/// Venue statuses after which no money is on its way to the treasury: the quote can be replaced
+/// and the run cancelled. (`awaiting_deposit` qualifies only once its deadline passed, which
+/// [`apply_deadline`] turns into `expired`.)
+fn funding_closed(status: &str) -> bool {
+    matches!(status, "expired" | "refunded" | "failed")
+}
+
+/// Rebuilds of one transaction that the node refused every time before the run stops with
+/// `broadcast_rejected`.
+pub const MAX_REJECTED_BUILDS: u32 = 3;
+
+/// Blocks a payment (or an allocation) may wait for spendable funds before the run stops with
+/// an error. Longer than a transaction's expiry window (40 blocks by default), because a
+/// transaction that expired unmined, for example one built just before a crash, holds its
+/// notes until then.
+pub const MAX_UNDERFUNDED_BLOCKS: u32 = 120;
+
+/// The node's reason when it refused a transaction, as opposed to not answering.
+fn rejection(e: &anyhow::Error) -> Option<String> {
+    e.chain()
+        .find_map(|c| c.downcast_ref::<crate::wallet::lwd::BroadcastError>())
+        .map(|b| b.message.clone())
 }
 
 pub fn period_label(period_start: &str) -> String {
@@ -338,6 +397,40 @@ struct Inner {
     poll: Duration,
     /// Blocks a payment must be buried under (counting its own) before its line is confirmed.
     confirm_depth: u32,
+    /// Per line (or per run, for the allocation): rebuilds whose transaction the node refused.
+    /// In memory: a restart only starts the count again.
+    rejected_builds: Mutex<HashMap<String, u32>>,
+    /// Allocation txids the node refused, with its reason (logged once per transaction).
+    rejected_allocations: Mutex<HashMap<String, String>>,
+    /// Per line (or per run, for the allocation): the tip when its account first could not cover
+    /// the transaction. Cleared when the transaction is built.
+    underfunded: Mutex<HashMap<String, u32>>,
+}
+
+/// Records the tip at which a shortfall started (if not yet recorded) and returns
+/// (blocks it has lasted, whether it just started).
+fn shortfall(map: &Mutex<HashMap<String, u32>>, key: &str, tip: u32) -> (u32, bool) {
+    let Ok(mut m) = map.lock() else { return (0, true) };
+    let mut first = false;
+    let start = *m.entry(key.to_string()).or_insert_with(|| {
+        first = true;
+        tip
+    });
+    (tip.saturating_sub(start), first)
+}
+
+/// Adds one to `key`'s counter and returns the new value.
+fn bump(map: &Mutex<HashMap<String, u32>>, key: &str) -> u32 {
+    let Ok(mut m) = map.lock() else { return 1 };
+    let n = m.entry(key.to_string()).or_insert(0);
+    *n += 1;
+    *n
+}
+
+fn reset(map: &Mutex<HashMap<String, u32>>, key: &str) {
+    if let Ok(mut m) = map.lock() {
+        m.remove(key);
+    }
 }
 
 #[derive(Clone)]
@@ -392,6 +485,9 @@ impl Executor {
                 changes,
                 poll,
                 confirm_depth: confirm_depth.max(1),
+                rejected_builds: Mutex::new(HashMap::new()),
+                rejected_allocations: Mutex::new(HashMap::new()),
+                underfunded: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -425,8 +521,11 @@ impl Executor {
         Ok(run_json(self.inner.network, &r, &lines))
     }
 
-    /// Requests funding from the venue. Valid in `draft`, or in `awaiting_funds` when the quote
-    /// expired or failed before any deposit (a fresh quote replaces it).
+    /// Requests funding from the venue. Valid in `draft`, and again for a run that received no
+    /// money (no fill, no allocation) once its quote is closed: expired (including a deposit
+    /// window past its deadline), refunded or failed. A quote whose deposit address is still
+    /// open, or whose deposit is on its way, is never replaced: a deposit already sent to it
+    /// would then be tracked by no run.
     pub async fn fund(
         &self,
         run_id: &str,
@@ -437,33 +536,68 @@ impl Executor {
         let run = db::get_run(db, run_id)
             .await?
             .ok_or_else(|| ApiError::not_found("Run"))?;
-        let current: Option<Funding> = run.venue_state.as_deref().and_then(|s| serde_json::from_str(s).ok());
-        let requotable = run.status == "awaiting_funds"
-            && current
-                .as_ref()
-                .map(|f| {
-                    matches!(
-                        f.status.as_str(),
-                        "awaiting_deposit" | "expired" | "refunded" | "failed"
-                    )
-                })
-                .unwrap_or(true)
-            && current.as_ref().map(|f| f.deposit_tx_hash.is_none()).unwrap_or(true);
-        if run.status != "draft" && !requotable {
-            return Err(ApiError::conflict(
-                "run_already_funded",
-                format!("This run is {} and cannot be funded again.", run.status),
-                "Open the run to follow its progress.",
-            ));
+        let testnet = self.inner.venue.kind() == crate::config::VenueKind::TestnetFixedRate;
+        match run.status.as_str() {
+            "draft" => {}
+            "cancelled" => {
+                return Err(ApiError::conflict(
+                    "run_cancelled",
+                    "This run was cancelled.",
+                    "Create a new run to pay these contractors.",
+                ))
+            }
+            // `funded` too: the venue saw a deposit, then refunded it.
+            "awaiting_funds" | "failed" | "funded"
+                if run.funding_amount.is_none()
+                    && run.zec_acquired.is_none()
+                    && run.allocation_txid.is_none()
+                    && !(testnet && run.status == "funded") =>
+            {
+                if let Some(f) = run
+                    .venue_state
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str::<Funding>(s).ok())
+                {
+                    if !testnet {
+                        let g = self.current_funding(run_id, &f).await?;
+                        self.requote_allowed(&g)?;
+                    }
+                }
+            }
+            "awaiting_funds" | "failed" => {
+                return Err(ApiError::conflict(
+                    "run_already_funded",
+                    "This run already received its ZEC.",
+                    "Execute the run again; it resumes from its last saved step.",
+                ))
+            }
+            other => {
+                return Err(ApiError::conflict(
+                    "run_already_funded",
+                    format!("This run is {other}; its funding is complete."),
+                    "Open the run to follow its progress.",
+                ))
+            }
         }
         let lines = db::lines(db, run_id).await?;
+        if let Some(l) = lines.iter().find(|l| l.contractor_archived) {
+            return Err(ApiError::conflict(
+                "contractor_archived",
+                format!("{} was archived after this run was created.", l.contractor_name),
+                if run.status == "draft" {
+                    "Discard this run and create a new one without them."
+                } else {
+                    "Cancel this run and create a new one without them."
+                },
+            ));
+        }
         let total: u64 = lines.iter().map(|l| l.amount_usd_basis as u64).sum();
-        let testnet = self.inner.venue.kind() == crate::config::VenueKind::TestnetFixedRate;
+        let converting = lines.iter().filter(|l| converts(l)).count();
         let indicative = match self.inner.venue.indicative_rate_e6().await {
             Ok(r) => r,
             Err(e) => return Err(venue_api_error(e)),
         };
-        let request_cents = funding_request_cents(total, lines.len(), indicative);
+        let request_cents = funding_request_cents(total, lines.len(), converting, indicative);
         let recipient = self.inner.chain.account_address(TREASURY_INDEX).await?;
         if testnet {
             let need = money::usd_cents_to_zat(request_cents, indicative).unwrap_or(u64::MAX);
@@ -495,8 +629,12 @@ impl Executor {
             &serde_json::to_value(&quote).map_err(anyhow::Error::from)?,
         )
         .await?;
+        // From here on the run pays each contractor the way they were set up now.
+        db::fix_line_payouts(db, run_id).await?;
+        // A new quote waits for the payer to execute the run again.
+        db::set_execute_requested(db, run_id, false).await?;
         let to = if testnet { "funded" } else { "awaiting_funds" };
-        db::transition(db, run_id, &["draft", "awaiting_funds"], to).await?;
+        db::transition(db, run_id, &["draft", "awaiting_funds", "failed", "funded"], to).await?;
         self.log(
             run_id,
             if testnet {
@@ -512,6 +650,107 @@ impl Executor {
                     quote.origin_chain.clone().unwrap_or_default(),
                     quote.deposit_address.clone().unwrap_or_default()
                 )
+            },
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Asks the venue where a run's quote stands now (deadline applied) and stores it.
+    async fn current_funding(&self, run_id: &str, f: &Funding) -> Result<Funding, ApiError> {
+        let g = self.inner.venue.status(f).await.map_err(venue_api_error)?;
+        let g = apply_deadline(g, OffsetDateTime::now_utc());
+        if &g != f {
+            db::set_venue(
+                &self.inner.db,
+                run_id,
+                &g.venue,
+                &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
+            )
+            .await?;
+            self.notify(run_id);
+        }
+        Ok(g)
+    }
+
+    /// Whether a quote in state `f` may be replaced (or the run cancelled): only once no money
+    /// can still reach the treasury through it.
+    fn requote_allowed(&self, f: &Funding) -> Result<(), ApiError> {
+        if funding_closed(&f.status) {
+            return Ok(());
+        }
+        Err(match f.status.as_str() {
+            "awaiting_deposit" => ApiError::conflict(
+                "quote_still_open",
+                format!(
+                    "The deposit address {} is open until {}.",
+                    f.deposit_address.clone().unwrap_or_default(),
+                    f.deadline.clone().unwrap_or_else(|| "the venue closes it".into())
+                ),
+                "Send the deposit to that address, or wait for the quote to expire and request a new one, or cancel the run.",
+            ),
+            "incomplete" => ApiError::conflict(
+                "deposit_in_progress",
+                "The venue holds a deposit for this run that is smaller than the quote.",
+                "Send the remaining USDC to the same deposit address, or wait for the venue to refund it, then try again.",
+            ),
+            other => ApiError::conflict(
+                "deposit_in_progress",
+                format!("The venue has a deposit for this run ({other}); its ZEC is on the way to the treasury."),
+                "Wait for the swap to finish, then execute the run.",
+            ),
+        })
+    }
+
+    /// Cancels a run that received no money: no fill recorded and no allocation built, and no
+    /// deposit at the venue that could still reach the treasury. The run stays on record with
+    /// status `cancelled` and no longer counts as active.
+    pub async fn cancel(&self, run_id: &str) -> Result<(), ApiError> {
+        let db = &self.inner.db;
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
+        if run.status == "cancelled" {
+            return Ok(());
+        }
+        let has_money = run.funding_amount.is_some() || run.zec_acquired.is_some() || run.allocation_txid.is_some();
+        if has_money || !matches!(run.status.as_str(), "draft" | "awaiting_funds" | "funded" | "failed") {
+            return Err(ApiError::conflict(
+                "run_has_funds",
+                format!(
+                    "This run is {} and has received ZEC, so it cannot be cancelled.",
+                    run.status
+                ),
+                "Execute the run to finish paying it; a run that received money stays on record.",
+            ));
+        }
+        if let Some(f) = run
+            .venue_state
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Funding>(s).ok())
+        {
+            // The testnet venue moves nothing: its "success" is the treasury's own balance. An
+            // open deposit address may be abandoned; a deposit the venue already holds may not.
+            if f.venue != crate::config::VenueKind::TestnetFixedRate.as_str() {
+                let g = self.current_funding(run_id, &f).await?;
+                if g.status != "awaiting_deposit" {
+                    self.requote_allowed(&g)?;
+                }
+            }
+        }
+        if !db::cancel_run(db, run_id, &["draft", "awaiting_funds", "funded", "failed"]).await? {
+            return Err(ApiError::conflict(
+                "run_has_funds",
+                "This run changed while it was being cancelled and may have received ZEC.",
+                "Open the run to see its state.",
+            ));
+        }
+        self.log(
+            run_id,
+            if run.status == "awaiting_funds" {
+                "Run cancelled by the payer. A deposit sent to its old address after this still reaches the treasury as unassigned balance."
+            } else {
+                "Run cancelled by the payer"
             },
         )
         .await;
@@ -537,6 +776,9 @@ impl Executor {
         };
         if matches!(run.status.as_str(), "awaiting_funds" | "funded" | "swapping") {
             let g = self.inner.venue.status(&f).await.map_err(venue_api_error)?;
+            // Past the deadline the deposit address is dead: say so instead of offering it.
+            let g = apply_deadline(g, OffsetDateTime::now_utc());
+            let mut changed = false;
             if g != f {
                 db::set_venue(
                     db,
@@ -545,9 +787,23 @@ impl Executor {
                     &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
                 )
                 .await?;
-                if g.status == "deposit_seen" {
-                    db::transition(db, run_id, &["awaiting_funds"], "funded").await?;
-                }
+                changed = true;
+            }
+            // Funded as soon as the venue has the deposit, whichever status a poll happens to see
+            // (a 5-second poll can miss the brief deposit_seen, and the web wallet's own report
+            // stores deposit_seen before any poll).
+            if deposit_received(&g.status) && db::transition(db, run_id, &["awaiting_funds"], "funded").await? {
+                changed = true;
+            }
+            // A deposit the venue then refunded (or a swap that failed) leaves the run unfunded
+            // again, ready for a new quote, unless the fill was already recorded.
+            if funding_closed(&g.status)
+                && run.funding_amount.is_none()
+                && db::transition(db, run_id, &["funded"], "awaiting_funds").await?
+            {
+                changed = true;
+            }
+            if changed {
                 self.notify(run_id);
             }
         }
@@ -570,6 +826,13 @@ impl Executor {
                 "Fund the run first.",
             ));
         };
+        if run.status == "cancelled" {
+            return Err(ApiError::conflict(
+                "run_cancelled",
+                "This run was cancelled.",
+                "Create a new run; a deposit to the cancelled run's address reaches the treasury unassigned.",
+            ));
+        }
         let g = self
             .inner
             .venue
@@ -583,8 +846,12 @@ impl Executor {
             &serde_json::to_value(&g).map_err(anyhow::Error::from)?,
         )
         .await?;
+        if deposit_received(&g.status) {
+            db::transition(db, run_id, &["awaiting_funds"], "funded").await?;
+        }
         self.log(run_id, format!("Deposit transaction {tx_hash} reported to the venue"))
             .await;
+        self.notify(run_id);
         Ok(())
     }
 
@@ -627,6 +894,13 @@ impl Executor {
                 ))
             }
             "paid" => return Ok(()),
+            "cancelled" => {
+                return Err(ApiError::conflict(
+                    "run_cancelled",
+                    "This run was cancelled.",
+                    "Create a new run to pay these contractors.",
+                ))
+            }
             "failed" => {
                 let back = run.failed_from.clone().unwrap_or_else(|| "funded".into());
                 db::transition(db, run_id, &["failed"], &back).await?;
@@ -634,6 +908,8 @@ impl Executor {
             }
             _ => {}
         }
+        // Remembered so a restart resumes this run, and only runs the payer executed.
+        db::set_execute_requested(db, run_id, true).await?;
         self.spawn(run_id.to_string());
         Ok(())
     }
@@ -658,16 +934,20 @@ impl Executor {
         });
     }
 
-    /// Restarts every run that was executing when the service stopped.
+    /// Restarts every run that was executing when the service stopped. A run waiting for its
+    /// deposit, or funded, resumes only if the payer had executed it: funding alone never pays.
     pub async fn resume_all(&self) {
         let Ok(runs) = db::list_runs(&self.inner.db).await else {
             return;
         };
         for r in runs {
-            if matches!(
-                r.status.as_str(),
-                "funded" | "swapping" | "swapped" | "allocating" | "paying"
-            ) {
+            let resume = match r.status.as_str() {
+                // Only the executor reaches these.
+                "swapping" | "swapped" | "allocating" | "paying" => true,
+                "awaiting_funds" | "funded" => r.execute_requested,
+                _ => false,
+            };
+            if resume {
                 tracing::info!("resuming run {} in {}", r.id, r.status);
                 self.spawn(r.id);
             }
@@ -737,6 +1017,7 @@ impl Executor {
             .ok_or_else(|| permanent("not_funded", "The run has no funding request.", "Fund the run first."))?;
         let f = match self.inner.venue.status(&f).await {
             Ok(g) => {
+                let g = apply_deadline(g, OffsetDateTime::now_utc());
                 if g != f {
                     db::set_venue(
                         db,
@@ -752,22 +1033,7 @@ impl Executor {
             Err(VenueError::Rejected { code, message, hint }) => return Err(permanent(code, message, hint)),
         };
         match f.status.as_str() {
-            "awaiting_deposit" => {
-                if let Some(deadline) = f
-                    .deadline
-                    .as_deref()
-                    .and_then(|d| OffsetDateTime::parse(d, &Rfc3339).ok())
-                {
-                    if OffsetDateTime::now_utc() > deadline + time::Duration::minutes(10) {
-                        return Err(permanent(
-                            "funding_expired",
-                            "The venue's deposit window closed before a deposit arrived.",
-                            "Fund the run again to get a fresh quote and deposit address.",
-                        ));
-                    }
-                }
-                Ok(Outcome::Wait(poll))
-            }
+            "awaiting_deposit" => Ok(Outcome::Wait(poll)),
             "deposit_seen" => {
                 if db::transition(db, &run.id, &["awaiting_funds"], "funded").await? {
                     self.log(&run.id, "Deposit detected by the venue").await;
@@ -787,22 +1053,22 @@ impl Executor {
                     "The venue refunded the deposit{}.",
                     f.refund_reason.map(|r| format!(": {r}")).unwrap_or_default()
                 ),
-                "The USDC went back to the refund address. Fund the run again.",
+                "The USDC went back to the refund address. Fund the run again for a new quote, or cancel it.",
             )),
             "incomplete" => Err(permanent(
                 "deposit_incomplete",
                 "The deposit was smaller than the quote required.",
-                "Send the remaining USDC to the same deposit address, or wait for the refund and fund again.",
+                "Send the remaining USDC to the same deposit address and execute the run again, or wait for the venue's refund, then fund the run again or cancel it.",
             )),
             "expired" => Err(permanent(
                 "funding_expired",
-                "The quote expired.",
-                "Fund the run again to get a fresh quote.",
+                "The quote expired before a deposit arrived.",
+                "Fund the run again to get a fresh quote and deposit address, or cancel it.",
             )),
             _ => Err(permanent(
                 "venue_failed",
                 "The venue reported that the swap failed.",
-                "Check the venue's explorer for the deposit, then fund the run again.",
+                "Check the venue's explorer for the deposit, then fund the run again or cancel it.",
             )),
         }
     }
@@ -813,6 +1079,10 @@ impl Executor {
         let chain = &self.inner.chain;
         if db::transition(db, &run.id, &["awaiting_funds", "funded"], "swapping").await? {
             self.log(&run.id, "Venue reports the swap complete").await;
+        }
+        // The run may have been cancelled meanwhile; the next step reads its status again.
+        if db::get_run(db, &run.id).await?.map(|r| r.status).as_deref() != Some("swapping") {
+            return Ok(Outcome::Continue);
         }
         let testnet = f.venue == crate::config::VenueKind::TestnetFixedRate.as_str();
         let (funded_cents, acquired) = if testnet {
@@ -838,7 +1108,7 @@ impl Executor {
             permanent(
                 "invalid_fill",
                 "The venue reported an empty fill.",
-                "Check the venue status, then fund again.",
+                "Check the venue's status page for this deposit, then execute the run again.",
             )
         })?;
         // The testnet venue's contract is a fixed rate: record it exactly, not the rounded ratio.
@@ -855,7 +1125,18 @@ impl Executor {
         let mut need = MARGINAL_FEE_ZAT * (lines.len() as u64 + 3);
         for l in &lines {
             let zat = money::usd_cents_to_zat(l.amount_usd_basis as u64, rate)
-                .ok_or_else(|| permanent("invalid_amount", "A line amount is out of range.", "Edit the run."))?;
+                .filter(|z| *z > 0)
+                .ok_or_else(|| {
+                    permanent(
+                        "invalid_amount",
+                        format!(
+                            "{}'s amount converts to no whole number of zatoshis at the fill rate {} USD per ZEC.",
+                            l.contractor_name,
+                            money::format_rate(rate)
+                        ),
+                        "Check the fill rate in the run log against the market; the ZEC stays in the treasury. Fix the venue setting (PAYSLIP_TESTNET_RATE_USD on testnet), then execute the run again.",
+                    )
+                })?;
             let memo = PayslipMemo::PayLine(PayLineMemo {
                 run_id: run_uuid,
                 period,
@@ -915,6 +1196,80 @@ impl Executor {
         Ok(Outcome::Continue)
     }
 
+    /// Logs a failed allocation broadcast. A refusal by the node is remembered (and logged once
+    /// per transaction) so its expiry counts towards `broadcast_rejected`; no answer is retried.
+    async fn allocation_broadcast_failed(&self, run_id: &str, txid: &str, e: &anyhow::Error) {
+        match rejection(e) {
+            Some(reason) => {
+                let first = self
+                    .inner
+                    .rejected_allocations
+                    .lock()
+                    .map(|mut m| m.insert(txid.to_string(), reason.clone()).is_none())
+                    .unwrap_or(false);
+                if first {
+                    self.log(
+                        run_id,
+                        format!(
+                            "The node refused the allocation transaction: {reason}. It is rebuilt when it expires."
+                        ),
+                    )
+                    .await;
+                }
+            }
+            None => {
+                self.log(run_id, format!("Allocation broadcast will be retried: {e:#}"))
+                    .await
+            }
+        }
+    }
+
+    /// Network fees of the run's mined transactions: the allocation once mined and each
+    /// confirmed payment. Fees of transactions that expired unmined were never paid.
+    async fn record_fees(&self, run_id: &str) -> Result<(), StepError> {
+        let db = &self.inner.db;
+        let chain = &self.inner.chain;
+        let Some(run) = db::get_run(db, run_id).await? else {
+            return Ok(());
+        };
+        let mut total = 0u64;
+        if let (Some(t), Some(_)) = (&run.allocation_txid, run.allocation_height) {
+            total += chain.tx_fee(t).await?.unwrap_or(0);
+        }
+        for l in db::lines(db, run_id).await? {
+            if let (Some(t), "confirmed") = (&l.txid, l.status.as_str()) {
+                total += chain.tx_fee(t).await?.unwrap_or(0);
+            }
+        }
+        db::set_fees(db, run_id, total).await?;
+        Ok(())
+    }
+
+    /// Records the node's refusal of a line's payment on the line (status unchanged), once per
+    /// transaction, so the payer sees why it is not confirming.
+    async fn line_rejected(&self, run_id: &str, l: &LineRow, flagged: bool, reason: &str) -> Result<(), StepError> {
+        if flagged {
+            return Ok(());
+        }
+        db::fail_line(
+            &self.inner.db,
+            &l.id,
+            "broadcast_rejected",
+            &format!("The node refused this payment: {reason}"),
+            "Payslip rebuilds the payment when it expires. If the node keeps refusing it, check LIGHTWALLETD_URL and the service log.",
+        )
+        .await?;
+        self.log(
+            run_id,
+            format!(
+                "The node refused the payment to {}: {reason}. It is rebuilt when it expires.",
+                l.contractor_name
+            ),
+        )
+        .await;
+        Ok(())
+    }
+
     async fn step_allocate(&self, run: &RunRow) -> Result<Outcome, StepError> {
         let db = &self.inner.db;
         let chain = &self.inner.chain;
@@ -952,17 +1307,13 @@ impl Executor {
         .map_err(|e| permanent("memo_invalid", e.to_string(), "Execute the run again."))?;
         match chain.create_transfer(TREASURY_INDEX, pays, Some(change_memo)).await? {
             Ok(txid) => {
+                reset(&self.inner.underfunded, &run.id);
                 db::set_allocation(db, &run.id, Some(&txid), None).await?;
-                if let Some(fee) = chain.tx_fee(&txid).await? {
-                    db::add_fees(db, &run.id, fee).await?;
-                }
                 db::transition(db, &run.id, &["swapped"], "allocating").await?;
                 self.log(&run.id, format!("Allocation transaction built: {txid}")).await;
-                if let Err(e) = chain.broadcast(&txid).await {
-                    self.log(&run.id, format!("Allocation broadcast will be retried: {e:#}"))
-                        .await;
-                } else {
-                    self.log(&run.id, "Allocation transaction broadcast").await;
+                match chain.broadcast(&txid).await {
+                    Ok(()) => self.log(&run.id, "Allocation transaction broadcast").await,
+                    Err(e) => self.allocation_broadcast_failed(&run.id, &txid, &e).await,
                 }
                 Ok(Outcome::Continue)
             }
@@ -971,15 +1322,46 @@ impl Executor {
                 Ok(Outcome::Continue)
             }
             Err(SpendError::InsufficientFunds { available, required }) => {
-                self.log(
-                    &run.id,
-                    format!(
-                        "Waiting for spendable treasury funds ({} of {} ZEC)",
-                        money::format_zec(available),
-                        money::format_zec(required)
-                    ),
-                )
-                .await;
+                // Not even counting unconfirmed value does the treasury hold enough: another run
+                // took it. Waiting would never end.
+                let total = chain.total(TREASURY_INDEX).await?;
+                if total < required {
+                    reset(&self.inner.underfunded, &run.id);
+                    return Err(permanent(
+                        "treasury_insufficient",
+                        format!(
+                            "The treasury holds {} ZEC but the allocation needs {} ZEC; another run may have used it.",
+                            money::format_zec(total),
+                            money::format_zec(required)
+                        ),
+                        "Top up the treasury address, then execute the run again.",
+                    ));
+                }
+                let t = chain.tip().await?;
+                let (waited, first) = shortfall(&self.inner.underfunded, &run.id, t);
+                if first {
+                    self.log(
+                        &run.id,
+                        format!(
+                            "Waiting for spendable treasury funds ({} of {} ZEC)",
+                            money::format_zec(available),
+                            money::format_zec(required)
+                        ),
+                    )
+                    .await;
+                }
+                if waited >= MAX_UNDERFUNDED_BLOCKS {
+                    reset(&self.inner.underfunded, &run.id);
+                    return Err(permanent(
+                        "treasury_insufficient",
+                        format!(
+                            "The treasury has had only {} of {} ZEC spendable for {MAX_UNDERFUNDED_BLOCKS} blocks.",
+                            money::format_zec(available),
+                            money::format_zec(required)
+                        ),
+                        "Sync the wallet (POST /api/wallet/sync), check the treasury balance, then execute the run again.",
+                    ));
+                }
                 chain.sync().await?;
                 Ok(Outcome::Wait(self.inner.poll))
             }
@@ -1003,6 +1385,22 @@ impl Executor {
                 let tip = chain.tip().await?;
                 if let Some(exp) = chain.expiry_height(&txid).await?.filter(|e| *e != 0) {
                     if tip > exp {
+                        let refused = self
+                            .inner
+                            .rejected_allocations
+                            .lock()
+                            .ok()
+                            .and_then(|mut m| m.remove(&txid));
+                        if let Some(reason) = refused {
+                            if bump(&self.inner.rejected_builds, &run.id) >= MAX_REJECTED_BUILDS {
+                                reset(&self.inner.rejected_builds, &run.id);
+                                return Err(permanent(
+                                    "broadcast_rejected",
+                                    format!("The node refused the allocation transaction {MAX_REJECTED_BUILDS} times: {reason}"),
+                                    "Check LIGHTWALLETD_URL points at a node on the current network upgrade and the service log, then execute the run again.",
+                                ));
+                            }
+                        }
                         chain.sync().await?;
                         db::set_allocation(db, &run.id, None, None).await?;
                         db::transition(db, &run.id, &["allocating"], "swapped").await?;
@@ -1017,12 +1415,21 @@ impl Executor {
                         return Ok(Outcome::Continue);
                     }
                 }
-                let _ = chain.broadcast(&txid).await;
+                match chain.broadcast(&txid).await {
+                    Ok(()) => {
+                        if let Ok(mut m) = self.inner.rejected_allocations.lock() {
+                            m.remove(&txid);
+                        }
+                    }
+                    Err(e) => self.allocation_broadcast_failed(&run.id, &txid, &e).await,
+                }
                 Ok(Outcome::Wait(self.inner.poll))
             }
             Some(h) => {
                 if run.allocation_height.is_none() {
                     db::set_allocation(db, &run.id, Some(&txid), Some(h)).await?;
+                    reset(&self.inner.rejected_builds, &run.id);
+                    self.record_fees(&run.id).await?;
                     self.log(
                         &run.id,
                         format!("Allocation confirmed at height {}", money::format_count(h.into())),
@@ -1051,6 +1458,8 @@ impl Executor {
         let lines = db::lines(db, &run.id).await?;
         let mut tip: Option<u32> = None;
         let mut pending = 0;
+        // A line confirmed or left the chain: the run's fees change.
+        let mut fees_changed = false;
         for l in &lines {
             if l.status == "confirmed" {
                 // Re-check until the run is closed: a reorg can take a payment out of the chain.
@@ -1062,6 +1471,7 @@ impl Executor {
                     continue;
                 }
                 db::unconfirm_line(db, &l.id).await?;
+                fees_changed = true;
                 self.log(
                     &run.id,
                     format!(
@@ -1146,6 +1556,7 @@ impl Executor {
                         .await?
                     {
                         Ok(txid) => {
+                            reset(&self.inner.underfunded, &l.id);
                             let exp = chain.expiry_height(&txid).await?;
                             db::set_line_tx(db, &l.id, Some(&txid), exp, "broadcast").await?;
                             if let Some(mut c) = conversion {
@@ -1153,21 +1564,52 @@ impl Executor {
                                 db::set_settlement(db, &l.id, &serde_json::to_value(&c).map_err(anyhow::Error::from)?)
                                     .await?;
                             }
-                            if let Some(fee) = chain.tx_fee(&txid).await? {
-                                db::add_fees(db, &run.id, fee).await?;
-                            }
                             match chain.broadcast(&txid).await {
                                 Ok(()) => self.log(&run.id, format!("Paid {}: {txid}", l.contractor_name)).await,
-                                Err(e) => {
-                                    self.log(
-                                        &run.id,
-                                        format!("Broadcast for {} will be retried: {e:#}", l.contractor_name),
-                                    )
-                                    .await
-                                }
+                                Err(e) => match rejection(&e) {
+                                    Some(reason) => self.line_rejected(&run.id, l, false, &reason).await?,
+                                    None => {
+                                        self.log(
+                                            &run.id,
+                                            format!("Broadcast for {} will be retried: {e:#}", l.contractor_name),
+                                        )
+                                        .await
+                                    }
+                                },
                             }
                         }
-                        Err(SpendError::InsufficientFunds { .. }) | Err(SpendError::SyncRequired) => {
+                        Err(SpendError::InsufficientFunds { available, required }) => {
+                            // The allocation covered this payment. A short wait is normal (a
+                            // transaction that expired unmined holds its notes until its expiry
+                            // height); one that outlasts that means the notes went elsewhere.
+                            let t = chain.tip().await?;
+                            let (waited, first) = shortfall(&self.inner.underfunded, &l.id, t);
+                            let message = format!(
+                                "{}'s account holds {} ZEC spendable but the payment needs {} ZEC.",
+                                l.contractor_name,
+                                money::format_zec(available),
+                                money::format_zec(required)
+                            );
+                            if first {
+                                db::fail_line(
+                                    db,
+                                    &l.id,
+                                    "waiting_for_funds",
+                                    &message,
+                                    &format!("Payslip waits up to {MAX_UNDERFUNDED_BLOCKS} blocks for the account's notes to unlock, then stops the run."),
+                                )
+                                .await?;
+                                self.log(&run.id, format!("Waiting for funds: {message}")).await;
+                            }
+                            if waited >= MAX_UNDERFUNDED_BLOCKS {
+                                reset(&self.inner.underfunded, &l.id);
+                                let hint = "Sync the wallet (POST /api/wallet/sync) and execute the run again. If the shortfall remains, check the service log: the account's notes were spent or locked outside this run.";
+                                db::fail_line(db, &l.id, "line_underfunded", &message, hint).await?;
+                                return Err(permanent("line_underfunded", message, hint));
+                            }
+                            chain.sync().await?;
+                        }
+                        Err(SpendError::SyncRequired) => {
                             chain.sync().await?;
                         }
                         Err(SpendError::Other(m)) => {
@@ -1199,6 +1641,9 @@ impl Executor {
                         };
                         if t + 1 >= h + self.inner.confirm_depth {
                             db::confirm_line(db, &l.id, h).await?;
+                            db::clear_line_error(db, &l.id, "broadcast_rejected").await?;
+                            reset(&self.inner.rejected_builds, &l.id);
+                            fees_changed = true;
                             pending -= 1;
                             self.log(
                                 &run.id,
@@ -1221,7 +1666,22 @@ impl Executor {
                             }
                         };
                         let exp = l.expiry_height.map(|e| e as u32).filter(|e| *e != 0);
+                        let refused = l.error_code.as_deref() == Some("broadcast_rejected");
                         if exp.is_some_and(|e| t > e) {
+                            // A transaction the node refused and never accepted: after a few
+                            // rebuilds the refusal is not going away by itself.
+                            if refused && bump(&self.inner.rejected_builds, &l.id) >= MAX_REJECTED_BUILDS {
+                                reset(&self.inner.rejected_builds, &l.id);
+                                return Err(permanent(
+                                    "broadcast_rejected",
+                                    format!(
+                                        "The node refused the payment to {} {MAX_REJECTED_BUILDS} times: {}",
+                                        l.contractor_name,
+                                        l.error_message.clone().unwrap_or_default()
+                                    ),
+                                    "Check LIGHTWALLETD_URL points at a node on the current network upgrade and the service log, then execute the run again.",
+                                ));
+                            }
                             chain.sync().await?;
                             db::set_line_tx(db, &l.id, None, None, "allocated").await?;
                             if conversion_of(l).is_some() {
@@ -1234,11 +1694,24 @@ impl Executor {
                             )
                             .await;
                         } else {
-                            let _ = chain.broadcast(txid).await;
+                            match chain.broadcast(txid).await {
+                                Ok(()) if refused => {
+                                    db::clear_line_error(db, &l.id, "broadcast_rejected").await?;
+                                }
+                                Ok(()) => {}
+                                Err(e) => {
+                                    if let Some(reason) = rejection(&e) {
+                                        self.line_rejected(&run.id, l, refused, &reason).await?;
+                                    }
+                                }
+                            }
                         }
                     }
                 },
             }
+        }
+        if fees_changed {
+            self.record_fees(&run.id).await?;
         }
         if pending == 0 {
             if db::transition(db, &run.id, &["paying"], "paid").await? {
@@ -1262,6 +1735,9 @@ fn venue_api_error(e: VenueError) -> ApiError {
     }
 }
 
+const MIN_YEAR: i32 = 2000;
+const MAX_YEAR: i32 = 2100;
+
 /// Validates a run request; returns (period_start, period_end).
 pub fn validate_period(start: &str, end: &str) -> Result<(Date, Date), ApiError> {
     let hint = "Use dates in the form YYYY-MM-DD with the start on or before the end, at most one year apart.";
@@ -1276,6 +1752,14 @@ pub fn validate_period(start: &str, end: &str) -> Result<(Date, Date), ApiError>
             hint,
         ));
     }
+    // Catches a mistyped year (0026, 9026) before it reaches a memo or a statement.
+    if !(MIN_YEAR..=MAX_YEAR).contains(&s.year()) || !(MIN_YEAR..=MAX_YEAR).contains(&e.year()) {
+        return Err(ApiError::bad_request(
+            "invalid_period",
+            format!("Years must be between {MIN_YEAR} and {MAX_YEAR}."),
+            hint,
+        ));
+    }
     Ok((s, e))
 }
 
@@ -1286,17 +1770,31 @@ mod tests {
     #[test]
     fn fee_estimate_covers_observed_fees() {
         // Six lines: six 10,000 zat payments plus an allocation with seven outputs.
-        assert!(fee_estimate_zat(6) >= 6 * 10_000 + 7 * 5_000);
-        assert_eq!(fee_estimate_zat(1), 10_000 + 20_000);
+        assert!(fee_estimate_zat(6, 0) >= 6 * 10_000 + 7 * 5_000);
+        assert_eq!(fee_estimate_zat(1, 0), 10_000 + 20_000);
+    }
+
+    /// Audit SL-04: a converting line's allocation carries 25,000 zat (15,000 fee plus 10,000
+    /// change), not 10,000. The estimate must equal what `record_fill` checks.
+    #[test]
+    fn fee_estimate_counts_converting_lines() {
+        assert_eq!(
+            fee_estimate_zat(6, 4),
+            2 * LINE_FEE_ZAT + 4 * (CONVERT_FEE_ZAT + CHANGE_CARRY_ZAT) + 9 * MARGINAL_FEE_ZAT
+        );
+        assert_eq!(fee_estimate_zat(6, 6) - fee_estimate_zat(6, 0), 6 * 15_000);
+        // More converting lines than lines is clamped.
+        assert_eq!(fee_estimate_zat(2, 5), fee_estimate_zat(2, 2));
     }
 
     #[test]
     fn funding_request_adds_fee_headroom() {
         let rate = 1_354_930_000;
-        let req = funding_request_cents(2_845_000, 6, rate);
+        let req = funding_request_cents(2_845_000, 6, 0, rate);
         assert!(req > 2_845_000);
         // Headroom is small relative to payroll: under $3 at today's price.
         assert!(req - 2_845_000 < 300);
+        assert!(funding_request_cents(2_845_000, 6, 6, rate) > req);
     }
 
     #[test]
@@ -1306,5 +1804,40 @@ mod tests {
         assert!(validate_period("2026-02-30", "2026-03-01").is_err());
         assert!(validate_period("2025-01-01", "2026-09-01").is_err());
         assert_eq!(period_label("2026-09-01"), "2026-09");
+    }
+
+    /// Audit SEC-12: a mistyped year is refused.
+    #[test]
+    fn period_years_must_be_plausible() {
+        assert!(validate_period("0026-09-01", "0026-09-30").is_err());
+        assert!(validate_period("9999-01-01", "9999-12-31").is_err());
+        assert!(validate_period("2100-12-01", "2100-12-31").is_ok());
+    }
+
+    /// Audit SL-11: past its deadline (plus grace) a quote awaiting its deposit is expired;
+    /// a venue status that says the deposit arrived always wins.
+    #[test]
+    fn deadline_expires_only_an_unpaid_quote() {
+        let f = Funding {
+            status: "awaiting_deposit".into(),
+            deadline: Some("2026-10-05T11:00:00Z".into()),
+            ..Default::default()
+        };
+        let at = |s: &str| OffsetDateTime::parse(s, &Rfc3339).unwrap();
+        assert_eq!(
+            apply_deadline(f.clone(), at("2026-10-05T11:09:00Z")).status,
+            "awaiting_deposit"
+        );
+        assert_eq!(apply_deadline(f.clone(), at("2026-10-05T11:11:00Z")).status, "expired");
+        let seen = Funding {
+            status: "deposit_seen".into(),
+            ..f.clone()
+        };
+        assert_eq!(apply_deadline(seen, at("2026-10-06T00:00:00Z")).status, "deposit_seen");
+        let no_deadline = Funding { deadline: None, ..f };
+        assert_eq!(
+            apply_deadline(no_deadline, at("2030-01-01T00:00:00Z")).status,
+            "awaiting_deposit"
+        );
     }
 }

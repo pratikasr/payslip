@@ -50,6 +50,10 @@ struct Chart {
 }
 
 const HOUR: i64 = 3600;
+/// Seconds a recent price range is reused for; also the step its end is rounded up to.
+const CACHE_STEP: i64 = 300;
+/// Price ranges kept in memory at most.
+const MAX_CACHED_RANGES: usize = 256;
 
 impl Prices {
     /// `base` None disables prices.
@@ -77,28 +81,45 @@ impl Prices {
         };
         let from = (from - HOUR).div_euclid(HOUR) * HOUR;
         let to = ((to + HOUR).div_euclid(HOUR) + 1) * HOUR;
-        let to = to.min(now);
+        // Capped at the last five-minute mark, not at `now`: the cache key then stays the same
+        // for five minutes and repeated statements share one request. A payment mined since
+        // that mark is still within the gap allowed to its nearest price point.
+        let to = to.min(now.div_euclid(CACHE_STEP) * CACHE_STEP);
         let key = format!("{currency}:{from}:{to}");
         // A range that ended over an hour ago never changes; a recent one is refreshed.
         let ttl = if to < now - HOUR {
             Duration::MAX
         } else {
-            Duration::from_secs(300)
+            Duration::from_secs(CACHE_STEP as u64)
         };
         if let Some((at, s)) = self.cache.lock().ok().and_then(|c| c.get(&key).cloned()) {
             if at.elapsed() < ttl {
                 return Ok(s);
             }
         }
-        let mut req = self.http.get(format!("{base}/coins/zcash/market_chart/range")).query(&[
-            ("vs_currency", currency),
-            ("from", &from.to_string()),
-            ("to", &to.to_string()),
-        ]);
-        if let Some(k) = &self.api_key {
-            req = req.header("x-cg-demo-api-key", k);
+        // The public API rate-limits bursts (HTTP 429): back off briefly and try again twice.
+        let mut resp = None;
+        for wait_ms in [0u64, 1_500, 4_000] {
+            if wait_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(wait_ms)).await;
+            }
+            let mut req = self.http.get(format!("{base}/coins/zcash/market_chart/range")).query(&[
+                ("vs_currency", currency),
+                ("from", &from.to_string()),
+                ("to", &to.to_string()),
+            ]);
+            if let Some(k) = &self.api_key {
+                req = req.header("x-cg-demo-api-key", k);
+            }
+            let r = req.send().await.context("price request")?;
+            if r.status() != reqwest::StatusCode::TOO_MANY_REQUESTS {
+                resp = Some(r);
+                break;
+            }
         }
-        let resp = req.send().await.context("price request")?;
+        let Some(resp) = resp else {
+            bail!("price source is rate limiting requests")
+        };
         if !resp.status().is_success() {
             bail!("price source answered {}", resp.status());
         }
@@ -110,6 +131,13 @@ impl Prices {
             .map(|(ms, p)| ((ms / 1000.0) as i64, p))
             .collect();
         if let Ok(mut c) = self.cache.lock() {
+            if c.len() >= MAX_CACHED_RANGES {
+                // Drop what is stale; if everything is fresh, start over rather than grow.
+                c.retain(|_, (at, _)| at.elapsed() < Duration::from_secs(CACHE_STEP as u64));
+                if c.len() >= MAX_CACHED_RANGES {
+                    c.clear();
+                }
+            }
             c.insert(key, (Instant::now(), s.clone()));
         }
         Ok(s)

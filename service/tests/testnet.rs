@@ -1,10 +1,10 @@
 //! Integration tests against live Zcash testnet lightwalletd (ADR-010).
 //!
-//! They run only when `ZCASH_NETWORK=testnet` and `LIGHTWALLETD_URL` are set, and are skipped
-//! otherwise (CI does not set them):
+//! They are `#[ignore]`d, so a plain `cargo test` (and CI) reports them as ignored rather than
+//! passed. Run them explicitly; they then require `ZCASH_NETWORK=testnet` and `LIGHTWALLETD_URL`:
 //!
 //! ```text
-//! ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet
+//! ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored
 //! ```
 //!
 //! The viewing keys below are testnet keys published on purpose: they reveal only the testnet
@@ -37,15 +37,11 @@ fn testnet_url() -> Option<String> {
     std::env::var("LIGHTWALLETD_URL").ok().filter(|u| !u.is_empty())
 }
 
+const NEEDS_TESTNET: &str = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL";
+
 macro_rules! require_testnet {
     () => {
-        match testnet_url() {
-            Some(u) => u,
-            None => {
-                eprintln!("skipped: set ZCASH_NETWORK=testnet and LIGHTWALLETD_URL to run");
-                return;
-            }
-        }
+        testnet_url().unwrap_or_else(|| panic!("this live test {NEEDS_TESTNET}"))
     };
 }
 
@@ -62,18 +58,22 @@ fn config(url: &str, dir: PathBuf) -> Config {
         near_intents_api_url: String::new(),
         near_intents_jwt: None,
         maya_api_url: String::new(),
+        maya_midgard_url: String::new(),
         min_confirmations: 1,
         birthday_height: None,
         statements_only: true,
-        viewer_birthday_height: 4_134_000,
+        viewer_birthday_height: Some(4_134_000),
         price_api_url: None,
         price_api_key: None,
         app_fee_bps: 0,
         app_fee_recipient: None,
+        allowed_hosts: vec![],
+        allow_remote_payer: false,
     }
 }
 
 #[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
 async fn lightwalletd_branch_id_matches_the_pinned_protocol_schedule() {
     let url = require_testnet!();
     let mut client = lwd::connect(&url).unwrap();
@@ -90,6 +90,7 @@ async fn lightwalletd_branch_id_matches_the_pinned_protocol_schedule() {
 }
 
 #[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
 async fn contractor_key_recovers_the_payment_and_its_memo() {
     let url = require_testnet!();
     let dir = tempfile::tempdir().unwrap();
@@ -123,6 +124,7 @@ async fn contractor_key_recovers_the_payment_and_its_memo() {
 }
 
 #[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
 async fn treasury_key_reads_the_run_funding_record() {
     let url = require_testnet!();
     let dir = tempfile::tempdir().unwrap();
@@ -147,6 +149,7 @@ async fn treasury_key_reads_the_run_funding_record() {
 }
 
 #[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
 async fn contractor_key_cannot_see_the_run_funding_record() {
     let url = require_testnet!();
     let dir = tempfile::tempdir().unwrap();
@@ -163,6 +166,7 @@ async fn contractor_key_cannot_see_the_run_funding_record() {
 }
 
 #[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
 async fn payment_proof_discloses_one_payment_and_rejects_tampering() {
     use payslip::proof::{self, ProofToken};
     let url = require_testnet!();
@@ -211,4 +215,173 @@ async fn payment_proof_discloses_one_payment_and_rejects_tampering() {
     // The treasury key did not send this payment, so it has nothing to prove here.
     let treasury = ViewingKey::parse(&ZcashNetwork::Testnet, TREASURY_UFVK).unwrap();
     assert!(proof::sent_outputs(&treasury.ufvk, &tx).is_empty());
+}
+
+// ---------------------------------------------------------------------------------------------
+// The statements API end to end over the published judge kit (docs/judge/judge-kit-testnet.json):
+// three demo runs of six contractors each, all paid on 5 Oct 2026.
+
+struct Live {
+    base: String,
+    http: reqwest::Client,
+    _dir: tempfile::TempDir,
+}
+
+/// A statements-only service on a free port, reading live testnet, knowing no keys.
+async fn live_service(url: &str) -> Live {
+    let dir = tempfile::tempdir().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut cfg = config(url, dir.path().to_path_buf());
+    cfg.bind = addr;
+    cfg.viewer_birthday_height = None;
+    let state = payslip::api::build_state(cfg).await.unwrap();
+    tokio::spawn(async move { axum::serve(listener, payslip::api::router(state)).await.unwrap() });
+    Live {
+        base: format!("http://{addr}"),
+        http: reqwest::Client::new(),
+        _dir: dir,
+    }
+}
+
+impl Live {
+    async fn post(&self, path: &str, body: serde_json::Value) -> (u16, serde_json::Value) {
+        let r = self
+            .http
+            .post(format!("{}{path}", self.base))
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        (r.status().as_u16(), r.json().await.unwrap())
+    }
+}
+
+struct Kit {
+    birthday: u32,
+    keys: Vec<(String, String)>,
+}
+
+fn kit() -> Kit {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/judge/judge-kit-testnet.json");
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    Kit {
+        birthday: v["birthday_height"].as_u64().unwrap() as u32,
+        keys: v["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| {
+                (
+                    k["label"].as_str().unwrap().to_string(),
+                    k["ufvk"].as_str().unwrap().to_string(),
+                )
+            })
+            .collect(),
+    }
+}
+
+impl Kit {
+    fn key(&self, label: &str) -> String {
+        self.keys.iter().find(|k| k.0 == label).unwrap().1.clone()
+    }
+}
+
+/// Audit SL-03, PBL-01, JD-02: with every kit key each run reconciles and the treasury key is
+/// recognised although a statements-only service knows no key; with the treasury and only two
+/// contractors, each run is `incomplete_keys` with the four missing accounts counted, and the
+/// treasury's unspent ZEC is the same as with every key.
+#[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
+async fn the_judge_kit_reconciles_and_a_partial_key_set_is_flagged() {
+    let url = require_testnet!();
+    let svc = live_service(&url).await;
+    let kit = kit();
+    let all: Vec<String> = kit.keys.iter().map(|k| k.1.clone()).collect();
+    let body = |keys: Vec<String>| serde_json::json!({"ufvks": keys, "from": "2026-10-01", "to": "2026-10-05", "birthday_height": kit.birthday});
+    let (st, full) = svc.post("/api/statements/accountant", body(all)).await;
+    assert_eq!(st, 200, "{full}");
+    assert_eq!(full["treasury_key_present"], true);
+    assert_eq!(full["scanned_from_height"], kit.birthday);
+    let runs = full["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 3, "{full}");
+    for r in runs {
+        assert_eq!(r["status"], "reconciled", "{r}");
+        assert_eq!(
+            (r["allocations"].as_u64(), r["lines"].as_u64()),
+            (Some(6), Some(6)),
+            "{r}"
+        );
+        assert_eq!(r["missing_accounts"], 0);
+    }
+    let roles: Vec<&str> = full["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["role"].as_str().unwrap())
+        .collect();
+    assert_eq!(roles.iter().filter(|r| **r == "treasury").count(), 1, "{roles:?}");
+
+    let partial = vec![kit.key("Treasury"), kit.key("Amara Okafor"), kit.key("Mateo Fernandez")];
+    let (st, part) = svc.post("/api/statements/accountant", body(partial)).await;
+    assert_eq!(st, 200, "{part}");
+    let runs_p = part["runs"].as_array().unwrap();
+    assert_eq!(runs_p.len(), 3);
+    for r in runs_p {
+        assert_eq!(r["status"], "incomplete_keys", "{r}");
+        assert_eq!(
+            (r["missing_accounts"].as_u64(), r["lines"].as_u64()),
+            (Some(4), Some(2)),
+            "{r}"
+        );
+        let same = runs.iter().find(|f| f["run_id"] == r["run_id"]).unwrap();
+        assert_eq!(
+            r["unspent_zat"], same["unspent_zat"],
+            "unspent is the treasury's, not inferred"
+        );
+    }
+}
+
+/// Audit JD-01, SL-13, PBL-08, SL-14: an unknown key first scanned from a later birthday is
+/// rescanned when a request asks for an earlier one (its payments appear), recipients read in
+/// the Revision 0 form proofs use, and a birthday above the tip is a 400.
+#[tokio::test]
+#[ignore = "needs ZCASH_NETWORK=testnet and LIGHTWALLETD_URL"]
+async fn an_earlier_birthday_rescans_a_cached_key() {
+    let url = require_testnet!();
+    let svc = live_service(&url).await;
+    let kit = kit();
+    let amara = kit.key("Amara Okafor");
+    let req =
+        |b: u32| serde_json::json!({"ufvk": amara, "from": "2026-10-01", "to": "2026-10-05", "birthday_height": b});
+    // After her last kit payment (4,467,196): nothing to see.
+    let (st, late) = svc.post("/api/statements/contractor", req(4_467_197)).await;
+    assert_eq!(st, 200, "{late}");
+    assert_eq!(late["totals"]["count"], 0, "{late}");
+    // The same cached key, asked from the kit's birthday: all three payments.
+    let (st, early) = svc.post("/api/statements/contractor", req(kit.birthday)).await;
+    assert_eq!(st, 200, "{early}");
+    assert_eq!(early["totals"]["count"], 3, "{early}");
+    assert_eq!(early["scanned_from_height"], kit.birthday);
+    for l in early["lines"].as_array().unwrap() {
+        assert!(l["to_address"].as_str().unwrap().starts_with("utest1"), "{l}");
+    }
+    // Without a birthday the cached scan is reused, not restarted from Ironwood activation.
+    let (st, again) = svc
+        .post(
+            "/api/statements/contractor",
+            serde_json::json!({"ufvk": amara, "from": "2026-10-01", "to": "2026-10-05"}),
+        )
+        .await;
+    assert_eq!(st, 200, "{again}");
+    assert_eq!(
+        (again["totals"]["count"].as_u64(), again["scanned_from_height"].as_u64()),
+        (Some(3), Some(kit.birthday as u64))
+    );
+    let (st, err) = svc.post("/api/statements/contractor", req(99_999_999)).await;
+    assert_eq!(
+        (st, err["error"]["code"].as_str()),
+        (400, Some("invalid_birthday_height")),
+        "{err}"
+    );
 }

@@ -9,8 +9,10 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Context};
 use axum::{
-    extract::State,
-    http::{HeaderValue, Method},
+    extract::{Request, State},
+    http::{header, HeaderValue, Method, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -43,11 +45,47 @@ pub struct AppState {
     pub last_wallet: std::sync::Mutex<Option<WalletInfo>>,
     /// ZEC market prices for the value of a payment at receipt.
     pub prices: crate::prices::Prices,
+    /// Chain scans are the expensive requests; at most this many run at once.
+    pub scan_slots: tokio::sync::Semaphore,
+    /// Open run progress streams (SSE); each holds a connection until the client leaves.
+    pub sse_slots: Arc<tokio::sync::Semaphore>,
 }
 
 pub type AppStateRef = Arc<AppState>;
 
-fn statements_only() -> ApiError {
+/// Concurrent statement and reconciliation scans; further requests wait their turn.
+const MAX_CONCURRENT_SCANS: usize = 3;
+
+/// Run progress streams open at once. A browser tab holds one per open run page.
+pub const MAX_EVENT_STREAMS: usize = 32;
+
+/// A slot for one progress stream, held until the stream is dropped; 503 when all are taken.
+pub fn stream_slot(slots: &Arc<tokio::sync::Semaphore>) -> ApiResult<tokio::sync::OwnedSemaphorePermit> {
+    slots.clone().try_acquire_owned().map_err(|_| {
+        ApiError::unavailable(
+            "too_many_streams",
+            format!("{MAX_EVENT_STREAMS} run progress streams are already open on this service."),
+            "Close run pages you are not watching, or poll GET /api/runs/{id} instead.",
+        )
+    })
+}
+
+/// Owner-only permissions on the data folder and its viewer caches (Unix); a failure is logged.
+fn restrict_permissions(dir: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for d in [dir.to_path_buf(), dir.join("viewers")] {
+            if d.exists() {
+                if let Err(e) = std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o700)) {
+                    tracing::warn!("could not restrict {}: {e}", d.display());
+                }
+            }
+        }
+    }
+}
+
+fn statements_only_error() -> ApiError {
     ApiError::new(
         axum::http::StatusCode::NOT_FOUND,
         "statements_only",
@@ -58,11 +96,11 @@ fn statements_only() -> ApiError {
 
 impl AppState {
     pub fn payer(&self) -> ApiResult<&Payer> {
-        self.payer.as_ref().ok_or_else(statements_only)
+        self.payer.as_ref().ok_or_else(statements_only_error)
     }
 
     pub fn executor(&self) -> ApiResult<&Executor> {
-        self.executor.as_ref().ok_or_else(statements_only)
+        self.executor.as_ref().ok_or_else(statements_only_error)
     }
 }
 
@@ -92,6 +130,8 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
     let prices = crate::prices::Prices::new(cfg.price_api_url.clone(), cfg.price_api_key.clone());
     Ok(Arc::new(AppState {
         prices,
+        scan_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_SCANS),
+        sse_slots: Arc::new(tokio::sync::Semaphore::new(MAX_EVENT_STREAMS)),
         viewers: ViewerRegistry::new(&cfg),
         cfg,
         db,
@@ -117,21 +157,197 @@ pub fn router(state: AppStateRef) -> Router {
         .allow_headers([axum::http::header::CONTENT_TYPE])
         // Lets the web app name downloaded files the way the service does (per export format).
         .expose_headers([axum::http::header::CONTENT_DISPOSITION]);
-    Router::new()
-        .route("/api/health", get(health))
-        .route("/api/wallet", get(wallet))
-        .route("/api/wallet/sync", post(wallet_sync))
-        .merge(contractors::routes())
-        .merge(runs::routes())
-        .merge(statements::routes())
+    let hosts = Arc::new(allowed_hosts(&state.cfg));
+    let statements_only = state.cfg.statements_only;
+    let mut app = Router::new().route("/api/health", get(health));
+    // A statements-only deployment is meant to be public: it does not even mount the payer routes.
+    if !statements_only {
+        app = app
+            .route("/api/wallet", get(wallet))
+            .route("/api/wallet/sync", post(wallet_sync))
+            .merge(contractors::routes())
+            .merge(runs::routes());
+    }
+    app.merge(statements::routes())
         .merge(proofs::routes())
+        .fallback(move |req: Request| async move { not_found(statements_only, req.uri().path()) })
+        .layer(middleware::from_fn(json_errors))
+        .layer(middleware::from_fn(require_json))
         .layer(cors)
+        .layer(middleware::from_fn_with_state(hosts, check_host))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
+/// Host header values this service answers for: its bind address, localhost and 127.0.0.1 on
+/// the bind port, plus PAYSLIP_ALLOWED_HOSTS. Anything else is a DNS-rebinding attempt or a
+/// misconfigured proxy.
+pub fn allowed_hosts(cfg: &Config) -> Vec<String> {
+    let port = cfg.bind.port();
+    let mut hosts = vec![
+        format!("127.0.0.1:{port}"),
+        format!("localhost:{port}"),
+        format!("[::1]:{port}"),
+    ];
+    if !cfg.bind.ip().is_unspecified() {
+        hosts.push(cfg.bind.to_string());
+    }
+    hosts.extend(cfg.allowed_hosts.iter().cloned());
+    hosts
+}
+
+async fn check_host(State(hosts): State<Arc<Vec<String>>>, req: Request, next: Next) -> Response {
+    let host = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .map(|h| h.to_ascii_lowercase());
+    match host {
+        Some(h) if hosts.contains(&h) => next.run(req).await,
+        _ => ApiError::new(
+            StatusCode::MISDIRECTED_REQUEST,
+            "host_not_allowed",
+            "This Payslip service does not answer for that host name.",
+            "Use the address the service listens on, or add the host name to PAYSLIP_ALLOWED_HOSTS.",
+        )
+        .into_response(),
+    }
+}
+
+/// Every request that changes data must be JSON. A form or text/plain POST from another site is
+/// a "simple" request that skips the browser's CORS preflight; requiring JSON forces it.
+async fn require_json(req: Request, next: Next) -> Response {
+    let writes = matches!(
+        *req.method(),
+        Method::POST | Method::PATCH | Method::PUT | Method::DELETE
+    );
+    let json = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.trim().to_ascii_lowercase().starts_with("application/json"));
+    if writes && !json {
+        return ApiError::new(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "json_required",
+            "This request must be sent as JSON.",
+            "Send the header Content-Type: application/json, with a JSON body or none.",
+        )
+        .into_response();
+    }
+    next.run(req).await
+}
+
+/// Every error leaves the service as `{"error": {code, message, hint}}`. Handlers answer that way
+/// already; this converts the framework's own plain-text rejections: malformed JSON (400), a
+/// field of the wrong type or missing (422), a body over the 2 MB limit (413), a method the
+/// route does not have (405, empty body), a bad query string or path.
+async fn json_errors(req: Request, next: Next) -> Response {
+    let method = req.method().clone();
+    let path = req.uri().path().to_string();
+    let res = next.run(req).await;
+    let status = res.status();
+    let is_json = res
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.starts_with("application/json"));
+    if !(status.is_client_error() || status.is_server_error()) || is_json {
+        return res;
+    }
+    let (parts, body) = res.into_parts();
+    let text = axum::body::to_bytes(body, 4096)
+        .await
+        .map(|b| String::from_utf8_lossy(&b).trim().to_string())
+        .unwrap_or_default();
+    let detail = if text.is_empty() {
+        status.canonical_reason().unwrap_or("Request refused").to_string()
+    } else {
+        text.clone()
+    };
+    let (code, message, hint): (&str, String, String) = match status {
+        StatusCode::METHOD_NOT_ALLOWED => (
+            "method_not_allowed",
+            format!("{method} is not supported on {path}."),
+            "Use one of the methods in the Allow header; docs/API.md lists every endpoint.".into(),
+        ),
+        StatusCode::PAYLOAD_TOO_LARGE => (
+            "body_too_large",
+            "The request body is over the 2 MB limit.".into(),
+            "Send a smaller request: split long viewing key lists into several requests.".into(),
+        ),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => (
+            "json_required",
+            detail,
+            "Send the header Content-Type: application/json with a JSON body.".into(),
+        ),
+        StatusCode::UNPROCESSABLE_ENTITY => (
+            "invalid_body",
+            detail,
+            "A field is missing or has the wrong type; check the request against docs/API.md.".into(),
+        ),
+        StatusCode::BAD_REQUEST if text.contains("request body as JSON") => (
+            "invalid_json",
+            detail,
+            "Send a well-formed JSON object; docs/API.md shows each body.".into(),
+        ),
+        StatusCode::BAD_REQUEST if text.contains("query string") => (
+            "invalid_query",
+            detail,
+            "Check the query parameters against docs/API.md.".into(),
+        ),
+        StatusCode::NOT_FOUND => (
+            "not_found",
+            format!("There is no {path} on this service."),
+            "Check the address; docs/API.md lists every endpoint.".into(),
+        ),
+        s if s.is_server_error() => (
+            "internal_error",
+            detail,
+            "Check the service log for details, then retry.".into(),
+        ),
+        _ => (
+            "invalid_request",
+            detail,
+            "Check the request against docs/API.md.".into(),
+        ),
+    };
+    let mut out = ApiError::new(status, code, message, hint).into_response();
+    // Keep the headers that say how to fix it (Allow on a 405).
+    if let Some(allow) = parts.headers.get(header::ALLOW) {
+        out.headers_mut().insert(header::ALLOW, allow.clone());
+    }
+    out
+}
+
+fn not_found(statements_only: bool, path: &str) -> Response {
+    let payer_route = ["/api/wallet", "/api/contractors", "/api/runs", "/api/viewing-keys"]
+        .iter()
+        .any(|p| path.starts_with(p));
+    if statements_only && payer_route {
+        return statements_only_error().into_response();
+    }
+    ApiError::new(
+        StatusCode::NOT_FOUND,
+        "not_found",
+        format!("There is no {path} on this service."),
+        "Check the address; docs/API.md lists every endpoint.",
+    )
+    .into_response()
+}
+
 pub async fn serve(cfg: Config) -> anyhow::Result<()> {
     let bind = cfg.bind;
+    if !cfg.statements_only && !bind.ip().is_loopback() && !cfg.allow_remote_payer {
+        bail!(
+            "PAYSLIP_BIND={bind} would expose the payer wallet to the network, and the API has no login. \
+             Bind full mode to 127.0.0.1 (or run PAYSLIP_MODE=statements for a public host). Set \
+             PAYSLIP_ALLOW_REMOTE_PAYER=1 only behind your own authentication."
+        );
+    }
+    // The data folder holds the wallet databases and the scan caches of every viewing key
+    // submitted: readable by this user only.
+    restrict_permissions(&cfg.data_dir);
     let state = build_state(cfg).await?;
     // Keep the payer wallet near the tip so funding and balances are current.
     if let Some(payer) = state.payer.clone() {
@@ -257,7 +473,7 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         birthday_height: info
             .as_ref()
             .map(|i| i.birthday_height)
-            .unwrap_or(s.cfg.viewer_birthday_height),
+            .unwrap_or_else(|| s.cfg.viewer_birthday()),
         venue: if s.cfg.statements_only {
             "none"
         } else {
@@ -288,7 +504,21 @@ async fn wallet_sync(State(s): State<AppStateRef>) -> ApiResult<Json<WalletInfo>
 
 #[cfg(test)]
 mod tests {
-    use super::clock_warning;
+    use super::{clock_warning, stream_slot, MAX_EVENT_STREAMS};
+    use std::sync::Arc;
+
+    /// Audit SEC-06: run progress streams are capped; closing one frees its slot.
+    #[test]
+    fn event_streams_are_capped() {
+        let slots = Arc::new(tokio::sync::Semaphore::new(MAX_EVENT_STREAMS));
+        let held: Vec<_> = (0..MAX_EVENT_STREAMS).map(|_| stream_slot(&slots).unwrap()).collect();
+        let err = stream_slot(&slots).unwrap_err();
+        assert_eq!(err.status, axum::http::StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.body.code, "too_many_streams");
+        assert!(!err.body.hint.is_empty());
+        drop(held);
+        assert!(stream_slot(&slots).is_ok());
+    }
 
     #[test]
     fn clock_skew_is_flagged_only_beyond_normal_block_lag() {

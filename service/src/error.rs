@@ -81,10 +81,7 @@ fn classify_internal(message: &str) -> (&'static str, &'static str) {
             "Another operation holds the database. Retry in a few seconds.",
         )
     } else {
-        (
-            "internal_error",
-            "Check the service log for details, then retry. Runs resume from their last saved step.",
-        )
+        ("internal_error", "Check the service log for details, then retry.")
     }
 }
 

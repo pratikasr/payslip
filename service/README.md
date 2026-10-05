@@ -11,12 +11,28 @@ cargo build --release
 ./target/release/payslip-service serve     # HTTP API on 127.0.0.1:8080
 ```
 
-Other commands: `address`, `sync`, `fvk --account N`, `send --from N --to ADDR --zat N --memo TEXT`, `scan --ufvk KEY`, `dev-contractors` (testnet only).
+Every command (`./target/release/payslip-service --help` prints the same list):
+
+| Command | What it does |
+| --- | --- |
+| `serve` | The HTTP API (the default). `PAYSLIP_MODE=statements` serves statements and payment proofs only, with no seed |
+| `init [--import]` | Creates the encrypted payer seed and the treasury account; `--import` reads a 24-word mnemonic from stdin |
+| `address` | Prints the treasury's unified address |
+| `sync` | Syncs the payer wallet to the chain tip and prints balances |
+| `fvk --account N` | Prints the unified full viewing key of ZIP-32 account N |
+| `account-address --account N` | Prints the payer-side unified address of account N |
+| `send --from N --to ADDR --zat N [--memo TEXT]` | Sends a shielded payment with a memo from account N (development helper) |
+| `sweep --from N --to ADDR` | Sends the whole spendable balance of account N, minus the fee, to an address |
+| `scan --ufvk KEY [--birthday H]` | Scans the chain with a viewing key and prints every output with its decoded memo |
+| `dev-contractors [--count N] [--allow-mainnet]` | Prints N addresses from the separate demo contractor seed; mainnet needs `--allow-mainnet` |
+| `dev-sweep [--count N] [--allow-mainnet]` | Sweeps the demo contractor wallets back to the treasury; mainnet needs `--allow-mainnet` |
+| `dev-mainnet-ufvk` | Testing helper: prints a mainnet viewing key derived from an all-zero test seed, which holds no funds |
 
 ## Test
 
 ```
-cargo test                       # unit tests, no network
+cargo test                       # unit and executor tests, no network
+ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored   # live testnet tests
 cargo clippy --all-targets -- -D warnings
 ```
 

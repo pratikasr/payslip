@@ -89,17 +89,27 @@ pub struct Config {
     pub near_intents_api_url: String,
     pub near_intents_jwt: Option<String>,
     pub maya_api_url: String,
+    /// Maya's Midgard API, for the indicative ZEC price.
+    pub maya_midgard_url: String,
     pub min_confirmations: u32,
     pub birthday_height: Option<u32>,
     /// `statements`: no wallet and no seed; serves statements and payment proofs only, so it is
     /// safe to host publicly for judges and contractors.
     pub statements_only: bool,
-    /// Where view-only scans start for keys this deployment does not know.
-    pub viewer_birthday_height: u32,
+    /// PAYSLIP_VIEWER_BIRTHDAY_HEIGHT: where view-only scans start for keys this deployment does
+    /// not know (None: Ironwood activation, or the request's own birthday). See
+    /// [`Config::viewer_scan_start`].
+    pub viewer_birthday_height: Option<u32>,
     /// ZEC market price API (CoinGecko v3 base URL); None when PAYSLIP_PRICE_API_URL=off.
     pub price_api_url: Option<String>,
     /// Optional CoinGecko demo API key, for higher rate limits.
     pub price_api_key: Option<String>,
+    /// Extra Host header values the API answers for (a public domain for a statements-only
+    /// deployment). The bind address, localhost and 127.0.0.1 on the bind port are always allowed.
+    pub allowed_hosts: Vec<String>,
+    /// Full mode holds a spending wallet and has no login, so it only binds to loopback unless
+    /// this is set (for an operator who puts their own authentication in front).
+    pub allow_remote_payer: bool,
     /// Payslip's fee on the USDC to ZEC funding swap, in basis points (0 = none).
     pub app_fee_bps: u32,
     /// NEAR account that receives the fee (required when `app_fee_bps` > 0).
@@ -172,18 +182,17 @@ impl Config {
                 .unwrap_or_else(|| "https://1click.chaindefuser.com".into()),
             near_intents_jwt: var("NEAR_INTENTS_JWT"),
             maya_api_url: var("MAYA_API_URL").unwrap_or_else(|| "https://mayanode.mayachain.info".into()),
+            maya_midgard_url: var("MAYA_MIDGARD_URL").unwrap_or_else(|| "https://midgard.mayachain.info".into()),
             min_confirmations,
             statements_only: match var("PAYSLIP_MODE").as_deref() {
                 None | Some("full") => false,
                 Some("statements") => true,
                 Some(other) => bail!("PAYSLIP_MODE must be full or statements, got {other:?}"),
             },
-            viewer_birthday_height: match var("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT") {
-                Some(s) => s
-                    .parse()
-                    .context("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT must be a block height")?,
-                None => network.ironwood_activation_height(),
-            },
+            viewer_birthday_height: var("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT")
+                .map(|s| s.parse())
+                .transpose()
+                .context("PAYSLIP_VIEWER_BIRTHDAY_HEIGHT must be a block height")?,
             price_api_url: match var("PAYSLIP_PRICE_API_URL").as_deref() {
                 Some("off") => None,
                 Some(url) => Some(url.to_string()),
@@ -192,6 +201,18 @@ impl Config {
             price_api_key: var("PAYSLIP_PRICE_API_KEY"),
             app_fee_bps,
             app_fee_recipient,
+            allowed_hosts: var("PAYSLIP_ALLOWED_HOSTS")
+                .map(|v| {
+                    v.split(',')
+                        .map(|h| h.trim().to_ascii_lowercase())
+                        .filter(|h| !h.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            allow_remote_payer: matches!(
+                var("PAYSLIP_ALLOW_REMOTE_PAYER").as_deref(),
+                Some("1") | Some("yes") | Some("true")
+            ),
             birthday_height: var("PAYSLIP_BIRTHDAY_HEIGHT")
                 .map(|s| s.parse())
                 .transpose()
@@ -214,8 +235,69 @@ impl Config {
     pub fn viewers_dir(&self) -> PathBuf {
         self.data_dir.join("viewers")
     }
+
+    /// The configured viewer birthday, else Ironwood activation (where Payslip payments start).
+    pub fn viewer_birthday(&self) -> u32 {
+        self.viewer_birthday_height
+            .unwrap_or_else(|| self.network.ironwood_activation_height())
+    }
+
+    /// Where to start scanning a key this deployment does not know (in either mode): the earlier
+    /// of the request's `birthday_height` and PAYSLIP_VIEWER_BIRTHDAY_HEIGHT, whichever are given,
+    /// else Ironwood activation. Never the payer wallet's own birthday, which says nothing about
+    /// someone else's key.
+    pub fn viewer_scan_start(&self, requested: Option<u32>) -> u32 {
+        match (requested, self.viewer_birthday_height) {
+            (Some(r), Some(c)) => r.min(c),
+            (Some(r), None) => r,
+            (None, Some(c)) => c,
+            (None, None) => self.network.ironwood_activation_height(),
+        }
+    }
 }
 
 /// The testnet venue's fixed rate. TAZ has no market price; the rate is chosen so a realistic
 /// USD payroll fits inside what a public faucet hands out. It is never used on mainnet.
 pub const DEFAULT_TESTNET_RATE_E6: u64 = 1_350_000_000_000;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Audit JD-01: an unknown key starts at the earlier of the request's birthday and the
+    /// configured viewer birthday, else at Ironwood activation.
+    #[test]
+    fn unknown_keys_scan_from_the_earliest_known_start() {
+        let mut cfg = Config {
+            network: ZcashNetwork::Testnet,
+            lightwalletd_url: String::new(),
+            data_dir: PathBuf::new(),
+            bind: "127.0.0.1:8080".parse().unwrap(),
+            web_origin: String::new(),
+            seed_passphrase: None,
+            venue: VenueKind::TestnetFixedRate,
+            testnet_rate_e6: DEFAULT_TESTNET_RATE_E6,
+            near_intents_api_url: String::new(),
+            near_intents_jwt: None,
+            maya_api_url: String::new(),
+            maya_midgard_url: String::new(),
+            min_confirmations: 1,
+            birthday_height: Some(4_467_271),
+            statements_only: false,
+            viewer_birthday_height: None,
+            price_api_url: None,
+            price_api_key: None,
+            allowed_hosts: vec![],
+            allow_remote_payer: false,
+            app_fee_bps: 0,
+            app_fee_recipient: None,
+        };
+        assert_eq!(cfg.viewer_scan_start(None), 4_134_000);
+        assert_eq!(cfg.viewer_scan_start(Some(4_466_858)), 4_466_858);
+        cfg.viewer_birthday_height = Some(4_466_000);
+        assert_eq!(cfg.viewer_scan_start(None), 4_466_000);
+        assert_eq!(cfg.viewer_scan_start(Some(4_466_858)), 4_466_000);
+        assert_eq!(cfg.viewer_scan_start(Some(4_465_600)), 4_465_600);
+        assert_eq!(cfg.viewer_birthday(), 4_466_000);
+    }
+}

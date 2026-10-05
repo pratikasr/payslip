@@ -104,16 +104,12 @@ fn validate(network: &ZcashNetwork, input: ContractorInput, base: Option<&Contra
                         "Choose base, arb, eth or sol.",
                     ));
                 }
-                let ok = if c == "sol" {
-                    (32..=44).contains(&a.len()) && a.chars().all(|ch| ch.is_ascii_alphanumeric())
-                } else {
-                    a.len() == 42 && a.starts_with("0x") && a[2..].chars().all(|ch| ch.is_ascii_hexdigit())
-                };
+                let ok = payout_address_valid(&c, &a);
                 if !ok {
                     return Err(ApiError::bad_request(
                         "invalid_payout_address",
                         "The USDC payout address does not match the chain.",
-                        "Paste the contractor's USDC address on the chosen chain (0x... for EVM chains).",
+                        "Paste the contractor's USDC address on the chosen chain: 0x followed by 40 hex characters on Base, Arbitrum and Ethereum, a base58 public key on Solana.",
                     ));
                 }
                 (Some(c), Some(a))
@@ -137,6 +133,25 @@ fn validate(network: &ZcashNetwork, input: ContractorInput, base: Option<&Contra
         payout_chain,
         payout_address,
     })
+}
+
+/// A USDC payout address for `chain`: an EVM address (0x and 40 hex characters) on Base,
+/// Arbitrum and Ethereum; a Solana public key (base58 of exactly 32 bytes) on Solana.
+pub fn payout_address_valid(chain: &str, address: &str) -> bool {
+    if chain == "sol" {
+        (32..=44).contains(&address.len()) && bs58::decode(address).into_vec().map(|b| b.len() == 32).unwrap_or(false)
+    } else {
+        address.len() == 42 && address.starts_with("0x") && address[2..].chars().all(|ch| ch.is_ascii_hexdigit())
+    }
+}
+
+/// Whether an edit changes how or where the contractor is paid. Such edits wait until no run
+/// that includes them is in progress: the run pays what it was funded for.
+pub fn changes_payout(existing: &Contractor, new: &NewContractor) -> bool {
+    existing.unified_address != new.unified_address
+        || existing.settlement_choice != new.settlement_choice
+        || existing.payout_chain != new.payout_chain
+        || existing.payout_address != new.payout_address
 }
 
 pub fn validate_address(network: &ZcashNetwork, address: &str) -> ApiResult<()> {
@@ -232,13 +247,13 @@ async fn update(
                 ));
             }
         }
-        if db::contractor_in_active_run(&s.db, &id).await? {
-            return Err(ApiError::conflict(
-                "contractor_in_active_run",
-                "The address cannot change while a run that pays this contractor is in progress.",
-                "Wait for the run to finish, then edit the address.",
-            ));
-        }
+    }
+    if changes_payout(&existing, &new) && db::contractor_in_active_run(&s.db, &id).await? {
+        return Err(ApiError::conflict(
+            "contractor_in_active_run",
+            "The address and settlement cannot change while a run that pays this contractor is in progress.",
+            "Wait for the run to finish (or cancel it if it received no money), then edit. The name and email can change now.",
+        ));
     }
     db::update_contractor(&s.db, &id, &new).await?;
     Ok(Json(get_contractor(&s, &id).await?))
@@ -250,7 +265,7 @@ async fn archive(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
         return Err(ApiError::conflict(
             "contractor_in_active_run",
             "This contractor is in a run that has not finished.",
-            "Wait for the run to finish, then archive the contractor.",
+            "Wait for the run to finish, or cancel it if it received no money, then archive the contractor.",
         ));
     }
     db::archive_contractor(&s.db, &id).await?;
@@ -336,4 +351,89 @@ fn wallet_form(s: &AppStateRef, ufvk: &str) -> ApiResult<String> {
     let params = s.cfg.network.params();
     let key = zcash_keys::keys::UnifiedFullViewingKey::decode(&params, ufvk).map_err(ApiError::internal)?;
     Ok(crate::viewer::encode_ufvk_r0(&params, &key)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn solana_payout_addresses_must_be_base58_public_keys() {
+        // USDC's own mint and the system program are valid 32-byte keys.
+        assert!(payout_address_valid(
+            "sol",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        ));
+        assert!(payout_address_valid("sol", "11111111111111111111111111111111"));
+        // 0, O, I and l are not base58 (audit SL-17).
+        assert!(!payout_address_valid("sol", "0000000000000000000000000000000000000000"));
+        assert!(!payout_address_valid("sol", "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"));
+        // Valid base58 of the wrong length.
+        assert!(!payout_address_valid(
+            "sol",
+            "2222222222222222222222222222222222222222222"
+        ));
+        assert!(payout_address_valid(
+            "base",
+            "0x2527D02599Ba641c19FEa793cD0F167589a0f10D"
+        ));
+        assert!(!payout_address_valid(
+            "base",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        ));
+    }
+
+    fn contractor() -> Contractor {
+        Contractor {
+            id: "c".into(),
+            name: "Amara".into(),
+            email: None,
+            unified_address: "utest1a".into(),
+            account_index: 1,
+            account_birthday_height: 1,
+            settlement_choice: "hold_zec".into(),
+            payout_chain: None,
+            payout_address: None,
+            fvk_shared_at: None,
+            created_at: String::new(),
+            archived_at: None,
+        }
+    }
+
+    fn edit(c: &Contractor) -> NewContractor {
+        NewContractor {
+            name: c.name.clone(),
+            email: c.email.clone(),
+            unified_address: c.unified_address.clone(),
+            settlement_choice: c.settlement_choice.clone(),
+            payout_chain: c.payout_chain.clone(),
+            payout_address: c.payout_address.clone(),
+        }
+    }
+
+    /// Audit SL-05: switching settlement or the USDC destination during a run is guarded like
+    /// the address; the name and email are not.
+    #[test]
+    fn settlement_and_payout_edits_are_payout_changes() {
+        let c = contractor();
+        let mut n = edit(&c);
+        n.name = "Amara O.".into();
+        n.email = Some("a@example.com".into());
+        assert!(!changes_payout(&c, &n));
+        let mut n = edit(&c);
+        n.settlement_choice = "convert_usdc".into();
+        n.payout_chain = Some("base".into());
+        n.payout_address = Some("0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into());
+        assert!(changes_payout(&c, &n));
+        let mut n = edit(&c);
+        n.unified_address = "utest1b".into();
+        assert!(changes_payout(&c, &n));
+        let mut conv = contractor();
+        conv.settlement_choice = "convert_usdc".into();
+        conv.payout_chain = Some("base".into());
+        conv.payout_address = Some("0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into());
+        let mut n = edit(&conv);
+        n.payout_address = Some("0x000000000000000000000000000000000000dEaD".into());
+        assert!(changes_payout(&conv, &n));
+    }
 }

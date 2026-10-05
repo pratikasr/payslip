@@ -44,6 +44,13 @@ pub struct Funding {
     pub venue_ref: Option<String>,
     pub venue_status: Option<String>,
     pub refund_reason: Option<String>,
+    /// Maya only: the router contract a token deposit goes through
+    /// (`depositWithExpiry(deposit_address, asset, amount, deposit_memo, expiry)`).
+    #[serde(default)]
+    pub router: Option<String>,
+    /// Maya only: the memo the deposit must carry, or the swap is not made.
+    #[serde(default)]
+    pub deposit_memo: Option<String>,
 }
 
 /// A contractor-side conversion of one pay line from ZEC to USDC (ADR-018). Stored as JSON in
@@ -153,7 +160,7 @@ pub fn build(cfg: &Config) -> anyhow::Result<Arc<dyn SwapVenue>> {
             NearIntents1Click::new(cfg.near_intents_api_url.clone(), cfg.near_intents_jwt.clone())?
                 .with_app_fee(cfg.app_fee_recipient.clone(), cfg.app_fee_bps),
         ),
-        VenueKind::Maya => Arc::new(Maya::new(cfg.maya_api_url.clone())?),
+        VenueKind::Maya => Arc::new(Maya::new(cfg.maya_api_url.clone(), cfg.maya_midgard_url.clone())?),
         VenueKind::TestnetFixedRate => {
             anyhow::ensure!(
                 cfg.network == crate::config::ZcashNetwork::Testnet,
@@ -596,16 +603,66 @@ impl SwapVenue for NearIntents1Click {
 
 pub struct Maya {
     base: String,
+    midgard: String,
     http: reqwest::Client,
 }
 
 impl Maya {
-    pub fn new(base: String) -> anyhow::Result<Self> {
+    pub fn new(base: String, midgard: String) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder().timeout(Duration::from_secs(30)).build()?;
         Ok(Maya {
             base: base.trim_end_matches('/').to_string(),
+            midgard: midgard.trim_end_matches('/').to_string(),
             http,
         })
+    }
+
+    /// Maps a `/mayachain/tx/status/{hash}` answer onto the funding (verified against mayanode,
+    /// 5 Oct 2026): ZEC delivered by out_txs whose memo starts `OUT:`, returned by ones that
+    /// start `REFUND:`; done once `stages.outbound_signed.completed`.
+    pub fn apply_status(funding: &Funding, body: &Value) -> Funding {
+        let mut f = funding.clone();
+        let observed = body["stages"]["inbound_observed"]["completed"]
+            .as_bool()
+            .unwrap_or(false);
+        let signed = body["stages"]["outbound_signed"]["completed"]
+            .as_bool()
+            .unwrap_or(false);
+        let outs = body["out_txs"].as_array().cloned().unwrap_or_default();
+        let memo_of = |o: &Value| o["memo"].as_str().unwrap_or("").to_ascii_uppercase();
+        let delivered: Vec<String> = outs
+            .iter()
+            .filter(|o| o["chain"].as_str() == Some("ZEC") && memo_of(o).starts_with("OUT:"))
+            .filter_map(|o| o["id"].as_str().map(|s| s.to_ascii_lowercase()))
+            .collect();
+        let refunded = outs.iter().any(|o| memo_of(o).starts_with("REFUND:"));
+        f.status = if !observed {
+            "deposit_seen"
+        } else if signed && !delivered.is_empty() {
+            "success"
+        } else if signed && refunded {
+            "refunded"
+        } else {
+            "processing"
+        }
+        .into();
+        f.venue_status = Some(
+            if signed {
+                "OUTBOUND_SIGNED"
+            } else if observed {
+                "INBOUND_OBSERVED"
+            } else {
+                "PENDING"
+            }
+            .into(),
+        );
+        if !delivered.is_empty() {
+            f.delivered_txids = delivered;
+        }
+        if f.status == "refunded" {
+            f.refund_reason = Some("Maya refunded the deposit".into());
+        }
+        f
     }
 }
 
@@ -618,7 +675,7 @@ impl SwapVenue for Maya {
     async fn indicative_rate_e6(&self) -> Result<u64, VenueError> {
         let body: Value = self
             .http
-            .get("https://midgard.mayachain.info/v2/pool/ZEC.ZEC")
+            .get(format!("{}/v2/pool/ZEC.ZEC", self.midgard))
             .send()
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?
@@ -673,6 +730,11 @@ impl SwapVenue for Maya {
             .as_str()
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
+        // The quote's `expiry` (Unix seconds): Maya refuses deposits sent after it.
+        let deadline = body["expiry"]
+            .as_i64()
+            .and_then(|t| OffsetDateTime::from_unix_timestamp(t).ok())
+            .map(rfc3339);
         Ok(Funding {
             venue: VenueKind::Maya.as_str().into(),
             status: "awaiting_deposit".into(),
@@ -681,11 +743,14 @@ impl SwapVenue for Maya {
             amount_in: money::format_usd(req.usd_cents),
             amount_in_base_units: amount.to_string(),
             deposit_address: body["inbound_address"].as_str().map(String::from),
+            deadline,
             requested_usd_cents: req.usd_cents,
             quoted_zat,
             quote_rate_e6: money::fill_rate_e6(req.usd_cents, quoted_zat).unwrap_or(0),
             venue_ref: body["memo"].as_str().map(String::from),
             venue_status: Some("QUOTED".into()),
+            router: body["router"].as_str().map(String::from),
+            deposit_memo: body["memo"].as_str().map(String::from),
             ..Default::default()
         })
     }
@@ -707,18 +772,7 @@ impl SwapVenue for Maya {
             .json()
             .await
             .map_err(|e| VenueError::Unavailable(e.to_string()))?;
-        let mut f = funding.clone();
-        let done = body["stages"]["outbound_signed"]["completed"]
-            .as_bool()
-            .unwrap_or(false);
-        f.status = if done { "success".into() } else { "processing".into() };
-        if let Some(out) = body["out_txs"].as_array() {
-            f.delivered_txids = out
-                .iter()
-                .filter_map(|t| t["id"].as_str().map(|s| s.to_ascii_lowercase()))
-                .collect();
-        }
-        Ok(f)
+        Ok(Self::apply_status(funding, &body))
     }
 
     async fn submit_deposit(&self, funding: &Funding, tx_hash: &str) -> Result<Funding, VenueError> {
@@ -781,6 +835,41 @@ mod tests {
             g.delivered_txids,
             vec!["c3be8e48498c92aaa67361289eec08272f9c74631da3bf8d2bd3529d005db5b2".to_string()]
         );
+    }
+
+    /// Audit SL-24: a Maya swap that was refunded fails the run instead of showing
+    /// `processing` for ever; delivery txids are the ZEC `OUT:` transactions only. The shapes
+    /// are mayanode `/mayachain/tx/status` answers (5 Oct 2026).
+    #[test]
+    fn maya_status_maps_delivery_and_refund() {
+        let f = Funding {
+            venue: "maya".into(),
+            status: "deposit_seen".into(),
+            deposit_tx_hash: Some("0xabc".into()),
+            ..Default::default()
+        };
+        let stages = |signed: bool| {
+            json!({"inbound_observed": {"completed": true}, "swap_finalised": {"completed": true},
+                   "outbound_signed": {"completed": signed}})
+        };
+        let refunded = Maya::apply_status(
+            &f,
+            &json!({"stages": stages(true), "out_txs": [
+                {"id": "B1AE82", "chain": "ETH", "memo": "REFUND:506F45", "to_address": "0xpayer"}]}),
+        );
+        assert_eq!(refunded.status, "refunded");
+        assert!(refunded.delivered_txids.is_empty());
+        let delivered = Maya::apply_status(
+            &f,
+            &json!({"stages": stages(true), "out_txs": [
+                {"id": "94E4B9", "chain": "ZEC", "memo": "OUT:506F45", "to_address": "zs1..."}]}),
+        );
+        assert_eq!(delivered.status, "success");
+        assert_eq!(delivered.delivered_txids, vec!["94e4b9".to_string()]);
+        let swapping = Maya::apply_status(&f, &json!({"stages": stages(false)}));
+        assert_eq!(swapping.status, "processing");
+        let unseen = Maya::apply_status(&f, &json!({"stages": {"inbound_observed": {"completed": false}}}));
+        assert_eq!(unseen.status, "deposit_seen");
     }
 
     #[tokio::test]

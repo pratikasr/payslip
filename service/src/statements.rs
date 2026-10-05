@@ -91,6 +91,19 @@ pub struct RunFundingRecord {
     pub fee_zat: Option<u64>,
 }
 
+/// One output of a run's allocation transaction as the treasury key sees it: what the payer
+/// sent to one contractor account. `to_account` is the receiving account's fingerprint when its
+/// key was scanned too, else None.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct AllocationOut {
+    pub date: Option<String>,
+    pub height: Option<u32>,
+    pub txid: String,
+    pub run_id: String,
+    pub amount_zat: u64,
+    pub to_account: Option<String>,
+}
+
 /// Every scanned output, classified.
 #[derive(Clone, Debug, Default)]
 pub struct Classified {
@@ -99,6 +112,9 @@ pub struct Classified {
     pub unlabelled: Vec<Unlabelled>,
     pub funding: Vec<FundingIn>,
     pub run_records: Vec<RunFundingRecord>,
+    /// Allocation outputs sent by a scanned account (the treasury), mined in the period or
+    /// unmined.
+    pub allocations: Vec<AllocationOut>,
 }
 
 fn date_of(ts: Option<i64>) -> (Option<String>, Option<String>, Option<Date>) {
@@ -112,6 +128,45 @@ fn date_of(ts: Option<i64>) -> (Option<String>, Option<String>, Option<Date>) {
             )
         }
         None => (None, None, None),
+    }
+}
+
+/// A unified address in the ZIP 316 Revision 0 form (`utest1` / `u1`) with the same receivers,
+/// as payment proofs show it (ADR-021); the wallet records Revision 2 (`zutest1` / `zu1`).
+/// Anything that is not a unified address (a transparent venue deposit) is returned as is.
+pub fn address_r0(network: ZcashNetwork, address: &str) -> String {
+    use zcash_address::unified::{self, Container as _, Encoding as _};
+    use zcash_protocol::consensus::Parameters;
+    let Ok((net, _, ua)) = unified::Address::decode(address) else {
+        return address.to_string();
+    };
+    if net != network.params().network_type() {
+        return address.to_string();
+    }
+    let items: Vec<_> = ua
+        .items()
+        .into_iter()
+        .filter(|r| !matches!(r, unified::Receiver::Unknown { .. }))
+        .map(unified::Uitem::Data)
+        .collect();
+    unified::Address::try_from_items(unified::Revision::R0, items)
+        .map(|r0| r0.encode(&net))
+        .unwrap_or_else(|_| address.to_string())
+}
+
+/// Marks as `treasury` an unknown key that sent a run's allocation or holds its funding record
+/// (PS1R): only the treasury key can. A statements-only service knows no key in advance.
+pub fn infer_treasury(outputs: &[ScanOutput], keys: &mut [KeyInfo]) {
+    for o in outputs {
+        let treasury_memo = matches!(
+            memo::decode_bytes(o.memo.as_deref()),
+            Decoded::Payslip(PayslipMemo::RunFunding(_) | PayslipMemo::Allocation(_))
+        );
+        if let (true, Some(from)) = (treasury_memo, &o.from_account) {
+            if let Some(k) = keys.iter_mut().find(|k| &k.fingerprint == from && k.role == "unknown") {
+                k.role = "treasury".into();
+            }
+        }
     }
 }
 
@@ -211,6 +266,25 @@ pub fn classify(
             continue;
         }
         match decoded {
+            // A pay line is a payment the scanned account made. One arriving into it was written
+            // by whoever sent it (anyone who knows the account's address can), so it is listed,
+            // never counted as pay.
+            Decoded::Payslip(PayslipMemo::PayLine(m)) if direction == "in" => {
+                if in_period || o.mined_height.is_none() {
+                    c.unlabelled.push(Unlabelled {
+                        date,
+                        height: o.mined_height,
+                        txid: o.txid.clone(),
+                        direction,
+                        amount_zat: o.value_zat,
+                        memo_text: PayslipMemo::PayLine(m).encode().ok(),
+                        reason: "unexpected_direction".into(),
+                        label: label(&account),
+                        account,
+                        explorer_url,
+                    });
+                }
+            }
             Decoded::Payslip(PayslipMemo::PayLine(m)) => {
                 let line = Line {
                     date: date.clone(),
@@ -231,7 +305,7 @@ pub fn classify(
                     account_index: index(&account),
                     account,
                     settlement,
-                    to_address: o.to_address.clone(),
+                    to_address: o.to_address.as_deref().map(|a| address_r0(network, a)),
                     market: None,
                     fee_zat: o.fee_zat,
                     sort_key: (
@@ -248,6 +322,17 @@ pub fn classify(
                 }
             }
             Decoded::Payslip(PayslipMemo::Allocation(a)) => {
+                // Sent by the treasury: one expected pay line for the run (reconciliation).
+                if o.from_account.is_some() && (in_period || o.mined_height.is_none()) {
+                    c.allocations.push(AllocationOut {
+                        date: date.clone(),
+                        height: o.mined_height,
+                        txid: o.txid.clone(),
+                        run_id: a.run_id.to_string(),
+                        amount_zat: o.value_zat,
+                        to_account: o.to_account.clone(),
+                    });
+                }
                 // Treasury to contractor account: internal. The receiving side is funding.
                 if let Some(to) = &o.to_account {
                     if in_period || o.mined_height.is_none() {
@@ -311,6 +396,8 @@ pub fn totals(lines: &[Line]) -> Totals {
 pub struct RunReconciliation {
     pub run_id: String,
     pub period: String,
+    /// Block date (UTC) of the run's funding record: the period the run is reconciled in.
+    pub funding_date: Option<String>,
     pub funded_usd_cents: Option<u64>,
     pub zec_acquired_zat: Option<u64>,
     pub rate_usd_per_zec_e6: Option<u64>,
@@ -318,7 +405,19 @@ pub struct RunReconciliation {
     pub paid_zat: u64,
     pub lines: usize,
     pub pending_lines: usize,
+    /// Allocation outputs the treasury key shows for the run: one per pay line the payer funded.
+    pub allocations: usize,
+    pub allocated_zat: u64,
+    /// Allocations to accounts whose viewing key was not supplied: their payments cannot be seen.
+    pub missing_accounts: usize,
+    /// ZEC allocated to those accounts.
+    pub missing_zat: u64,
+    /// Allocations to supplied accounts that show no payment for the run.
+    pub unpaid_accounts: usize,
     pub network_fees_zat: u64,
+    /// The run's ZEC the treasury kept: acquired minus what the allocation sent to contractor
+    /// accounts and its fee, all read from the treasury's own transaction. None without the
+    /// treasury key's view of the allocation.
     pub unspent_zat: Option<i64>,
     pub variance_usd_cents: Option<i64>,
     pub explained_usd_cents: Option<i64>,
@@ -330,26 +429,73 @@ pub struct RunReconciliation {
     pub status: &'static str,
 }
 
-/// Per-run reconciliation: funded USD against paid USD. The variance must equal the ZEC
-/// acquired but not paid out, valued at the run's fill rate, within one cent per line
-/// (each line's ZEC amount is rounded to the zatoshi).
-pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
-    let mut run_ids: BTreeSet<String> = c.run_records.iter().map(|r| r.run_id.clone()).collect();
-    run_ids.extend(c.lines.iter().map(|l| l.run_id.clone()));
-    run_ids.extend(c.pending.iter().map(|l| l.run_id.clone()));
+fn date_str(d: Date) -> String {
+    format!("{:04}-{:02}-{:02}", d.year(), u8::from(d.month()), d.day())
+}
+
+/// Per-run reconciliation over `all`, the classification of the whole scanned history (no
+/// period filter), so a run is judged on all of its payments wherever they fall. A run belongs
+/// to the period its funding record was mined in (or, with no record visible, its first mined
+/// output); runs still in progress belong to every period. `period` None includes every run.
+///
+/// Statuses, checked in this order:
+/// - `missing_funding_record`: no run funding record (PS1R) is visible; the treasury key is
+///   missing or the run never allocated.
+/// - `incomplete`: the allocation or a payment is not mined yet.
+/// - `incomplete_keys`: the treasury allocated to accounts whose viewing keys were not
+///   supplied, so some payments cannot be seen.
+/// - `unpaid`: an allocated account whose key was supplied shows no payment for the run.
+/// - `variance_unexplained`: funded USD minus paid USD differs from the ZEC not paid out
+///   (valued at the fill rate) by more than the rounding tolerance.
+/// - `reconciled`: every allocation has its payment and the variance is explained.
+pub fn reconcile(all: &Classified, period: Option<(Date, Date)>) -> Vec<RunReconciliation> {
+    let mut run_ids: BTreeSet<String> = all.run_records.iter().map(|r| r.run_id.clone()).collect();
+    run_ids.extend(all.lines.iter().map(|l| l.run_id.clone()));
+    run_ids.extend(all.pending.iter().map(|l| l.run_id.clone()));
+    run_ids.extend(all.allocations.iter().map(|a| a.run_id.clone()));
+    let range = period.map(|(f, t)| (date_str(f), date_str(t)));
     let mut out = vec![];
     for run_id in run_ids {
-        let record = c.run_records.iter().find(|r| r.run_id == run_id);
-        let lines: Vec<&Line> = c
+        let record = all.run_records.iter().find(|r| r.run_id == run_id);
+        let lines: Vec<&Line> = all
             .lines
             .iter()
             .filter(|l| l.run_id == run_id && l.direction == "out")
             .collect();
-        let pending = c
+        let pending_lines: Vec<&Line> = all
             .pending
             .iter()
             .filter(|l| l.run_id == run_id && l.direction == "out")
-            .count();
+            .collect();
+        let allocations: Vec<&AllocationOut> = all.allocations.iter().filter(|a| a.run_id == run_id).collect();
+
+        // Which period the run belongs to.
+        let anchor: Option<Option<String>> = match record {
+            Some(r) if r.height.is_some() => Some(r.date.clone()),
+            Some(_) => None,
+            None => {
+                let mined = allocations
+                    .iter()
+                    .filter(|a| a.height.is_some())
+                    .map(|a| a.date.clone())
+                    .chain(lines.iter().map(|l| l.date.clone()))
+                    .flatten()
+                    .min();
+                mined.map(Some)
+            }
+        };
+        let in_range = match (&range, &anchor) {
+            (None, _) => true,
+            // In progress: shown in every period.
+            (Some(_), None) => true,
+            (Some((from, to)), Some(Some(d))) => d >= from && d <= to,
+            // Mined but with no block time: never hidden.
+            (Some(_), Some(None)) => true,
+        };
+        if !in_range {
+            continue;
+        }
+
         let paid_usd: u64 = lines.iter().map(|l| l.usd_basis_cents).sum();
         let paid_zat: u64 = lines.iter().map(|l| l.amount_zat).sum();
         let mut fee_txs: BTreeMap<&str, u64> = BTreeMap::new();
@@ -372,7 +518,15 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
             ),
             None => (None, None, None),
         };
-        let unspent = acquired.map(|a| a as i64 - paid_zat as i64 - fees as i64);
+        let allocated_zat: u64 = allocations.iter().map(|a| a.amount_zat).sum();
+        // What the treasury kept, from its own allocation transaction: not inferred from the
+        // payments that happen to be visible.
+        let unspent = match (acquired, record) {
+            (Some(a), Some(r)) if !allocations.is_empty() => {
+                Some(a as i64 - allocated_zat as i64 - r.fee_zat.unwrap_or(0) as i64)
+            }
+            _ => None,
+        };
         let variance = funded.map(|f| f as i64 - paid_usd as i64);
         let explained = match (acquired, rate) {
             (Some(a), Some(r)) => {
@@ -387,10 +541,27 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
             (Some(v), Some(e)) => Some(v - e),
             _ => None,
         };
+        // Each allocation should have its payment, from the account it funded.
+        let missing_accounts = allocations.iter().filter(|a| a.to_account.is_none()).count();
+        let missing_zat: u64 = allocations
+            .iter()
+            .filter(|a| a.to_account.is_none())
+            .map(|a| a.amount_zat)
+            .sum();
+        let unpaid_accounts = allocations
+            .iter()
+            .filter_map(|a| a.to_account.as_deref())
+            .filter(|acct| !lines.iter().chain(pending_lines.iter()).any(|l| l.account == *acct))
+            .count();
+        let allocation_pending = allocations.iter().any(|a| a.height.is_none());
         let status = if record.is_none() {
             "missing_funding_record"
-        } else if pending > 0 {
+        } else if !pending_lines.is_empty() || allocation_pending || record.is_some_and(|r| r.height.is_none()) {
             "incomplete"
+        } else if missing_accounts > 0 {
+            "incomplete_keys"
+        } else if unpaid_accounts > 0 {
+            "unpaid"
         } else if difference.unwrap_or(0).abs() <= tolerance {
             "reconciled"
         } else {
@@ -399,13 +570,19 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
         out.push(RunReconciliation {
             run_id,
             period,
+            funding_date: record.and_then(|r| r.date.clone()),
             funded_usd_cents: funded,
             zec_acquired_zat: acquired,
             rate_usd_per_zec_e6: rate,
             paid_usd_cents: paid_usd,
             paid_zat,
             lines: lines.len(),
-            pending_lines: pending,
+            pending_lines: pending_lines.len(),
+            allocations: allocations.len(),
+            allocated_zat,
+            missing_accounts,
+            missing_zat,
+            unpaid_accounts,
             network_fees_zat: fees,
             unspent_zat: unspent,
             variance_usd_cents: variance,
@@ -416,6 +593,27 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
         });
     }
     out
+}
+
+/// A contractor CSV in `format`. On testnet the market value columns stay empty in every
+/// format (Koinly's Net Worth falls back to the USD basis): testnet ZEC has no market value and
+/// the statement screen hides it there (ADR-022).
+pub fn contractor_export(c: &Classified, format: ExportFormat, network: ZcashNetwork) -> String {
+    let stripped;
+    let c = if network == ZcashNetwork::Testnet {
+        let mut copy = c.clone();
+        for l in copy.lines.iter_mut().chain(copy.pending.iter_mut()) {
+            l.market = None;
+        }
+        stripped = copy;
+        &stripped
+    } else {
+        c
+    };
+    match format {
+        ExportFormat::Payslip => contractor_csv(c),
+        f => contractor_tool_csv(c, f),
+    }
 }
 
 pub fn contractor_csv(c: &Classified) -> String {
@@ -499,7 +697,7 @@ fn write_unlabelled(w: &mut csv::Writer<Vec<u8>>, items: &[Unlabelled]) {
             money::format_zec(u.amount_zat),
             u.reason.clone(),
             csv_safe(&u.memo_text.clone().unwrap_or_default()),
-            u.label.clone().unwrap_or_else(|| u.account.clone()),
+            csv_safe(&u.label.clone().unwrap_or_else(|| u.account.clone())),
         ]);
     }
 }
@@ -517,6 +715,9 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
         "paid_zec",
         "lines",
         "pending_lines",
+        "allocations",
+        "missing_accounts",
+        "unpaid_accounts",
         "network_fees_zec",
         "unspent_zec",
         "variance_usd",
@@ -536,6 +737,9 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
             money::format_zec(r.paid_zat),
             r.lines.to_string(),
             r.pending_lines.to_string(),
+            r.allocations.to_string(),
+            r.missing_accounts.to_string(),
+            r.unpaid_accounts.to_string(),
             money::format_zec(r.network_fees_zat),
             opt(r.unspent_zat.map(|z| money::format_zec_signed(z as i128))),
             opt(r.variance_usd_cents.map(|v| money::format_usd_signed(v as i128))),
@@ -1070,7 +1274,7 @@ pub(crate) mod tests {
     fn reconciliation_variance_equals_unpaid_zec_at_fill_rate() {
         let c = classify(ZcashNetwork::Testnet, &accountant_outputs(), &keys(), 200, None);
         assert_eq!(c.lines.len(), 2);
-        let r = reconcile(&c);
+        let r = reconcile(&c, None);
         assert_eq!(r.len(), 1);
         let r = &r[0];
         assert_eq!(r.paid_usd_cents, 805_050);
@@ -1092,12 +1296,12 @@ pub(crate) mod tests {
     fn missing_funding_record_and_pending_lines_are_flagged() {
         let mut outputs = accountant_outputs();
         outputs.remove(2);
-        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None));
+        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None), None);
         assert_eq!(r[0].status, "missing_funding_record");
         let mut outputs = accountant_outputs();
         outputs[4].mined_height = None;
         outputs[4].block_time = None;
-        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 120, None));
+        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 120, None), None);
         assert_eq!(r[0].status, "incomplete");
         assert_eq!(r[0].pending_lines, 1);
     }
@@ -1116,7 +1320,7 @@ pub(crate) mod tests {
             false,
             memo_bytes(pay(100_000, "INV-X")),
         ));
-        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None));
+        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None), None);
         assert_eq!(r[0].status, "variance_unexplained");
     }
 
@@ -1200,6 +1404,209 @@ pub(crate) mod tests {
             "QuickBooks needs exactly three columns"
         );
         assert_eq!(ExportFormat::parse(Some("excel")), None);
+    }
+
+    /// The accountant pasted the treasury key and Amara's key but not Bo's: the treasury shows
+    /// two allocations, one payment is visible. Audit SL-03.
+    #[test]
+    fn a_missing_contractor_key_is_flagged_not_reconciled() {
+        let mut outputs = accountant_outputs();
+        outputs[1].to_account = None; // the allocation to Bo, whose key is missing
+        outputs.remove(4); // Bo's payment, invisible without his key
+        let mut k = keys();
+        k.pop();
+        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &k, 200, None), None);
+        assert_eq!(r[0].status, "incomplete_keys", "{r:?}");
+        assert_eq!((r[0].allocations, r[0].missing_accounts, r[0].lines), (2, 1, 1));
+        // Bo's allocation is reported, not booked as unspent: the treasury kept the same
+        // amount whichever keys are loaded.
+        let full = reconcile(
+            &classify(ZcashNetwork::Testnet, &accountant_outputs(), &keys(), 200, None),
+            None,
+        );
+        assert_eq!(r[0].unspent_zat, full[0].unspent_zat);
+        assert_eq!(
+            r[0].missing_zat,
+            money::usd_cents_to_zat(325_050, RATE).unwrap() + 10_000
+        );
+    }
+
+    /// Bo's key is supplied, the treasury allocated to him, but he shows no payment. SL-03.
+    #[test]
+    fn an_allocation_without_a_payment_is_unpaid() {
+        let mut outputs = accountant_outputs();
+        outputs.remove(4);
+        let r = reconcile(&classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None), None);
+        assert_eq!(r[0].status, "unpaid", "{r:?}");
+        assert_eq!(r[0].unpaid_accounts, 1);
+        // With every payment the same run reconciles, and says how many it expected.
+        let r = reconcile(
+            &classify(ZcashNetwork::Testnet, &accountant_outputs(), &keys(), 200, None),
+            None,
+        );
+        assert_eq!(
+            (r[0].status, r[0].allocations, r[0].unpaid_accounts),
+            ("reconciled", 2, 0)
+        );
+        assert_eq!(r[0].allocated_zat, r[0].paid_zat + 20_000);
+    }
+
+    /// A run funded at 23:58 on 30 Sep and paid after midnight belongs to September, with both
+    /// payments; October does not list it again. SL-03.
+    #[test]
+    fn a_run_is_reconciled_whole_in_the_period_of_its_funding_record() {
+        let sep30 = 1_790_812_680; // 2026-09-30T23:58:00Z
+        let mut outputs = accountant_outputs();
+        for o in outputs.iter_mut().take(3) {
+            o.block_time = Some(sep30);
+        }
+        outputs[3].block_time = Some(sep30 + 180);
+        outputs[4].block_time = Some(sep30 + 240);
+        let all = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None);
+        let month = |m: time::Month, last: u8| {
+            (
+                Date::from_calendar_date(2026, m, 1).unwrap(),
+                Date::from_calendar_date(2026, m, last).unwrap(),
+            )
+        };
+        let sep = reconcile(&all, Some(month(time::Month::September, 30)));
+        assert_eq!(sep.len(), 1);
+        assert_eq!((sep[0].status, sep[0].lines), ("reconciled", 2));
+        assert_eq!(sep[0].funding_date.as_deref(), Some("2026-09-30"));
+        assert!(reconcile(&all, Some(month(time::Month::October, 31))).is_empty());
+    }
+
+    /// Anyone who knows a contractor account's address can send it a PS1 memo; an inbound one
+    /// is listed as unlabelled, never counted as pay. Audit SL-18.
+    #[test]
+    fn an_inbound_pay_line_memo_is_not_income() {
+        let mut outputs = accountant_outputs();
+        outputs.push(out(
+            "ff",
+            Some(150),
+            T0 + 999,
+            None,
+            Some("a1"),
+            1,
+            false,
+            memo_bytes(pay(99_999_900, "FAKE")),
+        ));
+        let c = classify(ZcashNetwork::Testnet, &outputs, &keys(), 200, None);
+        assert!(c.lines.iter().all(|l| l.direction == "out"));
+        assert_eq!(totals(&c.lines).usd_cents, 805_050);
+        let u = c.unlabelled.iter().find(|u| u.txid == "ff").unwrap();
+        assert_eq!(u.reason, "unexpected_direction");
+        assert!(u.memo_text.as_deref().unwrap().contains("FAKE"));
+        assert_eq!(reconcile(&c, None)[0].status, "reconciled");
+    }
+
+    /// Contractor names come from the payer's form; the unlabelled section escapes them. SL-21.
+    #[test]
+    fn unlabelled_account_labels_are_formula_safe() {
+        let mut k = keys();
+        k[1].label = Some("=HYPERLINK(\"https://evil.example\",\"Amara\")".into());
+        let c = classify(
+            ZcashNetwork::Testnet,
+            &[out("c1", Some(110), T0, None, Some("a1"), 777, false, None)],
+            &k,
+            200,
+            None,
+        );
+        let csv = accountant_csv(&reconcile(&c, None), &c);
+        let row = csv.lines().find(|l| l.contains("c1")).unwrap();
+        assert!(row.contains(",\"'=HYPERLINK"), "{row}");
+    }
+
+    /// Audit JD-02: in statements mode every key arrives as "unknown"; the one that holds the
+    /// funding record and sent the allocations is recognised as the treasury key.
+    #[test]
+    fn the_treasury_key_is_recognised_from_its_records() {
+        let mut k: Vec<KeyInfo> = keys()
+            .into_iter()
+            .map(|mut k| {
+                k.role = "unknown".into();
+                k.label = None;
+                k
+            })
+            .collect();
+        infer_treasury(&accountant_outputs(), &mut k);
+        let roles: Vec<&str> = k.iter().map(|k| k.role.as_str()).collect();
+        assert_eq!(roles, vec!["treasury", "unknown", "unknown"]);
+        // A contractor key alone sees allocations arriving, not sent: it stays unknown.
+        let mut only = vec![k[1].clone()];
+        let inbound: Vec<ScanOutput> = accountant_outputs()
+            .into_iter()
+            .map(|mut o| {
+                if o.from_account.as_deref() == Some("treasury") {
+                    o.from_account = None;
+                }
+                o
+            })
+            .collect();
+        infer_treasury(&inbound, &mut only);
+        assert_eq!(only[0].role, "unknown");
+    }
+
+    /// Audit PBL-10: testnet CSVs carry no market value (testnet ZEC has none); mainnet keeps it.
+    #[test]
+    fn testnet_exports_leave_market_values_empty() {
+        let mut c = classify(ZcashNetwork::Testnet, &accountant_outputs(), &keys(), 200, None);
+        for l in c.lines.iter_mut() {
+            l.market = Some(crate::prices::MarketValue {
+                currency: "USD".into(),
+                price_cents: 133_155,
+                value_cents: 473,
+                priced_at: "2026-10-05T11:40:00Z".into(),
+                source: "coingecko",
+            });
+        }
+        let koinly = contractor_export(&c, ExportFormat::Koinly, ZcashNetwork::Testnet);
+        assert!(koinly.contains(",4800.00,USD,"), "{koinly}");
+        assert!(!koinly.contains("4.73"));
+        let own = contractor_export(&c, ExportFormat::Payslip, ZcashNetwork::Testnet);
+        assert!(!own.contains("1331.55") && !own.contains("4.73"), "{own}");
+        let mainnet = contractor_export(&c, ExportFormat::Koinly, ZcashNetwork::Mainnet);
+        assert!(mainnet.contains(",4.73,USD,"), "{mainnet}");
+    }
+
+    /// Audit PBL-08: statement lines show the recipient in the Revision 0 form a payment proof
+    /// shows, not the wallet's Revision 2 form.
+    #[test]
+    fn recipients_are_shown_in_revision_0() {
+        use zcash_address::unified::{self, Encoding as _};
+        let params = ZcashNetwork::Testnet.params();
+        let sk = orchard::keys::SpendingKey::from_bytes([7; 32]).unwrap();
+        let addr = orchard::keys::FullViewingKey::from(&sk).address_at(0u32, zip32::Scope::External);
+        let r2 = unified::Address::try_from_items(
+            unified::Revision::R2,
+            vec![unified::Uitem::Data(unified::Receiver::Orchard(
+                addr.to_raw_address_bytes(),
+            ))],
+        )
+        .unwrap()
+        .encode(&zcash_protocol::consensus::NetworkType::Test);
+        assert!(r2.starts_with("zutest1"), "{r2}");
+        let r0 = address_r0(ZcashNetwork::Testnet, &r2);
+        assert_eq!(r0, crate::proof::recipient_address(&params, addr));
+        assert!(r0.starts_with("utest1"));
+        // Transparent addresses and junk pass through.
+        assert_eq!(
+            address_r0(ZcashNetwork::Testnet, "t1JjCEbkvYSfZvQLM1P8C6eXtQLawVox9PR"),
+            "t1JjCEbkvYSfZvQLM1P8C6eXtQLawVox9PR"
+        );
+        let mut o = out(
+            "r",
+            Some(120),
+            T0,
+            Some("a1"),
+            None,
+            5,
+            false,
+            memo_bytes(pay(100, "R")),
+        );
+        o.to_address = Some(r2);
+        let c = classify(ZcashNetwork::Testnet, &[o], &keys(), 200, None);
+        assert_eq!(c.lines[0].to_address.as_deref(), Some(r0.as_str()));
     }
 
     #[test]

@@ -94,6 +94,7 @@ pub struct WalletCore {
     params: Network,
     db: Db,
     client: lwd::Client,
+    lightwalletd_url: String,
     seed: Option<SecretVec<u8>>,
     conf: ConfirmationsPolicy,
     prover: Option<LocalTxProver>,
@@ -109,7 +110,7 @@ impl WalletCore {
         min_confirmations: u32,
     ) -> anyhow::Result<Self> {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+            crate::db::create_private_dir(dir)?;
         }
         let mut db = WalletDb::for_path(path, params, SystemClock, UnwrapErr(SysRng))
             .with_context(|| format!("opening wallet database {}", path.display()))?;
@@ -123,6 +124,7 @@ impl WalletCore {
             params,
             db,
             client: lwd::connect(lightwalletd_url)?,
+            lightwalletd_url: lightwalletd_url.to_string(),
             seed,
             conf: ConfirmationsPolicy::new_symmetrical(n, true),
             prover: None,
@@ -135,6 +137,12 @@ impl WalletCore {
 
     pub fn client(&mut self) -> &mut lwd::Client {
         &mut self.client
+    }
+
+    /// Replaces the lightwalletd connection with a fresh one (after the server dropped it).
+    pub fn reconnect(&mut self) -> anyhow::Result<()> {
+        self.client = lwd::connect(&self.lightwalletd_url)?;
+        Ok(())
     }
 
     pub fn db(&self) -> &Db {
@@ -190,22 +198,33 @@ impl WalletCore {
         Ok(acct.id())
     }
 
-    /// Imports a viewing key as a view-only account if it is not tracked yet.
+    /// Imports a viewing key as a view-only account if it is not tracked yet, scanning from
+    /// `birthday_height`. With `rescan_if_earlier`, a key already tracked from a later height is
+    /// imported again from the earlier one (its view-only data is all on chain), and the wallet
+    /// queues the blocks in between for scanning, so an earlier birthday never silently misses
+    /// payments. Returns the account and the height its scan starts at.
     pub async fn ensure_ufvk_account(
         &mut self,
         name: &str,
         ufvk: &UnifiedFullViewingKey,
         birthday_height: BlockHeight,
-    ) -> anyhow::Result<AccountUuid> {
+        rescan_if_earlier: bool,
+    ) -> anyhow::Result<(AccountUuid, BlockHeight)> {
         if let Some(acct) = self.db.get_account_for_ufvk(ufvk)? {
-            return Ok(acct.id());
+            let current = self.db.get_account_birthday(acct.id())?;
+            if !rescan_if_earlier || current <= birthday_height || acct.purpose() != AccountPurpose::ViewOnly {
+                return Ok((acct.id(), current));
+            }
+            self.db
+                .delete_account(acct.id())
+                .map_err(|e| anyhow!("re-importing viewing key from an earlier height: {e}"))?;
         }
         let birthday = self.birthday_at(birthday_height).await?;
         let acct = self
             .db
             .import_account_ufvk(name, ufvk, &birthday, AccountPurpose::ViewOnly, None)
             .map_err(|e| anyhow!("importing viewing key: {e}"))?;
-        Ok(acct.id())
+        Ok((acct.id(), birthday_height))
     }
 
     pub fn ufvk(&self, account: AccountUuid) -> anyhow::Result<UnifiedFullViewingKey> {
@@ -591,6 +610,28 @@ impl WalletHandle {
         Ok(WalletHandle { tx })
     }
 
+    /// Runs `f` on the wallet thread like [`WalletHandle::run`], but stops it at its next await
+    /// point if the caller stops waiting (for example the HTTP client disconnected), so a long
+    /// scan nobody will read does not keep the wallet thread busy. Wallet writes are SQLite
+    /// transactions, so a stopped scan leaves a consistent database and the next scan resumes it.
+    pub async fn run_cancellable<R, F>(&self, f: F) -> anyhow::Result<anyhow::Result<R>>
+    where
+        R: Send + 'static,
+        F: for<'a> FnOnce(&'a mut WalletCore) -> Pin<Box<dyn Future<Output = anyhow::Result<R>> + 'a>> + Send + 'static,
+    {
+        // Dropping `_caller` (when this future is dropped) resolves `gone` on the wallet thread.
+        let (_caller, gone) = tokio::sync::oneshot::channel::<()>();
+        self.run(move |w| {
+            Box::pin(async move {
+                tokio::select! {
+                    r = f(w) => r,
+                    _ = gone => Err(anyhow!("stopped: the caller went away")),
+                }
+            })
+        })
+        .await
+    }
+
     /// Runs `f` on the wallet thread and returns its result.
     pub async fn run<R, F>(&self, f: F) -> anyhow::Result<R>
     where
@@ -607,5 +648,45 @@ impl WalletHandle {
         self.tx.send(job).map_err(|_| anyhow!("wallet thread has stopped"))?;
         orx.await
             .map_err(|_| anyhow!("wallet operation panicked; see the service log"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Audit SEC-06: a scan whose HTTP client went away must not keep the wallet thread busy.
+    /// The second job runs at once only if the first stopped when its caller left.
+    #[tokio::test]
+    async fn a_job_whose_caller_left_stops_and_frees_the_wallet_thread() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("viewer.db");
+        let handle = WalletHandle::spawn("test-wallet".into(), move || {
+            // Nothing listens on port 9; the client connects lazily and is never used here.
+            WalletCore::open(Network::TestNetwork, &path, "http://127.0.0.1:9", None, 1)
+        })
+        .unwrap();
+        let slow = handle.run_cancellable(|_w| {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_secs(60)).await;
+                Ok(())
+            })
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(200), slow).await.is_err(),
+            "the caller gives up"
+        );
+        let next = tokio::time::timeout(Duration::from_secs(5), handle.run(|_w| Box::pin(async { 7 })))
+            .await
+            .expect("the abandoned job stopped and freed the wallet thread");
+        assert_eq!(next.unwrap(), 7);
+        // A job whose caller waits runs to completion.
+        let done = handle
+            .run_cancellable(|_w| Box::pin(async { Ok(5) }))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(done, 5);
     }
 }

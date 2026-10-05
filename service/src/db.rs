@@ -21,9 +21,21 @@ pub fn now() -> String {
         .unwrap_or_default()
 }
 
+/// Creates `dir` readable by this user only (Unix): wallet databases and viewer caches hold
+/// viewing keys.
+pub fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(())
+}
+
 pub async fn open(path: &Path) -> anyhow::Result<Pool> {
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
+        create_private_dir(dir)?;
     }
     let opts = SqliteConnectOptions::from_str(&format!("sqlite://{}", path.display()))?
         .create_if_missing(true)
@@ -199,11 +211,12 @@ pub async fn mark_fvk_shared(pool: &Pool, id: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// True if the contractor is in a run that has not finished.
+/// True if the contractor is in a run that has started and not finished (not a draft, not paid,
+/// not cancelled).
 pub async fn contractor_in_active_run(pool: &Pool, id: &str) -> anyhow::Result<bool> {
     let n: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM pay_lines l JOIN runs r ON r.id = l.run_id
-         WHERE l.contractor_id = ? AND r.status NOT IN ('draft', 'paid')",
+         WHERE l.contractor_id = ? AND r.status NOT IN ('draft', 'paid', 'cancelled')",
     )
     .bind(id)
     .fetch_one(pool)
@@ -236,6 +249,8 @@ pub struct RunRow {
     pub error_hint: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// True once the payer executed the run; a restart resumes only such runs.
+    pub execute_requested: bool,
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -261,6 +276,8 @@ pub struct LineRow {
     pub settlement_state: Option<String>,
     // joined
     pub contractor_name: String,
+    /// True when the contractor was archived after the run was created.
+    pub contractor_archived: bool,
     pub account_index: i64,
     pub unified_address: String,
     pub settlement_choice: String,
@@ -294,16 +311,39 @@ pub async fn list_runs(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
         .await?)
 }
 
+/// A run's lines. The payout details (address, settlement, USDC chain and address) are the ones
+/// fixed when the run was funded; a draft shows the contractor's current ones.
 pub async fn lines(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<LineRow>> {
     Ok(sqlx::query_as(
-        "SELECT l.*, c.name AS contractor_name, c.zip32_account_index AS account_index, c.unified_address,
-                c.settlement_choice, c.payout_chain, c.payout_address
+        "SELECT l.*, c.name AS contractor_name, c.zip32_account_index AS account_index,
+                c.archived_at IS NOT NULL AS contractor_archived,
+                COALESCE(l.fixed_unified_address, c.unified_address) AS unified_address,
+                COALESCE(l.fixed_settlement_choice, c.settlement_choice) AS settlement_choice,
+                CASE WHEN l.fixed_settlement_choice IS NULL THEN c.payout_chain ELSE l.fixed_payout_chain END AS payout_chain,
+                CASE WHEN l.fixed_settlement_choice IS NULL THEN c.payout_address ELSE l.fixed_payout_address END AS payout_address
          FROM pay_lines l JOIN contractors c ON c.id = l.contractor_id
          WHERE l.run_id = ? ORDER BY l.position",
     )
     .bind(run_id)
     .fetch_all(pool)
     .await?)
+}
+
+/// Fixes each line's payout details to the contractor's current ones. Called when a run is
+/// funded: from then on edits to the contractor do not change how this run pays them.
+pub async fn fix_line_payouts(pool: &Pool, run_id: &str) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE pay_lines SET
+            fixed_unified_address = (SELECT c.unified_address FROM contractors c WHERE c.id = pay_lines.contractor_id),
+            fixed_settlement_choice = (SELECT c.settlement_choice FROM contractors c WHERE c.id = pay_lines.contractor_id),
+            fixed_payout_chain = (SELECT c.payout_chain FROM contractors c WHERE c.id = pay_lines.contractor_id),
+            fixed_payout_address = (SELECT c.payout_address FROM contractors c WHERE c.id = pay_lines.contractor_id)
+         WHERE run_id = ?",
+    )
+    .bind(run_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Inserts a run and its lines atomically. Returns `Ok(None)` if the idempotency key exists.
@@ -431,7 +471,10 @@ pub async fn set_fill(
     zec_acquired_zat: u64,
     rate_e6: u64,
 ) -> anyhow::Result<()> {
-    sqlx::query("UPDATE runs SET funding_amount = ?, zec_acquired = ?, zec_usd_rate = ?, updated_at = ? WHERE id = ?")
+    // Only while swapping: a run cancelled meanwhile never takes a fill.
+    sqlx::query(
+        "UPDATE runs SET funding_amount = ?, zec_acquired = ?, zec_usd_rate = ?, updated_at = ? WHERE id = ? AND status = 'swapping'",
+    )
         .bind(funded_usd_cents as i64)
         .bind(zec_acquired_zat as i64)
         .bind(rate_e6 as i64)
@@ -453,14 +496,44 @@ pub async fn set_allocation(pool: &Pool, id: &str, txid: Option<&str>, height: O
     Ok(())
 }
 
-pub async fn add_fees(pool: &Pool, id: &str, fee_zat: u64) -> anyhow::Result<()> {
-    sqlx::query("UPDATE runs SET fees_zat = fees_zat + ?, updated_at = ? WHERE id = ?")
+/// Sets the run's network fees: the fees of its mined transactions.
+pub async fn set_fees(pool: &Pool, id: &str, fee_zat: u64) -> anyhow::Result<()> {
+    sqlx::query("UPDATE runs SET fees_zat = ?, updated_at = ? WHERE id = ? AND fees_zat <> ?")
         .bind(fee_zat as i64)
         .bind(now())
+        .bind(id)
+        .bind(fee_zat as i64)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Records whether the payer has asked for the run to be executed.
+pub async fn set_execute_requested(pool: &Pool, id: &str, requested: bool) -> anyhow::Result<()> {
+    sqlx::query("UPDATE runs SET execute_requested = ? WHERE id = ?")
+        .bind(requested)
         .bind(id)
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// Cancels a run that never received money: no fill recorded and no allocation built. Returns
+/// false if the run is not in one of `from` or money has reached it.
+pub async fn cancel_run(pool: &Pool, id: &str, from: &[&str]) -> anyhow::Result<bool> {
+    let placeholders = from.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "UPDATE runs SET status = 'cancelled', updated_at = ?, failed_from = NULL, error_code = NULL,
+                error_message = NULL, error_hint = NULL, execute_requested = 0
+         WHERE id = ? AND funding_amount IS NULL AND zec_acquired IS NULL AND allocation_txid IS NULL
+           AND status IN ({placeholders})"
+    );
+    // Only "?" placeholders are interpolated; every value is bound.
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now()).bind(id);
+    for f in from {
+        q = q.bind(*f);
+    }
+    Ok(q.execute(pool).await?.rows_affected() == 1)
 }
 
 pub async fn set_line_amount(
@@ -536,6 +609,18 @@ pub async fn unconfirm_line(pool: &Pool, line_id: &str) -> anyhow::Result<()> {
         .bind(line_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+/// Clears a line's error without changing its status (a warning that no longer applies).
+pub async fn clear_line_error(pool: &Pool, line_id: &str, code: &str) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE pay_lines SET error_code = NULL, error_message = NULL, error_hint = NULL WHERE id = ? AND error_code = ?",
+    )
+    .bind(line_id)
+    .bind(code)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

@@ -30,6 +30,7 @@ pub fn routes() -> Router<AppStateRef> {
         .route("/api/runs/{id}/funding", get(funding))
         .route("/api/runs/{id}/funding/deposit-tx", post(deposit_tx))
         .route("/api/runs/{id}/execute", post(execute))
+        .route("/api/runs/{id}/cancel", post(cancel))
         .route("/api/runs/{id}/events", get(events))
         .route("/api/runs/{id}/log", get(log))
 }
@@ -83,7 +84,7 @@ async fn discard(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
         Err(ApiError::conflict(
             "run_not_draft",
             "Only a draft run can be discarded; this one has been funded.",
-            "Funded runs stay on record. Open the run to follow or resume it.",
+            "Funded runs stay on record. Cancel it if it received no money (POST /api/runs/{id}/cancel), or open it to follow or resume it.",
         ))
     }
 }
@@ -251,6 +252,11 @@ async fn execute(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
     Ok((StatusCode::ACCEPTED, Json(view(&s, &id).await?)))
 }
 
+async fn cancel(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    s.executor()?.cancel(&id).await?;
+    Ok(Json(view(&s, &id).await?))
+}
+
 async fn log(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     view(&s, &id).await?;
     Ok(Json(serde_json::json!({ "events": db::events(&s.db, &id).await? })))
@@ -261,35 +267,40 @@ async fn events(
     Path(id): Path<String>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     view(&s, &id).await?;
+    // Each open stream holds a slot until the client goes away.
+    let slot = super::stream_slot(&s.sse_slots)?;
     let rx = s.executor()?.subscribe();
-    let stream = futures_util::stream::unfold((s, id, rx, 0i64, true), |(s, id, mut rx, last, first)| async move {
-        if !first {
-            loop {
-                match rx.recv().await {
-                    Ok(changed) if changed == id => break,
-                    Ok(_) => continue,
-                    Err(RecvError::Lagged(_)) => break,
-                    Err(RecvError::Closed) => return None,
+    let stream = futures_util::stream::unfold(
+        (s, id, rx, 0i64, true, slot),
+        |(s, id, mut rx, last, first, slot)| async move {
+            if !first {
+                loop {
+                    match rx.recv().await {
+                        Ok(changed) if changed == id => break,
+                        Ok(_) => continue,
+                        Err(RecvError::Lagged(_)) => break,
+                        Err(RecvError::Closed) => return None,
+                    }
                 }
             }
-        }
-        let mut out = vec![];
-        let mut new_last = last;
-        if let Ok(events) = db::events(&s.db, &id).await {
-            for e in events.into_iter().filter(|e| e.id > last) {
-                new_last = e.id;
-                if let Ok(ev) = Event::default().event("log").json_data(&e) {
+            let mut out = vec![];
+            let mut new_last = last;
+            if let Ok(events) = db::events(&s.db, &id).await {
+                for e in events.into_iter().filter(|e| e.id > last) {
+                    new_last = e.id;
+                    if let Ok(ev) = Event::default().event("log").json_data(&e) {
+                        out.push(Ok(ev));
+                    }
+                }
+            }
+            if let Ok(v) = view(&s, &id).await {
+                if let Ok(ev) = Event::default().event("snapshot").json_data(&v) {
                     out.push(Ok(ev));
                 }
             }
-        }
-        if let Ok(v) = view(&s, &id).await {
-            if let Ok(ev) = Event::default().event("snapshot").json_data(&v) {
-                out.push(Ok(ev));
-            }
-        }
-        Some((futures_util::stream::iter(out), (s, id, rx, new_last, false)))
-    })
+            Some((futures_util::stream::iter(out), (s, id, rx, new_last, false, slot)))
+        },
+    )
     .flatten();
     Ok(Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15))))
 }
