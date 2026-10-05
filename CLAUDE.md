@@ -26,7 +26,7 @@ You are building Payslip, private payroll on Zcash, for the Zcash track of Colos
 - Rust stable (edition 2021), `cargo`, `clippy`, `rustfmt`.
 - Node 22 and `pnpm` for `web/`.
 - SQLite 3.
-- Protobuf compiler for the lightwalletd gRPC client (`tonic-build`).
+- No Protobuf compiler: the lightwalletd gRPC client comes pre-generated inside `zcash_client_backend` (`lightwalletd-tonic`), so `protoc` and `tonic-build` are not needed (ADR-013).
 
 Commands once scaffolds exist (M1 creates them and updates this section):
 

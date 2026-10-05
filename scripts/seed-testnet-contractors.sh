@@ -5,10 +5,17 @@
 # (`payslip-service dev-contractors`), which stands in for their own wallets on testnet.
 # Idempotent: a contractor whose address is already registered is skipped.
 #
-# Usage: scripts/seed-testnet-contractors.sh [API_URL]   (default http://127.0.0.1:8080)
+# Usage: scripts/seed-testnet-contractors.sh <API_URL>   for example http://127.0.0.1:8080
+# The URL is required: the script adds contractors to whichever service it names, so it never
+# picks one by default.
 set -euo pipefail
 
-API="${1:-${PAYSLIP_API_URL:-http://127.0.0.1:8080}}"
+API="${1:-}"
+if [ -z "$API" ]; then
+  echo "usage: scripts/seed-testnet-contractors.sh <API_URL>   (the Payslip service to add the six contractors to)" >&2
+  exit 2
+fi
+API="${API%/}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="${PAYSLIP_BIN:-$ROOT/service/target/release/payslip-service}"
 [ -x "$BIN" ] || BIN="$ROOT/service/target/debug/payslip-service"
@@ -18,6 +25,7 @@ if [ "$network" != "testnet" ]; then
   echo "Refusing to seed: $API runs on $network, not testnet." >&2
   exit 1
 fi
+echo "Adding the six demo contractors to the testnet service on $API"
 
 addresses=$(cd "$ROOT/service" && "$BIN" dev-contractors --count 6 2>/dev/null | cut -f2)
 

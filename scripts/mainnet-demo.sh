@@ -10,7 +10,8 @@
 #
 # What it does:
 #   1. builds the service (release), creates the encrypted payer seed if none exists
-#   2. starts the service with the config (or reuses one already serving that network)
+#   2. starts the service with the config, or reuses one already on PAYSLIP_BIND only when it
+#      serves the same network and the same treasury as the seed in PAYSLIP_DATA_DIR
 #   3. onboards the six contractors (idempotent)
 #   4. creates the run (idempotent: the key is derived from the config and contractor file)
 #   5. funds it: testnet draws from the treasury at the fixed rate; mainnet asks 1Click for a
@@ -21,7 +22,9 @@
 #      (judge-kit-<network>.json: every viewing key plus one payment proof)
 #
 # Mainnet spends real money: the script stops before funding unless run with --yes or
-# confirmed interactively.
+# confirmed interactively. On mainnet the seed passphrase must be in the config file; the
+# script never reuses the testnet passphrase from service/.env. Back up the encrypted seed
+# (<PAYSLIP_DATA_DIR>/payer.seed.age) and its passphrase before funding.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -33,16 +36,36 @@ if [ -z "$CONFIG" ] || [ ! -f "$CONFIG" ]; then
 fi
 CONFIG="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
 
-# Secrets: the passphrase may live in the config (ignored by git) or in service/.env.
-if [ -f "$ROOT/service/.env" ] && ! grep -q '^PAYSLIP_SEED_PASSPHRASE=.\+' "$CONFIG"; then
-  PAYSLIP_SEED_PASSPHRASE="$(grep '^PAYSLIP_SEED_PASSPHRASE=' "$ROOT/service/.env" | head -1 | cut -d= -f2-)"
-  export PAYSLIP_SEED_PASSPHRASE
-fi
 set -a
 # shellcheck disable=SC1090
 . "$CONFIG"
 set +a
 : "${ZCASH_NETWORK:?ZCASH_NETWORK must be set in $CONFIG}"
+
+# The service also reads service/.env for anything left unset, and that file holds the testnet
+# settings. Off testnet, the config must name its own data folder, port and lightwalletd.
+if [ "$ZCASH_NETWORK" != "testnet" ]; then
+  for var in PAYSLIP_DATA_DIR PAYSLIP_BIND LIGHTWALLETD_URL; do
+    if ! grep -Eq "^$var=.+" "$CONFIG"; then
+      echo "Set $var in $CONFIG. On $ZCASH_NETWORK this script never falls back to service/.env." >&2
+      exit 1
+    fi
+  done
+fi
+
+# Secrets: the passphrase lives in the config (ignored by git). Only a testnet config may fall
+# back to the one in service/.env; any other network must bring its own, so a mainnet seed is
+# never encrypted with the testnet passphrase without the operator choosing it.
+if ! grep -Eq '^PAYSLIP_SEED_PASSPHRASE=.+' "$CONFIG"; then
+  if [ "$ZCASH_NETWORK" != "testnet" ]; then
+    echo "Set PAYSLIP_SEED_PASSPHRASE in $CONFIG. On $ZCASH_NETWORK this script never uses the passphrase from service/.env or the shell." >&2
+    exit 1
+  fi
+  if [ -f "$ROOT/service/.env" ]; then
+    PAYSLIP_SEED_PASSPHRASE="$(grep '^PAYSLIP_SEED_PASSPHRASE=' "$ROOT/service/.env" | head -1 | cut -d= -f2-)"
+    export PAYSLIP_SEED_PASSPHRASE
+  fi
+fi
 : "${PAYSLIP_SEED_PASSPHRASE:?set PAYSLIP_SEED_PASSPHRASE in $CONFIG or service/.env}"
 BIND="${PAYSLIP_BIND:-127.0.0.1:8080}"
 API="http://$BIND"
@@ -68,7 +91,21 @@ if curl -fsS "$API/api/health" >/dev/null 2>&1; then
     echo "A Payslip service on $API serves $running_net, not $ZCASH_NETWORK. Stop it or change PAYSLIP_BIND." >&2
     exit 1
   fi
-  stamp "Reusing the $running_net service on $API"
+  # Reuse it only if it holds this config's wallet: another wallet on the same port (a demo
+  # service, say) must never get these contractors or pay this run from its treasury.
+  expected_treasury=$("$BIN" address 2>/dev/null) || {
+    echo "Could not read the treasury address of the seed in $DATA; check PAYSLIP_SEED_PASSPHRASE." >&2
+    exit 1
+  }
+  running_treasury=$(curl -fsS "$API/api/wallet" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["treasury"]["unified_address"])' 2>/dev/null || true)
+  if [ -z "$running_treasury" ] || [ "$running_treasury" != "$expected_treasury" ]; then
+    echo "The Payslip service on $API holds a different wallet than $DATA:" >&2
+    echo "  running service treasury: ${running_treasury:-unknown (no wallet answer)}" >&2
+    echo "  this config's treasury:   $expected_treasury" >&2
+    echo "Stop that service, or set PAYSLIP_BIND in $CONFIG to a free port. Nothing was changed." >&2
+    exit 1
+  fi
+  stamp "Reusing the $running_net service on $API (same treasury as $DATA)"
 else
   stamp "Starting the service on $API"
   nohup "$BIN" serve >"$OUT/service-$ZCASH_NETWORK.log" 2>&1 &
@@ -207,7 +244,8 @@ proof = os.path.join(OUT, f"proof-{NET}-{rid}.md")
 open(proof, "w").write("\n".join(md) + "\n")
 stamp(f"Proof written to {proof}")
 
-keys = call("GET", "/api/viewing-keys")[1]["keys"]
+export_ = call("GET", "/api/viewing-keys")[1]
+keys = export_["keys"]
 first = next(k for k in keys if k["contractor_id"] == ids[0])
 today = time.strftime("%Y-%m-%d", time.gmtime())
 period = {"from": "2026-01-01", "to": today}
@@ -219,8 +257,15 @@ open(os.path.join(OUT, f"reconciliation-{NET}.csv"), "wb").write(csv2)
 mine = next((r for r in rec["runs"] if r["run_id"] == rid), None)
 
 # 6. Judge kit: the viewing keys (no spending power) and one payment proof, so anyone can check
-# the run from the chain with a statements-only Payslip deployment.
-kit = {"network": NET, "run_id": rid, "keys": keys}
+# the run from the chain with a statements-only Payslip deployment. The keys cover every account
+# of this seed, so the kit makes the whole wallet readable: publish it only for a throwaway demo
+# seed, never for one that pays real contractors.
+paid = sorted((r for r in call("GET", "/api/runs")[1]["runs"] if r.get("status") == "paid"),
+              key=lambda r: (r.get("period_start") or "", r["id"]))
+kit = {"network": NET, "run_id": rid, "run_ids": [r["id"] for r in paid] or [rid],
+       "note": f"{NET.capitalize()} viewing keys for Payslip's throwaway demo wallet, published on purpose. "
+               "They reveal only this wallet's payroll runs (run_ids) and cannot spend.",
+       "birthday_height": export_.get("birthday_height"), "keys": keys}
 first_line = next((l for l in run["lines"] if l["contractor_id"] == ids[0]), None)
 if first_line and first_line.get("txid"):
     try:
@@ -230,7 +275,7 @@ if first_line and first_line.get("txid"):
         code, pr = 0, {}
     if code == 200 and pr.get("proofs"):
         kit["payment_proof"] = {"contractor": first_line["contractor_name"], "txid": first_line["txid"],
-                                "token": pr["proofs"][0]["token"]}
+                                "height": first_line.get("confirmed_height"), "token": pr["proofs"][0]["token"]}
         md += ["", f"Payment proof for {first_line['contractor_name']} (discloses that one payment only): "
                f"open `/verify#{pr['proofs'][0]['token']}` on any Payslip web app serving {NET}."]
 kit_path = os.path.join(OUT, f"judge-kit-{NET}.json")

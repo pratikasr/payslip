@@ -19,17 +19,17 @@ A DAO or remote-first team pays 5 to 50 contractors on-chain. Today every salary
 
 There is no smart contract. Zcash has none. Payslip is a service plus a wallet library: the chain holds shielded payments and memos; the service holds keys and renders statements.
 
+### What it looks like
+
+The demo company on Zcash testnet, as the company, the contractor and the accountant see it (every screen at 375, 768 and 1440 px, light and dark, is in [docs/screenshots](docs/screenshots)).
+
+![The run page for the September 2026 payroll: six pay lines, each confirmed with its txid and block. The Privacy view tab beside Pay lines compares what a public chain would show with what the explorer shows.](docs/screenshots/console-run-1440.png)
+
+![A contractor's payslip, read from the chain with their own viewing key: amount, period, invoice, rate, txid and block height, with Share proof to disclose this one payment.](docs/screenshots/portal-payslip-1440.png)
+
+![The accountant's Books: every run reconciled, funded against paid, with the variance explained by fees and unspent coin.](docs/screenshots/books-reconciliation-1440.png)
+
 ## Proof
-
-### Mainnet demo run
-
-A judge should be able to open every txid below in a Zcash explorer and see a shielded transaction with no amount and no parties.
-
-| Item | Value |
-| --- | --- |
-| Network | Zcash mainnet |
-| Demo run | VERIFY: `scripts/mainnet-demo.sh scripts/demo/mainnet.env` writes the run id, six txids and heights to `scripts/demo/out/proof-mainnet-<run>.md`; they are copied here |
-| Demo video | VERIFY: link added after recording (see `docs/DEMO.md`) |
 
 ### Testnet runs (already on chain)
 
@@ -37,29 +37,42 @@ The same flow, run on Zcash testnet (NU7) through the API and the web app. Open 
 
 | Run | What | Evidence |
 | --- | --- | --- |
-| 09019bd8 | Six contractors through the redesigned app, from a clean demo wallet (the judge kit's wallet) | [docs/proof/rehearsal-3.json](docs/proof/rehearsal-3.json): six payments at height 4,466,912, reconciled within a cent of rounding; first payment [b597daba...](https://testnet.zecblock.com/tx/b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3) |
+| a738f61a | July 2026 payroll of the demo company (the judge kit's wallet), six contractors through the API, paid on 5 Oct 2026 to give the demo company history | [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json): six payments at height 4,467,188; first payment [a90585cb...](https://testnet.zecblock.com/tx/a90585cbb49b663f1f1e809790cdcabeebd259c478f36ea0a4cefacbd820504c) |
+| 67dd4c2e | August 2026 payroll of the same company, paid on 5 Oct 2026 to give the demo company history | [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json): six payments at heights 4,467,193 to 4,467,196; first payment [2d77f686...](https://testnet.zecblock.com/tx/2d77f6864c9dbe69e897ae707f8711c92f3eb311dd511f872fead52ca5859be4) |
+| 09019bd8 | September 2026 payroll of the same company: six contractors through the redesigned app, from the clean demo wallet | [docs/proof/rehearsal-3.json](docs/proof/rehearsal-3.json): six payments at height 4,466,912, reconciled within a cent of rounding; first payment [b597daba...](https://testnet.zecblock.com/tx/b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3) |
 | 284c2421 | Six contractors through `scripts/mainnet-demo.sh` (rehearsal) | [docs/proof/testnet-rehearsal-284c2421.md](docs/proof/testnet-rehearsal-284c2421.md): six payments at heights 4,465,683 to 4,465,684, reconciled |
 | 9145b60b | First API run, three contractors | Payments [3c5513c5...](https://testnet.zecblock.com/tx/3c5513c5aaee0def9244a5fb02a32681a0c9b0046a0e1a16b1964c8ede83bd08) (4,465,671), [a21fabe2...](https://testnet.zecblock.com/tx/a21fabe27fc81085dd47b5e59bf04f466bda90ec12b24f151248484593691b62), [3952333d...](https://testnet.zecblock.com/tx/3952333d5466eed83b3fc3bad1ee82865708e54500c0d0520bad5d90d0464026) (4,465,672) |
-| d9248c70 | A contractor who converts to USDC (simulated on testnet) | [118c665f...](https://testnet.zecblock.com/tx/118c665f71d082eba1f02777f3d271fc111716725ee4b256c6c3b9bcccae33ca) (4,465,711): ZEC to the venue deposit, memo on the change output |
+| d9248c70 | A contractor who converts to USDC (simulated on testnet) | [118c665f...](https://testnet.zecblock.com/tx/118c665f71d082eba1f02777f3d271fc111716725ee4b256c6c3b9bcccae33ca) (4,465,711): ZEC to the venue deposit, memo on the change output. This conversion leg is public by design: the explorer shows the amount sent to the venue's deposit address |
 
 Round-by-round results: [docs/TEST-REPORT.md](docs/TEST-REPORT.md). The demo click path and timings: [docs/DEMO.md](docs/DEMO.md).
+
+### Mainnet demo run
+
+The mainnet run and its video are pending the USDC deposit; see [Status](#status).
 
 ## Check it yourself (for judges)
 
 Payslip's claim is "private to the world, transparent to your accountant". Each half can be checked without trusting us:
 
-1. **Private to the world.** Open any txid above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient.
-2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). In Payslip, choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls ([docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
+1. **Private to the world.** Open any payroll payment above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient. (The USDC conversion leg, run d9248c70, is the stated exception.)
+2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). On a statements-only Payslip (below), choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
-Hosted statements page: VERIFY: URL after deploying the service with `PAYSLIP_MODE=statements` and the web app (needs a hosting account). To run the same thing locally, with no seed and no wallet:
+There is no hosted statements page yet (it needs a hosting account; see M7 under Status). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
 
-```
-cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4466850 cargo run --release -- serve
-cd web && pnpm install && pnpm build && pnpm start      # http://localhost:3000/books
-```
+1. From the repository root, start the service in statements-only mode. It stays in the foreground:
 
-`PAYSLIP_VIEWER_BIRTHDAY_HEIGHT` is where scans of unknown keys start; the kit's `birthday_height` keeps the first scan short. A statements-only service holds nothing that can spend. It scans the chain with the keys you paste and answers statements, reconciliations and payment proofs.
+   ```
+   cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4466850 cargo run --release -- serve
+   ```
+
+2. In a second terminal, from the repository root, start the web app, then open http://127.0.0.1:3000/books:
+
+   ```
+   cd web && pnpm install && pnpm build && pnpm start
+   ```
+
+`PAYSLIP_VIEWER_BIRTHDAY_HEIGHT` is where scans of unknown keys start; 4,466,850 is just before the demo wallet's birthday (4,466,858), which keeps the first scan short. A statements-only service holds nothing that can spend. It scans the chain with the keys you paste and answers statements, reconciliations and payment proofs.
 
 ## Why Zcash, why now
 
@@ -124,7 +137,7 @@ Requirements: Rust 1.94 or newer (`rustup update stable`), Node 22 or newer with
    ./target/release/payslip-service init
    ```
 
-3. Fund the treasury with testnet coins: paste the treasury address into https://faucet.testnet.valargroup.dev/ (0.125 TAZ per IP address per day). One payout covers several six-contractor runs (each draws about 0.025 TAZ at the testnet fixed rate). Wait for one confirmation, under a minute on testnet.
+3. Fund the treasury with testnet coins: paste the treasury address into https://faucet.testnet.valargroup.dev/ (0.125 TAZ per IP address per day). One payout covers several six-contractor runs (each draws about 0.025 TAZ at the testnet fixed rate). Wait for three confirmations (the default `PAYSLIP_MIN_CONFIRMATIONS=3`; testnet blocks are 25 seconds apart since NU7). Until then Fund answers `treasury_insufficient`.
 
 4. Start the service (leave it running):
 
@@ -141,26 +154,35 @@ Requirements: Rust 1.94 or newer (`rustup update stable`), Node 22 or newer with
    pnpm start
    ```
 
-6. Open http://127.0.0.1:3000 (prefer this to `localhost`, which on some machines resolves to an IPv6 address another local app may hold). If port 3000 is taken, run `pnpm start -p 3100` and add `PAYSLIP_WEB_ORIGIN=http://127.0.0.1:3100` to `service/.env`, then restart the service. Under Payer, add contractors (or run `scripts/seed-testnet-contractors.sh` from the repository root to add six with test addresses), create a run, confirm funding, and execute it. Then open a contractor's viewing key on the Contractor page and every key on the Accountant page.
+6. Open http://127.0.0.1:3000 (prefer this to `localhost`, which on some machines resolves to an IPv6 address another local app may hold). If port 3000 is taken, run `pnpm start -p 3100` and add `PAYSLIP_WEB_ORIGIN=http://127.0.0.1:3100` to `service/.env`, then restart the service. Then follow the click path in [docs/DEMO.md](docs/DEMO.md): Try the live demo opens the company console. Under People, use Add contractor for each person (or run `scripts/seed-testnet-contractors.sh http://127.0.0.1:8080` from the repository root to add six with test addresses). Run payroll: enter each person's amount and invoice, Continue, Approve, Fund from treasury, then Pay 6 contractors (the button counts the people in the run) and watch each line confirm. On the run page, Privacy view sets what a public chain would show beside what the explorer shows. Payslip access gives each contractor an invite link that opens their contractor portal with their own viewing key. Switch Viewing as to Accountant for Books, choose Load this company's keys for the reconciliation, and download the books from Exports.
 
-The whole six-contractor flow also runs from one command, which is the script used for the mainnet demo: `scripts/mainnet-demo.sh scripts/demo/testnet-rehearsal.env`.
+The whole six-contractor flow also runs from one command, which is the script used for the mainnet demo: `scripts/mainnet-demo.sh scripts/demo/testnet-rehearsal.env`. It starts its own service on 127.0.0.1:8180 with its own wallet in `service/data/testnet-rehearsal`, so it never writes to the service above. The first run creates that wallet, prints its treasury address and stops at funding; send faucet coins to that address and run it again.
 
 On testnet there is no USDC venue (1Click has no testnet), so a clearly labelled fixed-rate testnet venue draws the run's coins from the treasury. It cannot be enabled on mainnet.
 
 ## Mainnet
 
-`scripts/mainnet-demo.sh scripts/demo/mainnet.env` runs the same six-contractor demo on mainnet with NEAR Intents: fill in `scripts/demo/mainnet.env` from `mainnet.env.example` and the contractors file from `scripts/demo/contractors.example.json`, then deposit the USDC it asks for from the web app's Fund step. It stops before funding unless confirmed. See [docs/DEMO.md](docs/DEMO.md).
+`scripts/mainnet-demo.sh scripts/demo/mainnet.env` runs the same six-contractor demo on mainnet with NEAR Intents. The demo uses a throwaway seed: its viewing keys are published in the mainnet judge kit on purpose, which makes every payment of that seed readable for good. Real payroll runs on a separate seed and data directory whose keys are never published.
+
+1. Fill in `scripts/demo/mainnet.env` from `scripts/demo/mainnet.env.example`, including a new `PAYSLIP_SEED_PASSPHRASE` (on mainnet the script refuses to reuse the testnet one in `service/.env`), and `scripts/demo/contractors.mainnet.json` from `scripts/demo/contractors.mainnet.example.json`.
+2. Stop any testnet service on 127.0.0.1:8080 (the web app's Fund step talks to the service there), then run `scripts/mainnet-demo.sh scripts/demo/mainnet.env`. It creates the encrypted seed in `service/data/mainnet/`, onboards the contractors, creates the run and asks before funding: answer no for now.
+3. **Back up before funding.** Copy `service/data/mainnet/payer.seed.age` (and `dev-contractors.seed.age` when using generated demo wallets) off this machine, and keep the passphrase separately, for example in a password manager. `init` shows no recovery phrase: the encrypted file and its passphrase together are the only way back to the treasury.
+4. Run it again with `--yes` and deposit the USDC it asks for from the web app's Fund step.
+
+The full runbook is in [docs/DEMO.md](docs/DEMO.md).
 
 ## Tests
 
 ```
 cd service && cargo test                                   # unit and executor tests, no network
-cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet
+cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored   # live testnet tests
 cd service && cargo clippy --all-targets -- -D warnings && cargo audit
 cd web && pnpm lint && pnpm typecheck && pnpm build
-cd web && pnpm e2e                                         # browser tests: demo script, payment proofs, keyboard, camera QR, wallet funding, setup guide
-python3 scripts/adversarial-testnet.py                      # adversarial scenarios against a testnet service
+cd web && E2E_BASE_URL=http://127.0.0.1:3000 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e   # 31 browser tests, prerequisites below
+python3 scripts/adversarial-testnet.py --api http://127.0.0.1:8080 --skip-chain           # adversarial API scenarios
 ```
+
+`pnpm e2e` covers the demo walkthrough, runs, console, portal, payment proofs, books, landing, keyboard, camera QR and wallet funding. It needs Chromium (`pnpm exec playwright install chromium`), a testnet service on a clean data directory (`scripts/fresh-testnet-env.sh <name>`) with a funded treasury, and the web app; `E2E_BASE_URL` defaults to http://127.0.0.1:3100 and `E2E_API_URL` to http://127.0.0.1:8080. The demo walkthrough adds contractors and pays a run, spending testnet coins, and the adversarial script without `--skip-chain` spends coins and restarts the service, so point both at a throwaway service, never at a wallet you care about.
 
 CI runs formatting, clippy, tests and audit for the service and lint, typecheck and build for the web on every push.
 
@@ -169,7 +191,7 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | Path | What |
 | --- | --- |
 | `service/` | Rust service on `zcash_client_backend` 0.25.0-pre.0: wallet core, run executor, swap venues, statement engine, HTTP API |
-| `web/` | Next.js 15 app: landing page, payer, contractor and accountant dashboards |
+| `web/` | Next.js 15 app: landing page, company console, contractor portal, accountant books and the public payslip page |
 | `docs/` | Spec, technical decisions and verified facts, API, design, test report, demo, progress log |
 | `scripts/` | Demo driver, testnet seeding, clean environments, adversarial suite |
 | `CLAUDE.md` | Guide for coding agents working in this repo |
@@ -183,9 +205,9 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M2 Wallet core (accounts, FVK export, sync, send with memo) | done, verified on testnet |
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
-| M5 Web dashboards | done, redesigned in Mercury's style (docs/DESIGN.md section 15), verified on testnet |
+| M5 Web dashboards | done, redesigned with layout conventions informed by Mercury's banking app and Payslip's own mark, colour and components (docs/DESIGN.md section 15), verified on testnet |
 | M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; needs the USDC deposit |
-| M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account |
+| M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account, and a hosting account for the public statements page |
 
 ## How it is judged (Rules §8 and FAQ)
 
@@ -193,9 +215,9 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | --- | --- |
 | Functionality | A real payroll run on Zcash, visible in the explorer as shielded transactions, read back by the contractor's and accountant's keys |
 | Potential impact | On-chain payroll is public by default everywhere; the buyer is every DAO and remote team paying in crypto |
-| Novelty | Per-contractor viewing keys plus a statement engine that reconciles funded USD against paid USD from the chain alone |
-| UX | Fund from a USDC wallet, pay in one click, statements by pasting a key; the user never handles a z-address |
-| Open source | This repo, MIT |
+| Novelty | Per-contractor viewing keys; single-payment proofs that open one payment and nothing else, built from that output's outgoing cipher key and checked against the chain at `/verify` (ADR-021); and a reconciliation of funded USD against paid USD read from the memos on chain alone |
+| UX | Fund from an EVM wallet holding USDC, pay in one click after a review step, statements by pasting a key; contractors never need to share a key, and nobody handles a spending key |
+| Open source | This repo, MIT. It composes with existing primitives: NEAR Intents 1Click for funding and conversion, ZIP 316 viewing keys that wallets import (the judge kit carries the Revision 0 form), and Koinly, CoinTracker, Xero and QuickBooks import formats |
 | Business plan | Per-seat monthly fee per contractor plus an optional fee on the stablecoin to ZEC leg (`PAYSLIP_APP_FEE_BPS`, paid through NEAR Intents app fees); see Pricing |
 
 ## Pricing
@@ -211,7 +233,8 @@ For scale: Deel ("Hire contractors") and Rise ("Global Contractor", fiat and cry
 ## Disclosures
 
 - Pre-existing code: none. Everything in this repository was written for this hackathon. Third-party libraries are dependencies listed in `service/Cargo.lock` and `web/pnpm-lock.yaml`. The `zcash/zcash-devtool` repository was read as a reference for how to call the wallet crates; no code was copied from it.
-- AI tools: Claude (Anthropic) via Claude Code, used for research, specification and code generation.
+- AI tools: Claude (Anthropic), through Claude Code and Cowork, used for research, specification and code generation.
+- Build log: [docs/PROGRESS.md](docs/PROGRESS.md) records each working session with its commit hashes; the dense history reflects the AI-assisted code generation disclosed above.
 
 ## License
 

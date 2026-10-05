@@ -27,7 +27,7 @@ Draft answers for the Crypto World's Fair submission form, Zcash track. Registra
 
 Teams that pay contractors on-chain publish every salary to anyone with a block explorer. Payslip pays them on Zcash instead, and keeps the books intact.
 
-The payer funds a run in USDC from any wallet. NEAR Intents swaps it to native ZEC straight into Zcash's shielded Ironwood pool, and the fill rate becomes the run's USD basis. Payslip then pays each contractor with one shielded transaction from a dedicated ZIP-32 account. An encrypted memo on each payment carries the run, period, invoice reference and USD basis.
+The payer funds a run in USDC from any EVM wallet. NEAR Intents swaps it to native ZEC straight into Zcash's shielded Ironwood pool, and the fill rate becomes the run's USD basis. Payslip then pays each contractor with one shielded transaction from a dedicated ZIP-32 account. An encrypted memo on each payment carries the run, period, invoice reference and USD basis.
 
 Because each contractor has their own account, that account's viewing key shows their pay and nothing else. The contractor pastes it into Payslip and gets a period statement, ready for tax. The accountant holds every key and gets a reconciliation per run: funded USD against paid USD, with the variance explained by network fees and unspent ZEC, down to rounding of a cent per payment. All of it is read straight from the chain. A block explorer sees shielded transactions with no amounts and no parties.
 
@@ -41,19 +41,19 @@ Private to the world, transparent to your accountant.
 
 **Technical stack.** Rust service (axum, `zcash_client_backend` and `zcash_client_sqlite`, SQLite), NEAR Intents 1Click for USDC to ZEC, Next.js 15 web app with wagmi and RainbowKit for the USDC deposit.
 
-**Proof.** Mainnet run: VERIFY: `scripts/mainnet-demo.sh scripts/demo/mainnet.env` writes the six txids for this field and the README. Testnet runs with txids and heights are in the README and docs/DEMO.md.
+**Proof.** Mainnet run: VERIFY: `scripts/mainnet-demo.sh scripts/demo/mainnet.env --yes` writes the run id, six txids and heights to `scripts/demo/out/proof-mainnet-<run>.md` for this field and the README. Testnet runs with txids and heights are in the README and docs/DEMO.md.
 
-**Demo video.** VERIFY: link after recording (docs/DEMO.md has the shot list).
+**Demo video.** VERIFY: the video's link from https://studio.youtube.com (Content) once the recording made per docs/DEMO.md, Recording, is uploaded as Unlisted or Public.
 
-**Presentation video.** VERIFY: link after recording. Word-for-word script in docs/LAUNCH.md.
+**Presentation video.** VERIFY: the video's link from https://studio.youtube.com (Content) once the recording of the docs/LAUNCH.md script is uploaded as Unlisted or Public.
 
 **Go-to-market.** Start with DAOs and remote-first crypto teams that already pay contractors in stablecoins and hand-assemble statements for tax: Zcash ecosystem grantees and teams, then teams paying through public-chain payroll tools today. Pricing: 19 USD per active contractor per month hosted, plus 0.25% on the USDC to ZEC funding swap (collected through NEAR Intents app fees); self-hosting is free under MIT; contractors and accountants never pay. Deel and Rise list 49 USD per contractor per month for contractor payroll, and payroll through them is still public on chain when paid in crypto. Distribution through the Zcash community (Zcash Community Grants recipients, Zodl users) and accountants who serve crypto teams, since the accountant's reconciliation is the feature that replaces their manual work.
 
-**Demand validation.** Team: run the team's own contractor payments through Payslip before submission and show the statements; add who was paid and any feedback from contractors or an accountant. Outreach drafts for Zcash teams, grantees and an accountant are in docs/LAUNCH.md.
+**Demand validation.** Team: run the team's own contractor payments through Payslip before submission, on a separate seed and data directory (never the demo seed, whose viewing keys are published), and show the statements; add who was paid and any feedback from contractors or an accountant. Outreach drafts for Zcash teams, grantees and an accountant are in docs/LAUNCH.md.
 
 **Pre-existing code.** None. Everything in the repository was written for this hackathon. Third-party libraries are dependencies listed in `service/Cargo.lock` and `web/pnpm-lock.yaml`. The `zcash/zcash-devtool` repository was read as a reference for how to call the wallet crates; no code was copied.
 
-**AI tools.** Claude (Anthropic) via Claude Code, used for research, specification and code generation.
+**AI tools.** Claude (Anthropic), through Claude Code and Cowork, used for research, specification and code generation.
 
 **Logo.** `web/src/app/icon.svg` (a payslip mark on a dark tile with the Zcash yellow accent).
 

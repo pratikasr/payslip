@@ -2,6 +2,8 @@
 
 Every round runs against real Zcash testnet (NU7, `testnet.zec.rocks:443`) unless it says otherwise. Dates are UTC. Commands run from the repository root unless a directory is given.
 
+Rounds 1 to 5 ran against the first version of the web app, so the screen names in them (Share viewing key, Contractor page, Accountant page, Confirm funding, Execute run, Launch app) are that version's. The redesigned app (docs/DESIGN.md section 15) names them People, Payslip access, the contractor portal, Books, Fund from treasury and Pay N contractors; its click path is in docs/DEMO.md and its tests are in Round 6.
+
 ## Round 1: unit and integration
 
 | Date | Command | Outcome |
@@ -132,3 +134,37 @@ Gaps found and fixed:
 | 2 | 2c3c69da-45f1-4a8c-92ef-6f61f0d991f4 | 4,465,907 | 4,465,909 to 4,465,911 | 185 s | passed |
 
 Step timings, every txid and the click path are in `docs/DEMO.md`; the raw records are `docs/proof/rehearsal-1.json` and `docs/proof/rehearsal-2.json`. The driver script `scripts/mainnet-demo.sh` was also rehearsed on testnet (run 284c2421, 392 s including a release build, reconciled).
+
+## Round 6: redesign
+
+2026-10-05, after the redesign (docs/DESIGN.md section 15). Counts measured on 5 Oct 2026.
+
+| Date | Command | Outcome |
+| --- | --- | --- |
+| 2026-10-05 | `cd service && cargo test --locked`, with no network variables set | 58 unit tests and 26 executor tests passed |
+| 2026-10-05 | `cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored` | The 5 live testnet tests. They need `ZCASH_NETWORK=testnet` and `LIGHTWALLETD_URL`, so plain `cargo test` does not run them; with both set they passed 5 of 5 in 28 s during the judge-path audit of 60f4724 |
+| 2026-10-05 | `cd web && pnpm exec playwright test --list` | 31 browser tests in 10 specs |
+| 2026-10-05 | `cd web && pnpm e2e` | 31 of 31 passed after the redesign; after the dashboard rework 30 of 30, leaving out the demo walkthrough, which needs a clean database (docs/PROGRESS.md) |
+| 2026-10-05 | Lighthouse 13.5.0, mobile, on the production build serving the demo wallet, during the judge-path audit | performance 92 to 96, accessibility 100, best practices 100 (table below) |
+
+| Spec | Tests | What it proves |
+| --- | ---: | --- |
+| `e2e/demo.spec.ts` | 1 | The demo script through the redesigned app: onboard six, approve, fund, pay, the contractor portal, Books and the CSV. Spends testnet coins; needs a clean data directory |
+| `e2e/runs.spec.ts` | 3 | The runs list with status chips; a paid run's page with its figures, pay lines, drawer, Privacy view and Audit trail; the Run payroll flow prefills, validates and reaches Review without creating a run |
+| `e2e/console.spec.ts` | 5 | Home renders on the server and matches the service's figures; a People row opens the detail drawer; `?add=1` opens Add contractor and Cancel saves nothing; each Payslip access invite link carries that contractor's key after `/portal#key=`; Treasury shows the receive address and balance |
+| `e2e/portal.spec.ts` | 4 | Unlock by pasting a key; an invite link unlocks and the key leaves the address bar; a payslip document matches the chain and prints cleanly; tax documents download as Payslip, Koinly and CoinTracker CSV, then Lock forgets the key |
+| `e2e/proof.spec.ts` | 2 | A contractor proves one payment and anyone can verify it; `/verify` asks for a proof when the link carries none |
+| `e2e/books.spec.ts` | 4 | Load this company's keys reconciles every run; the key file imports and the ledger filters; every exception is listed and the accounting exports download; a seed phrase is refused and the keys are forgotten on request |
+| `e2e/landing.spec.ts` | 5 | Every section is present; the product accordion; the phone layout and menu; every transaction link opens the testnet explorer |
+| `e2e/keyboard.spec.ts` | 4 | Skip link and Try the live demo; the portal unlocks by keyboard; the Add contractor dialog traps and returns focus; Run payroll announces its errors |
+| `e2e/qr-scan.spec.ts` | 1 | An invite link shown as a QR code is scanned by camera into the contractor portal |
+| `e2e/wallet-fund.spec.ts` | 2 | The mainnet Fund step sends exactly the quoted USDC transfer on Base and reports the hash; a rejection in the wallet sends nothing |
+
+| Route | Performance | Accessibility | Best practices |
+| --- | ---: | ---: | ---: |
+| `/` | 96 | 100 | 100 |
+| `/console` | 92 | 100 | 100 |
+| `/console/runs` | 94 | 100 | 100 |
+| `/books` | 92 | 100 | 100 |
+| `/portal` | 94 | 100 | 100 |
+| `/verify` | 95 | 100 | 100 |

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Round 3 adversarial scenarios against a running TESTNET Payslip service.
 
-Usage: python3 scripts/adversarial-testnet.py [--api http://127.0.0.1:8080] [--skip-chain]
+Usage: python3 scripts/adversarial-testnet.py --api http://127.0.0.1:8080 [--skip-chain]
+
+--api is required: the scenarios add contractors and runs to that service, and the chain
+scenarios restart it, so it must be a throwaway testnet service, never a wallet you care about.
 
 Prints one PASS or FAIL line per scenario and exits non-zero if any fail. Scenarios that put
 transactions on chain (malformed memo, unlabelled payment, formula memo, restart mid-run) spend
@@ -29,7 +32,7 @@ if not os.path.exists(BIN):
     BIN = os.path.join(SERVICE, "target", "debug", "payslip-service")
 
 ap = argparse.ArgumentParser()
-ap.add_argument("--api", default="http://127.0.0.1:8080")
+ap.add_argument("--api", required=True, help="the throwaway testnet Payslip service to test, e.g. http://127.0.0.1:8080")
 ap.add_argument("--skip-chain", action="store_true")
 args = ap.parse_args()
 API = args.api

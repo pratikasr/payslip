@@ -60,7 +60,7 @@ Rehearsal 2, run 2c3c69da-45f1-4a8c-92ef-6f61f0d991f4, allocation 73620ccfad58..
 | Mei Chen | eb0290bd999ad7d8ca9fb1af4a871a6056e6f4786e2c6e6270d7171bbcd11fdf | 4,465,911 |
 | Kwame Mensah | 36b5db028e261887534a28d9f559965bf2bf99e95365c25ecd1e1952dd30f338 | 4,465,911 |
 
-Rehearsal 3, through the redesigned app, from a new seed whose wallet holds no other runs (so the contractor, the accountant and the company see the same single run), 5 Oct 2026: run 09019bd8-d31d-400b-a779-050afeb3083e, allocation 91087ec36cce... at 4,466,910 (full record: [proof/rehearsal-3.json](proof/rehearsal-3.json)). Timings in seconds: onboard six 7, approve 0, fund 5, pay and six confirmations 80, explorer check 1, contractor portal 5, accountant books 25, CSV 3; 2.2 minutes wall clock.
+Rehearsal 3, through the redesigned app, from a new seed (the clean demo wallet behind the judge kit), 5 Oct 2026: run 09019bd8-d31d-400b-a779-050afeb3083e, allocation 91087ec36cce... at 4,466,910 (full record: [proof/rehearsal-3.json](proof/rehearsal-3.json)). Timings in seconds: onboard six 7, approve 0, fund 5, pay and six confirmations 80, explorer check 1, contractor portal 5, accountant books 25, CSV 3; 2.2 minutes wall clock.
 
 | Contractor | Txid | Height |
 | --- | --- | ---: |
@@ -71,6 +71,8 @@ Rehearsal 3, through the redesigned app, from a new seed whose wallet holds no o
 | Mei Chen | 866266aeab8424ad048492bdc7027a9e6f900beabf4fd5b5f25d5c221705289c | 4,466,912 |
 | Kwame Mensah | 04cffca310a3362df7fd53ccea6e8938a15c2bcd3e57c489bb856adaa96d32c4 | 4,466,912 |
 
+After rehearsal 3 the same wallet paid the demo company's July and August payrolls through the API, also on 5 Oct 2026, to give the demo company history: run a738f61a-9a7a-4c65-912f-329b0c509e9b (July, six payments at 4,467,188) and run 67dd4c2e-0268-4da1-846a-729379f6278d (August, six payments at 4,467,193 to 4,467,196). Every txid is in [proof/demo-wallet-runs.json](proof/demo-wallet-runs.json). The wallet holds these three runs and nothing else, so the contractor, the accountant and the company see the same three runs, each paid on 5 Oct 2026.
+
 Earlier testnet runs of the same flow: the driver script `scripts/mainnet-demo.sh` (run 284c2421, [proof/testnet-rehearsal-284c2421.md](proof/testnet-rehearsal-284c2421.md)) and the Round 2 end-to-end test (run 85ea4bdc, [proof/e2e-round2-85ea4bdc.json](proof/e2e-round2-85ea4bdc.json)).
 
 ## Mainnet run
@@ -79,19 +81,23 @@ Mainnet differs from the rehearsals in three ways: funding is a real USDC deposi
 
 ### Prerequisites
 
+- A throwaway seed. The mainnet judge kit publishes every viewing key of the demo seed, which makes all of that seed's payments readable for good. The demo uses its own data directory (`service/data/mainnet`) for that reason; real payroll, such as the first real users in [LAUNCH.md](LAUNCH.md), runs on a separate seed and data directory whose keys are never published.
 - An EVM wallet in the browser (for example MetaMask) holding the USDC deposit on Base (or Arbitrum or Ethereum) plus a little ETH for gas on that chain.
-- `scripts/demo/mainnet.env`, copied from `scripts/demo/mainnet.env.example`. It holds the mainnet passphrase and is ignored by git.
+- `scripts/demo/mainnet.env`, copied from `scripts/demo/mainnet.env.example`. It holds the mainnet passphrase (`PAYSLIP_SEED_PASSPHRASE`, a new one) and is ignored by git. The passphrase must be in this file: on mainnet the script refuses to fall back to the testnet passphrase in `service/.env`.
 - `scripts/demo/contractors.mainnet.json`, copied from `scripts/demo/contractors.mainnet.example.json`: the six names, unified addresses, USD amounts and invoice references. With `DEMO_GENERATED_WALLETS=yes` the empty addresses are filled from generated demo wallets whose payouts can be swept back to the treasury afterwards; otherwise every contractor needs a real unified address. The example converts Priya's pay to USDC delivered to `DEMO_REFUND_ADDRESS`, so that leg returns to the payer.
+- Nothing else on 127.0.0.1:8080. The web app's Fund step talks to the service there, and the script stops if that port holds a service for another network or another wallet.
+- **Back up before funding.** The first run of the script (below, without `--yes`) creates the encrypted seed `service/data/mainnet/payer.seed.age`, and `dev-contractors.seed.age` beside it when `DEMO_GENERATED_WALLETS=yes`. Copy both off this machine and keep the passphrase separately, for example in a password manager. `init` shows no recovery phrase: the encrypted file and its passphrase together are the only way back to the treasury and to the generated contractor wallets.
 
 ### Funding amount
 
-The service asks the venue for the payroll plus 1.5 times the estimated network fees, valued at the venue's current price; the surplus stays in the treasury and is reported as unspent. With the example amounts (payroll $30.38) and ZEC at $1,354.93 (5 Oct 2026) that is about $32.52 USDC. The exact figure and the deposit address are printed by the script and shown on the Fund step when the run is funded; the deposit address is valid for one hour.
+The service asks the venue for the payroll plus 1.5 times the estimated network fees, valued at the venue's current price; the surplus stays in the treasury and is reported as unspent. With the example amounts (payroll $30.38), the mainnet dry run on 5 Oct 2026 was quoted 32.51 USDC, with ZEC at about $1,354.93 that day (docs/TECH-DECISIONS.md, Verified facts). The exact figure and the deposit address are printed by the script and shown on the Fund step when the run is funded; the deposit address is valid for one hour.
 
 ### Commands
 
 ```
 cd service && cargo build --release
-scripts/mainnet-demo.sh scripts/demo/mainnet.env          # stops before funding; prints the plan
+scripts/mainnet-demo.sh scripts/demo/mainnet.env          # creates the seed and the run, stops before funding
+                                                          # back up the seed and passphrase now (Prerequisites)
 scripts/mainnet-demo.sh scripts/demo/mainnet.env --yes    # requests the deposit address and waits
 ```
 
@@ -101,4 +107,4 @@ After recording, generated contractor wallets can be swept back: `cd service && 
 
 ### Recording (product demo, three minutes at most)
 
-The word-for-word narration, timed against this click path, is in [LAUNCH.md](LAUNCH.md), along with the presentation video script. It adds two steps after the contractor statement: Prove this payment, opening the `/verify` link, and the Koinly and Xero exports.
+The word-for-word narration, timed against this click path, is in [LAUNCH.md](LAUNCH.md), along with the presentation video script. It adds two steps after the contractor statement: Share proof, opening the `/verify` link, and the Koinly and Xero exports. Skip step 3 (Payslip access) on camera, or blur it: that screen shows each contractor's invite link with their viewing key in plain text.

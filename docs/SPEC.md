@@ -10,7 +10,7 @@ Payslip is payroll for crypto-native teams where every payment is shielded on Zc
 
 **User.** A DAO or remote-first startup paying 5 to 50 contractors on-chain. Today every salary is readable on a block explorer, or the team goes back to Deel and fiat. They switch because privacy is the default and the statements are what they currently assemble by hand.
 
-**Why it can win.** The Zcash track is the thinnest field in the event: the sponsor's own grant proposal budgets for 50 to 100 submissions against 10 prizes, and the community thread expects most entries to be "rebranded copypasta" payment buttons. Three capabilities under 90 days old make the product real: the Ironwood shielded pool (28 Jul), Zodl's unified viewing-key export (Sep), and NU7's 25-second blocks (testnet 6 Oct, mainnet 5 Nov). Past Colosseum winners include Stablecorp, Credible and Cloak, so the category has a track record; this is the version with a compliance workflow instead of a wallet.
+**Why it can win.** The Zcash track is the thinnest field in the event: the sponsor's own grant proposal budgets for 50 to 100 submissions against 10 prizes, and the community thread expects most entries to be "rebranded copypasta" payment buttons. Three capabilities under 90 days old make the product real: the Ironwood shielded pool (28 Jul), Zodl's unified viewing-key export (Sep), and NU7's 25-second blocks (planned for testnet on 6 Oct, a plan the chain overtook: testnet activated NU7 at height 4,465,026 on 4 Oct; mainnet planned for 5 Nov). Past Colosseum winners include Stablecorp, Credible and Cloak, so the category has a track record; this is the version with a compliance workflow instead of a wallet.
 
 **Prizes and judging map.**
 
@@ -19,11 +19,11 @@ Payslip is payroll for crypto-native teams where every payment is shielded on Zc
 | Functionality | A real payroll run on Zcash mainnet, visible in the explorer as shielded transactions |
 | Potential Impact | On-chain payroll is public by default everywhere; the buyer is every DAO and remote team paying in crypto |
 | Novelty | Per-contractor viewing keys plus a statement engine; nobody prices or packages this on Zcash |
-| UX | The chain is what makes amounts invisible and statements verifiable; the user never sees a z-address |
+| UX | The chain is what makes amounts invisible and statements verifiable; contractors never need to share a key, and nobody handles a spending key |
 | Open-source | Public repo, MIT |
 | Business Plan | Per-seat monthly fee per contractor, plus a spread on the stablecoin to ZEC leg |
 | Insight (FAQ) | Ironwood and viewing-key export turned Zcash from a coin into a selective-disclosure ledger this quarter |
-| Traction (FAQ) | Run your own contractor payments through it before submission and show the statements |
+| Traction (FAQ) | Run your own contractor payments through it before submission, on a separate seed from the published demo seed, and show the statements |
 
 Track text, verbatim: "$100,000 will be awarded across 10 of the best products that integrate with the Zcash blockchain or asset." Main pool awards ($30,000 grand prize, 20 at $15,000) are judged on the same submission; no separate entry. Accelerator is Solana-only by its FAQ and is not a target for this entry.
 
@@ -70,7 +70,7 @@ The payer funds a run in USDC, the service converts and pays into the shielded p
 | Memo field (512 bytes) | Structured pay-line memo: run id, period, invoice ref, USD basis at send | [ZIP 302 memos](https://zips.z.cash/zip-0302) |
 | Unified addresses | Contractor receive address; one UA per contractor, rotated per run if the contractor opts in | [ZIP 316](https://zips.z.cash/zip-0316) |
 | lightwalletd and `zcash_client_backend` (Rust) | Sync, note management, transaction building, scanning with viewing keys | [librustzcash](https://github.com/zcash/librustzcash) |
-| NU7, 25-second blocks (testnet 6 Oct, mainnet 5 Nov) | Faster first confirmation for the demo on testnet; mainnet stays 75 s during the window | [NU7 timeline](https://forum.zcashcommunity.com/t/nu7-timeline/57655) |
+| NU7, 25-second blocks (testnet planned for 6 Oct, overtaken by activation at height 4,465,026 on 4 Oct; mainnet planned for 5 Nov) | Faster first confirmation for the demo on testnet; mainnet stays 75 s during the window | [NU7 timeline](https://forum.zcashcommunity.com/t/nu7-timeline/57655) |
 
 ### Key model
 
