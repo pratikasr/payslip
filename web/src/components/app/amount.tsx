@@ -19,7 +19,11 @@ export function Zec({
   return (
     <span className={cn("num whitespace-nowrap", className)}>
       {formatZec(zat)}
-      {unit ? <span className="ml-1 text-muted-foreground">{coin}</span> : null}
+      {unit ? (
+        <span className="ml-1 text-muted-foreground" data-unit="">
+          {coin}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -54,7 +58,11 @@ export function Rate({
   return (
     <span className={cn("num whitespace-nowrap", className)} title={`${formatRateFull(e6)} USD per ${coin}`}>
       {formatRate(e6)}
-      {unit ? <span className="ml-1 text-muted-foreground">per {coin}</span> : null}
+      {unit ? (
+        <span className="ml-1 text-muted-foreground" data-unit="">
+          per {coin}
+        </span>
+      ) : null}
     </span>
   );
 }

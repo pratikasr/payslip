@@ -17,10 +17,15 @@ export interface Resource<T> {
  * Load a value from the service on mount and on demand. Aborts the request
  * when the component unmounts or a newer request starts.
  */
-export function useResource<T>(fetcher: (signal: AbortSignal) => Promise<T>, key: string): Resource<T> {
-  const [data, setDataState] = useState<T | undefined>(undefined);
+export function useResource<T>(
+  fetcher: (signal: AbortSignal) => Promise<T>,
+  key: string,
+  /** A value fetched on the server for the first paint; the client still refreshes it on mount. */
+  initial?: T,
+): Resource<T> {
+  const [data, setDataState] = useState<T | undefined>(initial);
   const [error, setError] = useState<ApiError | undefined>(undefined);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initial === undefined);
   const controller = useRef<AbortController | null>(null);
   const fetcherRef = useRef(fetcher);
   // Keep the latest fetcher without re-running the load effect on every render.

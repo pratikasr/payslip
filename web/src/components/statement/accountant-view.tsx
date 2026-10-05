@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Scale } from "lucide-react";
+import { CircleAlert, CircleCheck, Scale } from "lucide-react";
 import { Usd, Zec, Rate, Coin } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { Hash } from "@/components/app/hash";
 import { EmptyState, ErrorState, PageHeader, Panel, Stat, TableSkeleton } from "@/components/app/states";
-import { ReconStatusBadge } from "@/components/app/status-badge";
+import { RECON_STATUS, ReconStatusBadge } from "@/components/app/status-badge";
 import { collectKeys, KeyCollection, readyKeys, type CollectedKey } from "@/components/statement/key-collection";
 import { PeriodPicker } from "@/components/statement/period-picker";
 import { StatementActions } from "@/components/statement/statement-actions";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { api, toDisplayError, type ApiError, type Reconciliation } from "@/lib/api";
+import { api, toDisplayError, type ApiError, type Reconciliation, type ReconciliationStatus } from "@/lib/api";
 import { formatCount, formatDateTime, formatHeight, formatPeriodLabel, formatRange, networkLabel } from "@/lib/format";
 import { isValidRange, yearToDate } from "@/lib/period";
 import { cn } from "cn";
@@ -168,7 +168,17 @@ function ReconciliationView({
             </p>
           ) : null}
         </div>
-        <StatementActions fetchCsv={() => api.accountantStatementCsv(request)} filename={filename} />
+        <StatementActions
+          fetchCsv={(format) =>
+            api.accountantStatementCsv(request, (format ?? "payslip") as "payslip" | "xero" | "quickbooks")
+          }
+          filename={filename}
+          formats={[
+            { value: "payslip", label: "Payslip CSV" },
+            { value: "xero", label: "Xero bank CSV" },
+            { value: "quickbooks", label: "QuickBooks bank CSV" },
+          ]}
+        />
       </div>
 
       {r.treasury_key_present === false ? (
@@ -182,29 +192,37 @@ function ReconciliationView({
         </div>
       ) : null}
 
-      <dl className="grid grid-cols-2 gap-6 rounded-lg border bg-card p-4 lg:grid-cols-5" data-print="plain">
-        <Stat label="Funded">
-          <Usd cents={r.totals.funded_usd_cents} />
-        </Stat>
-        <Stat label="Paid">
-          <Usd cents={r.totals.paid_usd_cents} />
-        </Stat>
-        <Stat label="Variance" hint="Funded minus paid">
-          <Usd cents={r.totals.variance_usd_cents} />
-        </Stat>
-        <Stat
-          label={
-            <>
-              Paid in <Coin />
-            </>
-          }
-        >
-          <Zec zat={r.totals.paid_zat} />
-        </Stat>
-        <Stat label="Pay lines">
-          <span className="num">{formatCount(r.totals.count)}</span>
-        </Stat>
-      </dl>
+      <div className="rounded-lg border bg-card" data-print="plain">
+        {r.runs.length > 0 ? <ReconVerdict runs={r.runs} /> : null}
+        <dl className="grid grid-cols-1 gap-6 p-4 sm:grid-cols-3">
+          <Stat size="lg" label="Funded">
+            <Usd cents={r.totals.funded_usd_cents} />
+          </Stat>
+          <Stat size="lg" label="Paid">
+            <Usd cents={r.totals.paid_usd_cents} />
+          </Stat>
+          <Stat size="lg" label="Variance" hint="Funded minus paid">
+            <Usd cents={r.totals.variance_usd_cents} />
+          </Stat>
+        </dl>
+        <dl className="grid grid-cols-2 gap-6 border-t p-4 sm:grid-cols-3">
+          <Stat
+            label={
+              <>
+                Paid in <Coin />
+              </>
+            }
+          >
+            <Zec zat={r.totals.paid_zat} />
+          </Stat>
+          <Stat label="Pay lines">
+            <span className="num">{formatCount(r.totals.count)}</span>
+          </Stat>
+          <Stat label="Runs">
+            <span className="num">{formatCount(r.runs.length)}</span>
+          </Stat>
+        </dl>
+      </div>
 
       <Panel
         title="Runs"
@@ -415,5 +433,64 @@ function ReconciliationView({
         )}
       </Panel>
     </article>
+  );
+}
+
+/**
+ * The answer an accountant looks for first, in large type: is every run
+ * reconciled? Otherwise, how many runs are in each other state. The icon and
+ * the words carry the state; color only repeats it.
+ */
+function ReconVerdict({ runs }: { runs: Reconciliation["runs"] }) {
+  const reconciled = runs.filter((run) => run.status === "reconciled").length;
+  const all = reconciled === runs.length;
+  const others = (Object.keys(RECON_STATUS) as ReconciliationStatus[])
+    .filter((status) => status !== "reconciled")
+    .map((status) => ({ status, n: runs.filter((run) => run.status === status).length }))
+    .filter((x) => x.n > 0);
+  const unexplained = others.some((x) => x.status === "variance_unexplained");
+  return (
+    <div
+      role="status"
+      className={cn(
+        "flex flex-col gap-3 border-b px-4 py-4 sm:flex-row sm:items-center sm:justify-between",
+        all ? "bg-success-bg/60" : unexplained ? "bg-danger-bg/60" : "bg-warning-bg/60",
+      )}
+    >
+      <div className="flex items-center gap-3">
+        {all ? (
+          <CircleCheck className="size-7 shrink-0 text-success" aria-hidden="true" />
+        ) : (
+          <CircleAlert
+            className={cn("size-7 shrink-0", unexplained ? "text-danger" : "text-warning")}
+            aria-hidden="true"
+          />
+        )}
+        <div>
+          <p className="text-2xl leading-8 font-semibold tracking-tight">
+            {all
+              ? runs.length === 1
+                ? "Reconciled"
+                : `All ${formatCount(runs.length)} runs reconciled`
+              : `${formatCount(reconciled)} of ${formatCount(runs.length)} runs reconciled`}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {all
+              ? "Funded minus paid equals the coin not paid out, valued at each run's fill rate, to the cent."
+              : RECON_STATUS[others[0].status].help}
+          </p>
+        </div>
+      </div>
+      {!all ? (
+        <ul className="flex flex-wrap gap-2" aria-label="Runs by reconciliation status">
+          {others.map((x) => (
+            <li key={x.status} className="inline-flex items-center gap-1.5 text-sm">
+              <ReconStatusBadge status={x.status} />
+              <span className="num font-medium">{x.n}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }

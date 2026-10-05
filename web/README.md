@@ -75,6 +75,10 @@ pnpm screenshots                          # in another
 
 Options: `BASE_URL` (default `http://localhost:3000`), `RUN_ID=<uuid>` to include a run page, `THEME=dark` for dark mode.
 
+`scripts/screenshots-states.mjs` adds the data-bearing states from the running service (statement, reconciliation, share-key dialog, insights as tables, dark mode, presenter mode at 1280x720); with `EMPTY_API_URL` pointing at a second service on an empty testnet wallet it also captures the first-run payer pages. `scripts/screenshots-live.mjs` captures the run page mid-execution by replaying a paid run's own lines through their earlier statuses in the browser only; nothing is sent to the chain and the files are named `-replay`. Both take `BASE_URL` and `API_URL`.
+
+Presenter mode for recordings: add `?present=1` to any URL or press Alt+P (Option+P on a Mac). It enlarges type and hides secondary chrome for the browser tab; `?present=0` or Alt+P turns it off.
+
 ## Notes
 
 - `pnpm-workspace.yaml` sets `allowBuilds` to `false` for four packages whose install scripts only build optional native accelerators; each has a JavaScript fallback or prebuilt binary.

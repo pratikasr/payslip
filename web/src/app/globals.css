@@ -42,6 +42,8 @@
   --color-info: var(--info);
   --color-info-bg: var(--info-bg);
   --color-redact: var(--redact);
+  --color-viz: var(--viz);
+  --color-viz-soft: var(--viz-soft);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
@@ -81,6 +83,13 @@
   --input: #8c94a2;
   --ring: #9a6400;
   --redact: #2a2f38;
+  /*
+    Chart data hue (violet), outside every status tone so a series never reads
+    as a status. Validated with the dataviz six checks on #ffffff and #151920;
+    --viz-soft is the lighter ordinal step ("not paid yet"), >= 2:1 on card.
+  */
+  --viz: #4a3aa7;
+  --viz-soft: #a99fe0;
 }
 
 .dark {
@@ -112,6 +121,8 @@
   --input: #5f6876;
   --ring: #f4b728;
   --redact: #c9ced6;
+  --viz: #9085e9;
+  --viz-soft: #5a50a8;
 }
 
 @layer base {
@@ -155,6 +166,132 @@
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
   }
+  /* Large standalone figures use proportional digits (tabular ones look loose at display sizes). */
+  .figure {
+    font-variant-numeric: proportional-nums;
+    font-feature-settings: "tnum" 0;
+  }
+  .figure .num {
+    font-variant-numeric: proportional-nums;
+    font-feature-settings: "tnum" 0;
+  }
+}
+
+/*
+  Motion. Every animation here answers a change (a line confirmed, a key
+  applied) or is the landing page's one orchestrated moment. The reduced
+  motion rule in the base layer cuts each to its end state.
+*/
+@keyframes ps-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes ps-flash {
+  from {
+    background-color: var(--success-bg);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+@keyframes ps-unseal {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+@keyframes ps-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes ps-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ps-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.ps-rise {
+  animation: ps-rise 420ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.ps-flash {
+  animation: ps-flash 1600ms ease-out both;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ps-pulse {
+    animation: ps-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* Landing: a viewing key lifts each redaction bar (src/components/landing/unseal-demo.tsx). */
+@keyframes ps-edge {
+  from {
+    border-color: var(--border);
+  }
+  to {
+    border-color: var(--primary-edge);
+  }
+}
+.ps-unseal-bar {
+  transform-origin: right center;
+  animation: ps-unseal 560ms cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.ps-reveal {
+  animation: ps-fade-in 360ms ease-out both;
+}
+.ps-swap-out {
+  animation: ps-fade-out 240ms ease-out 550ms both;
+}
+.ps-swap-in {
+  animation: ps-fade-in 240ms ease-out 550ms both;
+}
+.ps-edge {
+  animation: ps-edge 400ms ease-out 550ms both;
+}
+.unseal:not([data-play]) :is(.ps-unseal-bar, .ps-reveal, .ps-swap-in, .ps-swap-out, .ps-edge) {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .unseal :is(.ps-unseal-bar, .ps-reveal, .ps-swap-in, .ps-swap-out, .ps-edge) {
+    animation-delay: 0s !important;
+    animation-play-state: running !important;
+  }
+}
+
+/*
+  Presenter mode (?present=1 or Alt+P): larger type for a 1280x720 recording
+  and no secondary chrome. Tailwind sizes are in rem, so one root size scales
+  type and spacing together; breakpoints are unaffected.
+*/
+html[data-present] {
+  font-size: 118.75%;
+}
+html[data-present] [data-secondary] {
+  display: none !important;
+}
+
+/* A payer who hid the setup guide never sees it flash in before the page hydrates. */
+html[data-guide-hidden] [data-setup-guide],
+html[data-present] [data-setup-guide] {
+  display: none;
 }
 
 /*

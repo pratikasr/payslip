@@ -11,12 +11,28 @@ import { ScanDialog } from "@/components/keys/scan-dialog";
 import { PeriodPicker } from "@/components/statement/period-picker";
 import { StatementActions } from "@/components/statement/statement-actions";
 import { FundingTable, StatementLinesTable, UnlabelledTable } from "@/components/statement/statement-tables";
+import { ProveDialog } from "@/components/proof/prove-dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
-import { api, toDisplayError, type ApiError, type Statement } from "@/lib/api";
+import { api, toDisplayError, type ApiError, type Statement, type StatementLine } from "@/lib/api";
 import { classifyKey } from "@/lib/keys";
-import { formatCount, formatDateTime, formatHeight, formatRange, networkLabel } from "@/lib/format";
+import { formatCount, formatDateTime, formatFiat, formatHeight, formatRange, networkLabel } from "@/lib/format";
+
+/** Currencies the service prices ZEC in (CoinGecko's fiat list), most used first. */
+const CURRENCIES = (
+  "USD EUR GBP INR CAD AUD NGN BRL MXN SGD PHP ZAR JPY CHF AED ARS BDT BHD CLP CNY CZK DKK " +
+  "GEL HKD HUF IDR ILS KRW KWD LKR MMK MYR NOK NZD PKR PLN RUB SAR SEK THB TRY TWD UAH VND"
+).split(" ");
+
+const EXPORT_FORMATS = [
+  { value: "payslip", label: "Payslip CSV" },
+  { value: "koinly", label: "Koinly CSV" },
+  { value: "cointracker", label: "CoinTracker CSV" },
+];
+
+type StatementRequest = { ufvk: string; from: string; to: string; currency?: string };
 import { isValidRange, yearToDate } from "@/lib/period";
 
 export function ContractorStatementView() {
@@ -28,7 +44,10 @@ export function ContractorStatementView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [statement, setStatement] = useState<Statement | null>(null);
-  const [request, setRequest] = useState<{ ufvk: string; from: string; to: string } | null>(null);
+  const [request, setRequest] = useState<StatementRequest | null>(null);
+  const [currency, setCurrency] = useState("USD");
+  // Market value at receipt is shown on mainnet only: testnet coins have no market price (ADR-022).
+  const showCurrency = health?.network === "mainnet" && health.market_prices !== false;
 
   const result = classifyKey(raw);
   const networkMismatch = result.kind === "ufvk" && !!health && result.network !== health.network;
@@ -42,7 +61,12 @@ export function ContractorStatementView() {
 
   const load = async () => {
     if (result.kind !== "ufvk" || !canSubmit) return;
-    const body = { ufvk: result.value, from: period.from, to: period.to };
+    const body: StatementRequest = {
+      ufvk: result.value,
+      from: period.from,
+      to: period.to,
+      ...(showCurrency ? { currency } : {}),
+    };
     setLoading(true);
     setError(null);
     try {
@@ -99,6 +123,27 @@ export function ContractorStatementView() {
             </div>
             <div className="space-y-4">
               <PeriodPicker idPrefix="contractor-period" from={period.from} to={period.to} onChange={setPeriod} />
+              {showCurrency ? (
+                <div className="space-y-1.5">
+                  <Label htmlFor="statement-currency">Value at receipt in</Label>
+                  <NativeSelect
+                    id="statement-currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="sm:w-40"
+                    aria-describedby="statement-currency-help"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                  <p id="statement-currency-help" className="text-xs text-muted-foreground">
+                    What each payment was worth when it arrived, for your tax return.
+                  </p>
+                </div>
+              ) : null}
               <Button type="submit" disabled={!canSubmit} className="w-full sm:w-auto">
                 {loading ? "Scanning the chain with your key" : "Show statement"}
               </Button>
@@ -141,13 +186,9 @@ export function ContractorStatementView() {
   );
 }
 
-function StatementView({
-  statement: s,
-  request,
-}: {
-  statement: Statement;
-  request: { ufvk: string; from: string; to: string };
-}) {
+function StatementView({ statement: s, request }: { statement: Statement; request: StatementRequest }) {
+  const [proving, setProving] = useState<StatementLine | null>(null);
+  const showMarket = s.network === "mainnet" && !!s.market?.available;
   const who = s.account.label ?? `Account ${s.account.fingerprint.slice(0, 12)}`;
   const filename = `payslip-statement-${who.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${s.period.from}-to-${s.period.to}.csv`;
   return (
@@ -167,20 +208,38 @@ function StatementView({
             Account fingerprint <Hash value={s.account.fingerprint} label="account fingerprint" head={10} tail={6} />
           </p>
         </div>
-        <StatementActions fetchCsv={() => api.contractorStatementCsv(request)} filename={filename} />
+        <StatementActions
+          fetchCsv={(format) =>
+            api.contractorStatementCsv(request, (format ?? "payslip") as "payslip" | "koinly" | "cointracker")
+          }
+          filename={filename}
+          formats={EXPORT_FORMATS}
+        />
       </div>
 
-      <dl className="grid grid-cols-1 gap-6 rounded-lg border bg-card p-4 sm:grid-cols-3" data-print="plain">
-        <Stat label="Payments">
-          <span className="num">{formatCount(s.totals.count)}</span>
-        </Stat>
-        <Stat label="Total received">
-          <Zec zat={s.totals.zat} />
-        </Stat>
-        <Stat label="Total USD basis">
+      <dl
+        className="grid grid-cols-1 gap-6 rounded-lg border bg-card p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,0.6fr)]"
+        data-print="plain"
+      >
+        <Stat size="lg" label="Total USD basis">
           <Usd cents={s.totals.usd_cents} />
         </Stat>
+        <Stat size="lg" label="Total received">
+          <Zec zat={s.totals.zat} />
+        </Stat>
+        <Stat size="lg" label="Payments">
+          <span className="num">{formatCount(s.totals.count)}</span>
+        </Stat>
       </dl>
+      {showMarket && s.market ? (
+        <p className="text-sm text-muted-foreground">
+          Worth {formatFiat(s.market.total_cents ?? 0, s.market.currency)} at market prices when received
+          {s.market.unpriced_lines ? `, ${s.market.unpriced_lines} payments without a price` : ""}. Source: CoinGecko,
+          the ZEC price nearest each payment&apos;s block time.
+        </p>
+      ) : s.network === "mainnet" && s.market && !s.market.available ? (
+        <p className="text-sm text-muted-foreground">{s.market.error}</p>
+      ) : null}
 
       <Panel
         title="Payments"
@@ -196,7 +255,13 @@ function StatementView({
             appears in October.
           </EmptyState>
         ) : (
-          <StatementLinesTable lines={s.lines} label="Payments" testnet={s.network === "testnet"} />
+          <StatementLinesTable
+            lines={s.lines}
+            label="Payments"
+            testnet={s.network === "testnet"}
+            showMarket={showMarket}
+            onProve={setProving}
+          />
         )}
       </Panel>
 
@@ -243,6 +308,7 @@ function StatementView({
           )}
         </div>
       </details>
+      <ProveDialog ufvk={request.ufvk} line={proving} onOpenChange={(open) => !open && setProving(null)} />
     </article>
   );
 }

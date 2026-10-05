@@ -1,8 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
+import { PresenterMode } from "@/components/app/presenter-mode";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { presenterBootScript } from "@/lib/presenter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,6 +26,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
+      <head>
+        {/* Presenter mode before first paint; see src/lib/presenter.ts. */}
+        <script dangerouslySetInnerHTML={{ __html: presenterBootScript }} />
+      </head>
       <body className="min-h-dvh">
         <a
           href="#main"
@@ -33,6 +39,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </a>
         <ThemeProvider>
           {children}
+          <PresenterMode />
           <Toaster position="bottom-right" />
         </ThemeProvider>
       </body>

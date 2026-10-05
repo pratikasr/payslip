@@ -27,7 +27,9 @@ export function AppHeader() {
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <NetworkBadge className="hidden sm:inline-flex" />
-          <ThemeToggle />
+          <span data-secondary="">
+            <ThemeToggle />
+          </span>
         </div>
       </div>
       <nav aria-label="Role" className="border-t px-4 py-2 md:hidden">

@@ -11,6 +11,7 @@ import { EmptyState, ErrorState, PageHeader, Panel, Stat, TableSkeleton } from "
 import { LineStatusBadge, RUN_STATUS, RunStatusBadge } from "@/components/app/status-badge";
 import { FundStep } from "@/components/payer/fund-step";
 import { RunComparison } from "@/components/payer/run-comparison";
+import { RunProgress, useLineChanges } from "@/components/payer/run-progress";
 import { RunStepper, runStep } from "@/components/payer/run-stepper";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,6 +45,7 @@ function newer(a: Run | undefined, b: Run | undefined): Run | undefined {
 }
 
 const EXECUTING = new Set(["swapping", "swapped", "allocating", "paying"]);
+const NO_LINES: PayLine[] = [];
 
 export function RunDetail({ runId, initial }: { runId: string; initial?: Run }) {
   const fetched = useResource((s) => api.run(runId, s), `run-${runId}`);
@@ -52,6 +54,7 @@ export function RunDetail({ runId, initial }: { runId: string; initial?: Run }) 
   const history = useResource((s) => api.runLog(runId, s), `run-log-${runId}`);
   const run = newer(newer(fetched.data, stream.run), local);
   const onRun = useCallback((r: Run) => setLocal((prev) => newer(prev, r)), []);
+  const changed = useLineChanges(run?.lines ?? NO_LINES);
   // History from GET /log on load, then live events from the stream, without duplicates.
   const logs = useMemo(() => {
     const seen = new Set<string>();
@@ -114,9 +117,9 @@ export function RunDetail({ runId, initial }: { runId: string; initial?: Run }) 
 
       <RunStepper run={run} />
 
-      <CurrentStep run={run} onRun={onRun} />
+      <CurrentStep run={run} onRun={onRun} changed={changed} />
 
-      <PayLines run={run} />
+      <PayLines run={run} changed={changed} />
 
       <RunSummary run={run} />
 
@@ -150,7 +153,7 @@ function LiveIndicator({ state }: { state: StreamState }) {
   );
 }
 
-function CurrentStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
+function CurrentStep({ run, onRun, changed }: { run: Run; onRun: (r: Run) => void; changed: ReadonlySet<string> }) {
   const { index, failed } = runStep(run);
 
   if (failed) return <FailedStep run={run} onRun={onRun} />;
@@ -167,17 +170,22 @@ function CurrentStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
       </Panel>
     );
   }
-  if (index === 1) return <ExecuteStep run={run} onRun={onRun} />;
-  return <PaidStep run={run} />;
+  if (index === 1) return <ExecuteStep run={run} onRun={onRun} changed={changed} />;
+  return <PaidStep run={run} changed={changed} />;
 }
 
-function PaidStep({ run }: { run: Run }) {
+function PaidStep({ run, changed }: { run: Run; changed: ReadonlySet<string> }) {
   const confirmed = run.lines.filter((l) => l.status === "confirmed").length;
   return (
     <Panel
       title="Paid"
       description={`${confirmed} of ${run.lines.length} payments confirmed on chain. The explorer shows shielded transactions only; amounts and names stay private.`}
     >
+      {run.lines.length > 0 ? (
+        <div className="border-b p-4">
+          <RunProgress run={run} changed={changed} />
+        </div>
+      ) : null}
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted-foreground">
           Contractors read their payments with their own viewing key. Your accountant reconciles this run with all of
@@ -196,7 +204,7 @@ function PaidStep({ run }: { run: Run }) {
   );
 }
 
-function ExecuteStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
+function ExecuteStep({ run, onRun, changed }: { run: Run; onRun: (r: Run) => void; changed: ReadonlySet<string> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const execute = async () => {
@@ -210,8 +218,6 @@ function ExecuteStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
       setBusy(false);
     }
   };
-  const done = run.lines.filter((l) => l.status === "confirmed").length;
-  const sent = run.lines.filter((l) => l.status === "broadcast" || l.status === "confirmed").length;
   const executing = EXECUTING.has(run.status) || !!run.executing;
 
   return (
@@ -227,27 +233,7 @@ function ExecuteStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
     >
       <div className="space-y-4 p-4">
         {executing ? (
-          <div className="space-y-2" aria-live="polite">
-            <div className="flex items-baseline justify-between text-sm">
-              <span>
-                <span className="num font-medium">{sent}</span> of <span className="num">{run.lines.length}</span>{" "}
-                payments sent, <span className="num font-medium">{done}</span> confirmed
-              </span>
-            </div>
-            <div
-              className="h-2 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-label="Payments confirmed"
-              aria-valuemin={0}
-              aria-valuemax={run.lines.length}
-              aria-valuenow={done}
-            >
-              <div
-                className="h-full rounded-full bg-primary transition-[width] duration-500"
-                style={{ width: `${run.lines.length ? (done / run.lines.length) * 100 : 0}%` }}
-              />
-            </div>
-          </div>
+          <RunProgress run={run} changed={changed} />
         ) : (
           <Button onClick={execute} disabled={busy} size="lg">
             <Play aria-hidden="true" />
@@ -291,7 +277,7 @@ function FailedStep({ run, onRun }: { run: Run; onRun: (r: Run) => void }) {
   );
 }
 
-function PayLines({ run }: { run: Run }) {
+function PayLines({ run, changed }: { run: Run; changed: ReadonlySet<string> }) {
   const totalZat = run.lines.reduce((s, l) => s + (l.amount_zat ?? 0), 0);
   const anyZat = run.lines.some((l) => l.amount_zat);
   return (
@@ -305,7 +291,7 @@ function PayLines({ run }: { run: Run }) {
         <>
           <ul className="divide-y md:hidden">
             {run.lines.map((l) => (
-              <li key={l.id} className="space-y-2 px-4 py-3">
+              <li key={l.id} className={cn("space-y-2 px-4 py-3", changed.has(l.id) && "ps-flash")}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{l.contractor_name}</p>
@@ -314,7 +300,9 @@ function PayLines({ run }: { run: Run }) {
                       {l.invoice_ref ? `, ${l.invoice_ref}` : ""}
                     </p>
                   </div>
-                  <LineStatusBadge status={l.status} />
+                  <span key={l.status} className={cn("shrink-0", changed.has(l.id) && "ps-rise")}>
+                    <LineStatusBadge status={l.status} />
+                  </span>
                   <ConversionNote line={l} />
                 </div>
                 <div
@@ -331,13 +319,18 @@ function PayLines({ run }: { run: Run }) {
                   )}
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <Hash
-                    value={l.txid}
-                    label={`transaction id for ${l.contractor_name}`}
-                    explorerUrl={l.explorer_url}
-                    empty="Not broadcast"
-                  />
-                  <span className="num">
+                  <span key={l.txid ?? "none"} className={cn(changed.has(l.id) && "ps-rise")}>
+                    <Hash
+                      value={l.txid}
+                      label={`transaction id for ${l.contractor_name}`}
+                      explorerUrl={l.explorer_url}
+                      empty="Not broadcast"
+                    />
+                  </span>
+                  <span
+                    key={l.confirmed_height ?? "none"}
+                    className={cn("num", changed.has(l.id) && l.confirmed_height && "ps-rise")}
+                  >
                     {l.confirmed_height ? `Height ${formatHeight(l.confirmed_height)}` : "Not mined"}
                   </span>
                 </div>
@@ -372,7 +365,7 @@ function PayLines({ run }: { run: Run }) {
               </TableHeader>
               <TableBody>
                 {run.lines.map((l) => (
-                  <TableRow key={l.id}>
+                  <TableRow key={l.id} className={cn(changed.has(l.id) && "ps-flash")}>
                     <TableCell>
                       <div className="font-medium">{l.contractor_name}</div>
                       <div className="text-xs text-muted-foreground">Account {l.account_index}</div>
@@ -389,7 +382,9 @@ function PayLines({ run }: { run: Run }) {
                       )}
                     </TableCell>
                     <TableCell>
-                      <LineStatusBadge status={l.status} />
+                      <span key={l.status} className={cn("inline-block", changed.has(l.id) && "ps-rise")}>
+                        <LineStatusBadge status={l.status} />
+                      </span>
                       <ConversionNote line={l} />
                       {l.error ? (
                         <p className="mt-1 max-w-56 text-xs whitespace-normal text-danger">
@@ -398,12 +393,14 @@ function PayLines({ run }: { run: Run }) {
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Hash
-                        value={l.txid}
-                        label={`transaction id for ${l.contractor_name}`}
-                        explorerUrl={l.explorer_url}
-                        empty="Not broadcast"
-                      />
+                      <span key={l.txid ?? "none"} className={cn("inline-block", changed.has(l.id) && "ps-rise")}>
+                        <Hash
+                          value={l.txid}
+                          label={`transaction id for ${l.contractor_name}`}
+                          explorerUrl={l.explorer_url}
+                          empty="Not broadcast"
+                        />
+                      </span>
                       {l.allocation_txid ? (
                         <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
                           Allocation{" "}
@@ -418,7 +415,9 @@ function PayLines({ run }: { run: Run }) {
                     </TableCell>
                     <TableCell numeric>
                       {l.confirmed_height ? (
-                        formatHeight(l.confirmed_height)
+                        <span key={l.confirmed_height} className={cn("inline-block", changed.has(l.id) && "ps-rise")}>
+                          {formatHeight(l.confirmed_height)}
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">Not mined</span>
                       )}
@@ -452,11 +451,12 @@ function RunSummary({ run }: { run: Run }) {
   const testnetRate = f?.venue === "testnet-fixed-rate" || run.network === "testnet";
   return (
     <Panel title="Run summary">
-      <dl className="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Total owed">
+      <dl className="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2">
+        <Stat size="lg" label="Total owed">
           <Usd cents={run.total_usd_cents} />
         </Stat>
         <Stat
+          size="lg"
           label={
             <>
               Total paid in <Coin />
@@ -466,9 +466,11 @@ function RunSummary({ run }: { run: Run }) {
           {run.total_zat ? (
             <Zec zat={run.total_zat} />
           ) : (
-            <span className="text-base text-muted-foreground">Set when funded</span>
+            <span className="text-base font-normal text-muted-foreground">Set when funded</span>
           )}
         </Stat>
+      </dl>
+      <dl className="grid grid-cols-1 gap-6 border-t p-4 sm:grid-cols-2 lg:grid-cols-5">
         <Stat
           label={testnetRate ? "Testnet fixed rate (USD basis)" : "Fill rate (USD basis)"}
           hint={testnetRate ? "Testnet coins have no market price, so the testnet venue uses a fixed rate." : undefined}

@@ -1,8 +1,10 @@
+import { ShieldCheck } from "lucide-react";
 import { Rate, Usd, Zec, Coin } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { FundingLine, StatementLine, UnlabelledLine } from "@/lib/api";
-import { formatDate, formatHeight, formatPeriodLabel } from "@/lib/format";
+import { formatDate, formatFiat, formatHeight, formatPeriodLabel } from "@/lib/format";
 
 type Line = StatementLine & { label?: string | null; account_index?: number | null };
 
@@ -13,6 +15,8 @@ export function StatementLinesTable({
   showRunning = true,
   showRate = true,
   testnet = false,
+  showMarket = false,
+  onProve,
 }: {
   lines: Line[];
   label: string;
@@ -21,8 +25,18 @@ export function StatementLinesTable({
   showRate?: boolean;
   /** Label the rate column as the testnet fixed rate. */
   testnet?: boolean;
+  /** Show each payment's market value when it was mined. */
+  showMarket?: boolean;
+  /** Offers a payment proof for each mined line. */
+  onProve?: (line: Line) => void;
 }) {
-  const minWidth = 720 + (showContractor ? 160 : 0) + (showRunning ? 240 : 0) + (showRate ? 120 : 0);
+  const minWidth =
+    720 +
+    (showContractor ? 160 : 0) +
+    (showRunning ? 240 : 0) +
+    (showRate ? 120 : 0) +
+    (showMarket ? 140 : 0) +
+    (onProve ? 100 : 0);
   return (
     <>
       <ul className="divide-y md:hidden print:hidden" aria-label={label}>
@@ -47,10 +61,21 @@ export function StatementLinesTable({
               <Hash value={l.txid} label="transaction id" explorerUrl={l.explorer_url} />
               <span className="num">{l.height ? `Height ${formatHeight(l.height)}` : "Not mined"}</span>
             </div>
+            {showMarket && l.market ? (
+              <p className="num text-xs text-muted-foreground">
+                Worth {formatFiat(l.market.value_cents, l.market.currency)} when received
+              </p>
+            ) : null}
             {showRunning ? (
               <p className="num text-xs text-muted-foreground">
                 Running total <Usd cents={l.running_usd_cents} />, <Zec zat={l.running_zat} />
               </p>
+            ) : null}
+            {onProve && l.height ? (
+              <Button variant="outline" size="sm" onClick={() => onProve(l)} data-print="hide">
+                <ShieldCheck aria-hidden="true" />
+                Prove this payment
+              </Button>
             ) : null}
           </li>
         ))}
@@ -65,6 +90,7 @@ export function StatementLinesTable({
                 <Coin />
               </TableHead>
               <TableHead numeric>USD basis</TableHead>
+              {showMarket ? <TableHead numeric>Value at receipt</TableHead> : null}
               {showRate ? <TableHead numeric>{testnet ? "Testnet fixed rate" : "Rate"}</TableHead> : null}
               <TableHead>Invoice</TableHead>
               <TableHead>Run period</TableHead>
@@ -76,6 +102,11 @@ export function StatementLinesTable({
                 </TableHead>
               ) : null}
               {showRunning ? <TableHead numeric>Running USD</TableHead> : null}
+              {onProve ? (
+                <TableHead>
+                  <span className="sr-only">Proof</span>
+                </TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -96,6 +127,20 @@ export function StatementLinesTable({
                 <TableCell numeric>
                   <Usd cents={l.usd_basis_cents} />
                 </TableCell>
+                {showMarket ? (
+                  <TableCell numeric>
+                    {l.market ? (
+                      <span
+                        className="num whitespace-nowrap"
+                        title={`${formatFiat(l.market.price_cents, l.market.currency)} per ZEC at ${l.market.priced_at}`}
+                      >
+                        {formatFiat(l.market.value_cents, l.market.currency)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No price</span>
+                    )}
+                  </TableCell>
+                ) : null}
                 {showRate ? (
                   <TableCell numeric>
                     <Rate e6={l.rate_usd_per_zec_e6} unit={false} />
@@ -122,6 +167,21 @@ export function StatementLinesTable({
                 {showRunning ? (
                   <TableCell numeric className="text-muted-foreground">
                     <Usd cents={l.running_usd_cents} />
+                  </TableCell>
+                ) : null}
+                {onProve ? (
+                  <TableCell data-print="hide">
+                    {l.height ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onProve(l)}
+                        aria-label={`Prove the payment of ${formatDate(l.block_time ?? l.date)}${l.invoice_ref ? `, invoice ${l.invoice_ref}` : ""}`}
+                      >
+                        <ShieldCheck aria-hidden="true" />
+                        Prove
+                      </Button>
+                    ) : null}
                   </TableCell>
                 ) : null}
               </TableRow>

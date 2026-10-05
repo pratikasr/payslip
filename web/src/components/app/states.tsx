@@ -148,22 +148,35 @@ export function PageHeader({
   );
 }
 
-/** A labelled figure: label above value. */
+/**
+ * A labelled figure: label above value. `size="lg"` is for the few numbers a
+ * viewer (or a camera) should read first: totals, not every field.
+ */
 export function Stat({
   label,
   children,
   hint,
   className,
+  size = "md",
 }: {
   label: React.ReactNode;
   children: ReactNode;
   hint?: ReactNode;
   className?: string;
+  size?: "md" | "lg";
 }) {
   return (
     <div className={cn("min-w-0 space-y-1", className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-lg font-medium tracking-tight">{children}</dd>
+      <dt className={cn("text-xs text-muted-foreground", size === "lg" && "text-sm")}>{label}</dt>
+      <dd
+        className={cn(
+          size === "lg"
+            ? "figure text-[1.75rem] leading-9 font-semibold tracking-[-0.02em] sm:text-[2rem] sm:leading-10 [&_[data-unit]]:text-base [&_[data-unit]]:font-medium [&_[data-unit]]:tracking-normal"
+            : "text-lg font-medium tracking-tight",
+        )}
+      >
+        {children}
+      </dd>
       {hint ? <dd className="text-xs text-muted-foreground">{hint}</dd> : null}
     </div>
   );
@@ -203,7 +216,11 @@ export function Panel({
                 {title}
               </h2>
             ) : null}
-            {description ? <div className="text-sm text-muted-foreground">{description}</div> : null}
+            {description ? (
+              <div className="text-sm text-muted-foreground" data-secondary="">
+                {description}
+              </div>
+            ) : null}
           </div>
           {actions ? (
             <div className="flex flex-wrap items-center gap-2" data-print="hide">

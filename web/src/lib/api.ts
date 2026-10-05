@@ -30,6 +30,12 @@ export interface Health {
   clock_skew_seconds?: number | null;
   /** Human-readable warnings, for example clock skew or a lagging lightwalletd. */
   warnings?: string[];
+  /** "statements": a deployment with no wallet, serving statements and payment proofs only. */
+  mode?: "full" | "statements";
+  /** Payslip's fee on the USDC to ZEC funding swap, in basis points (0 when none). */
+  app_fee_bps?: number;
+  /** Whether statements carry the market value of each payment at receipt. */
+  market_prices?: boolean;
 }
 
 export interface Treasury {
@@ -76,6 +82,8 @@ export interface ContractorViewingKey {
   contractor_id: string;
   account_index: number;
   ufvk: string;
+  /** The same key in the ZIP 316 Revision 0 form (uview...) that released wallets import. */
+  ufvk_wallet?: string;
   birthday_height: number;
   network: Network;
 }
@@ -85,6 +93,7 @@ export interface ViewingKeyExportEntry {
   role: "treasury" | "contractor";
   account_index: number;
   ufvk: string;
+  ufvk_wallet?: string;
   contractor_id: string | null;
 }
 
@@ -238,6 +247,81 @@ export interface StatementLine {
   /** held: paid to the contractor's shielded address; converted: paid to a swap venue for USDC (memo on change). */
   settlement?: "held" | "converted";
   to_address?: string | null;
+  /** Market value when the payment was mined (CoinGecko price nearest the block time). */
+  market?: MarketValue | null;
+}
+
+export interface MarketValue {
+  /** ISO 4217, upper case. */
+  currency: string;
+  /** Price of one ZEC, in hundredths of the currency. */
+  price_cents: number;
+  /** Value of the payment, in hundredths of the currency. */
+  value_cents: number;
+  priced_at: string;
+  source: string;
+}
+
+export interface StatementMarket {
+  currency: string;
+  available: boolean;
+  total_cents?: number;
+  priced_lines?: number;
+  unpriced_lines?: number;
+  source?: string;
+  note?: string | null;
+  error?: string;
+}
+
+export type ContractorExportFormat = "payslip" | "koinly" | "cointracker";
+export type AccountantExportFormat = "payslip" | "xero" | "quickbooks";
+
+export type ProofMemo =
+  | {
+      kind: "pay_line";
+      run_id: string;
+      period: string;
+      invoice_ref: string;
+      usd_basis_cents: number;
+      rate_usd_per_zec_e6: number;
+    }
+  | { kind: "text"; text: string }
+  | { kind: "none" }
+  | { kind: "payslip_internal" };
+
+export interface CreatedProof {
+  token: string;
+  pool: "orchard" | "ironwood";
+  action_index: number;
+  amount_zat: number;
+  recipient: string;
+  memo: ProofMemo;
+}
+
+export interface ProofSet {
+  network: Network;
+  txid: string;
+  height: number | null;
+  proofs: CreatedProof[];
+}
+
+export interface VerifiedProof {
+  valid: true;
+  network: Network;
+  txid: string;
+  explorer_url: string;
+  height: number | null;
+  confirmations: number | null;
+  block_time: string | null;
+  pool: "orchard" | "ironwood";
+  amount_zat: number;
+  recipient: string;
+  /** Whether the expected address (if one was given) holds the receiver the note was paid to. */
+  address_matches: boolean | null;
+  /** False when the expected address could not be read; absent or null when none was given. */
+  address_valid?: boolean | null;
+  memo: ProofMemo;
+  discloses: string;
 }
 
 export interface UnlabelledLine {
@@ -288,6 +372,7 @@ export interface Statement {
   funding: FundingLine[];
   /** Runs this service knows, keyed by run id. */
   runs?: Record<string, RunRef>;
+  market?: StatementMarket;
 }
 
 export type ReconciliationStatus = "reconciled" | "variance_unexplained" | "missing_funding_record" | "incomplete";
@@ -473,14 +558,24 @@ export const api = {
     json<{ events: RunLogEvent[] }>(`/api/runs/${id(runId)}/log`, { signal }).then((r) => r.events),
   runEventsUrl: (runId: string) => `${API_URL}/api/runs/${id(runId)}/events`,
 
-  contractorStatement: (body: { ufvk: string; from: string; to: string }, signal?: AbortSignal) =>
+  contractorStatement: (body: { ufvk: string; from: string; to: string; currency?: string }, signal?: AbortSignal) =>
     json<Statement>("/api/statements/contractor", { method: "POST", body, signal }),
-  contractorStatementCsv: (body: { ufvk: string; from: string; to: string }) =>
-    blob("/api/statements/contractor.csv", { method: "POST", body }),
+  contractorStatementCsv: (
+    body: { ufvk: string; from: string; to: string; currency?: string },
+    format: ContractorExportFormat = "payslip",
+  ) => blob(`/api/statements/contractor.csv?format=${format}`, { method: "POST", body }),
   accountantStatement: (body: { ufvks: string[]; from: string; to: string }, signal?: AbortSignal) =>
     json<Reconciliation>("/api/statements/accountant", { method: "POST", body, signal }),
-  accountantStatementCsv: (body: { ufvks: string[]; from: string; to: string }) =>
-    blob("/api/statements/accountant.csv", { method: "POST", body }),
+  accountantStatementCsv: (
+    body: { ufvks: string[]; from: string; to: string },
+    format: AccountantExportFormat = "payslip",
+  ) => blob(`/api/statements/accountant.csv?format=${format}`, { method: "POST", body }),
+
+  createProof: (body: { ufvk: string; txid: string }) => json<ProofSet>("/api/proofs", { method: "POST", body }),
+  verifyProof: (token: string, address?: string, signal?: AbortSignal) =>
+    json<VerifiedProof>(`/api/proofs/${id(token)}${address ? `?address=${encodeURIComponent(address)}` : ""}`, {
+      signal,
+    }),
 };
 
 /** Normalise anything thrown by the client into an ApiError for display. */

@@ -136,6 +136,19 @@ function ShareKeyBody({
               Download .txt
             </Button>
           </div>
+          {vk.ufvk_wallet && vk.ufvk_wallet !== vk.ufvk ? (
+            <details className="rounded-lg border px-3 py-2 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">For a Zcash wallet app</summary>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Wallets such as Zingo and Zkool import the older encoding of the same key. It reads exactly the same
+                payments.
+              </p>
+              <div className="mt-2 flex items-start gap-1">
+                <code className="min-w-0 flex-1 font-mono text-xs break-all">{vk.ufvk_wallet}</code>
+                <CopyButton value={vk.ufvk_wallet} label="viewing key for wallet apps" />
+              </div>
+            </details>
+          ) : null}
         </div>
       </div>
       <DialogFooter className="sm:items-center sm:justify-between">

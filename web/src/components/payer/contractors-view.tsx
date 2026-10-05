@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Archive, KeyRound, Pencil, Plus, UsersRound } from "lucide-react";
 import { toast } from "sonner";
 import { Hash } from "@/components/app/hash";
@@ -31,6 +31,15 @@ export function ContractorsView() {
   const [sharing, setSharing] = useState<Contractor | null>(null);
   const [archiving, setArchiving] = useState<Contractor | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // /app/payer/contractors?add=1 (from the setup guide) opens the Add contractor dialog.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("add") !== "1") return;
+    url.searchParams.delete("add");
+    window.history.replaceState(window.history.state, "", url.pathname + url.search + url.hash);
+    setAdding(true);
+  }, []);
 
   const upsert = (c: Contractor) =>
     contractors.setData((prev) => {

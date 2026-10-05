@@ -2,27 +2,47 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Check, Plus, RefreshCw } from "lucide-react";
+import { ListChecks, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { EmptyState, ErrorState, PageHeader, Panel, Stat, TableSkeleton } from "@/components/app/states";
 import { RunsTable } from "@/components/payer/runs-table";
 import { HealthWarnings } from "@/components/app/health-warnings";
+import { useHealth } from "@/components/app/health-provider";
+import { PayrollInsights } from "@/components/insights/payroll-insights";
+import { setupSteps, SetupGuide, useGuideDismissed } from "@/components/payer/setup-guide";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
-import { api, toDisplayError, UNREACHABLE_CODE, type Contractor, type Run } from "@/lib/api";
+import { api, toDisplayError, UNREACHABLE_CODE, type Contractor, type Run, type Wallet } from "@/lib/api";
 import { formatCount, formatHeight } from "@/lib/format";
 import { cn } from "cn";
 
-export function PayerOverview() {
-  const wallet = useResource((s) => api.wallet(s), "wallet");
-  const contractors = useResource((s) => api.contractors(s), "contractors");
-  const runs = useResource((s) => api.runs(s), "runs");
+export function PayerOverview({
+  initial,
+}: {
+  initial?: { wallet?: Wallet; contractors?: Contractor[]; runs?: Run[] };
+}) {
+  const wallet = useResource((s) => api.wallet(s), "wallet", initial?.wallet);
+  const contractors = useResource((s) => api.contractors(s), "contractors", initial?.contractors);
+  const runs = useResource((s) => api.runs(s), "runs", initial?.runs);
   const [syncing, setSyncing] = useState(false);
+  const { health } = useHealth();
+  const [guideHidden, setGuideHidden] = useGuideDismissed();
+  const network = wallet.data?.network ?? health?.network;
+
+  const ready = wallet.data && contractors.data && runs.data && network;
+  const incomplete = ready
+    ? setupSteps({ wallet: wallet.data!, contractors: contractors.data!, runs: runs.data!, network: network! }).some(
+        (s) => !s.done,
+      )
+    : false;
 
   const offline = [wallet.error, contractors.error, runs.error].find((e) => e?.code === UNREACHABLE_CODE);
+  // The body appears in one step once all three answered, so nothing already on screen moves
+  // when the setup guide or the insights arrive (no layout shift).
+  const settled = (wallet.data || wallet.error) && (contractors.data || contractors.error) && (runs.data || runs.error);
   const retryAll = () => {
     void wallet.reload();
     void contractors.reload();
@@ -49,20 +69,44 @@ export function PayerOverview() {
         title="Overview"
         description="Your treasury, your contractors and recent payroll runs."
         actions={
-          <Button asChild>
-            <Link href="/app/payer/runs/new">
-              <Plus aria-hidden="true" />
-              New run
-            </Link>
-          </Button>
+          <>
+            {guideHidden && incomplete ? (
+              <Button variant="outline" onClick={() => setGuideHidden(false)}>
+                <ListChecks aria-hidden="true" />
+                Show setup guide
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href="/app/payer/runs/new">
+                <Plus aria-hidden="true" />
+                New run
+              </Link>
+            </Button>
+          </>
         }
       />
 
       {offline ? (
         <ErrorState error={offline} onRetry={retryAll} />
+      ) : !settled ? (
+        <OverviewSkeleton />
       ) : (
         <>
           <HealthWarnings />
+          {guideHidden !== true && ready && incomplete ? (
+            <SetupGuide
+              wallet={wallet.data!}
+              contractors={contractors.data!}
+              runs={runs.data!}
+              network={network!}
+              onSync={onSync}
+              syncing={syncing}
+              onHide={() => {
+                setGuideHidden(true);
+                toast("Setup guide hidden", { description: "Show setup guide brings it back." });
+              }}
+            />
+          ) : null}
           <Panel
             title="Treasury"
             description="Account 0 of the payer wallet. Runs draw ZEC from here."
@@ -117,8 +161,15 @@ export function PayerOverview() {
             )}
           </Panel>
 
-          {contractors.data && runs.data && (contractors.data.length === 0 || runs.data.length === 0) ? (
-            <SetupChecklist contractors={contractors.data} runs={runs.data} />
+          {runs.data && contractors.data ? (
+            // On an empty workspace the setup guide and the runs panel already point at the first run.
+            runs.data.length > 0 ? (
+              <PayrollInsights runs={runs.data} contractors={contractors.data} network={network} />
+            ) : null
+          ) : !runs.error && !contractors.error ? (
+            <Panel title="Payroll insights">
+              <TableSkeleton label="Loading payroll insights" rows={3} columns={4} />
+            </Panel>
           ) : null}
 
           <Panel
@@ -201,79 +252,26 @@ export function PayerOverview() {
   );
 }
 
-function SetupChecklist({ contractors, runs }: { contractors: Contractor[]; runs: Run[] }) {
-  const shared = contractors.filter((c) => c.fvk_shared_at).length;
-  const steps = [
-    {
-      done: contractors.length > 0,
-      title: "Add your contractors",
-      body: "Name, unified address and how they want to be paid. Each gets a dedicated account.",
-      href: "/app/payer/contractors",
-      cta: "Add contractors",
-    },
-    {
-      done: contractors.length > 0 && shared === contractors.length,
-      title: "Share each viewing key",
-      body: "Each contractor gets the viewing key for their account, so they can read their own statement.",
-      href: "/app/payer/contractors",
-      cta: "Share viewing keys",
-    },
-    {
-      done: runs.length > 0,
-      title: "Create a run",
-      body: "Pick the period and enter each contractor's amount in USD with an invoice reference.",
-      href: "/app/payer/runs/new",
-      cta: "Create a run",
-    },
-    {
-      done: runs.some((r) => r.status === "paid"),
-      title: "Fund and execute",
-      body: "Send USDC, then execute. Each contractor receives one shielded payment with a memo.",
-      href: "/app/payer/runs",
-      cta: "Open runs",
-    },
-  ];
-  const next = steps.findIndex((s) => !s.done);
+/** One placeholder for the whole body while the service answers; replaced in a single step. */
+function OverviewSkeleton() {
   return (
-    <Panel title="Get your first payroll out" description="Four steps. The next one is highlighted.">
-      <ol className="divide-y">
-        {steps.map((s, i) => (
-          <li
-            key={s.title}
-            className={cn(
-              "flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center",
-              i === next && "bg-warning-bg/50",
-            )}
-          >
-            <span
-              aria-hidden="true"
-              className={cn(
-                "num inline-flex size-7 shrink-0 items-center justify-center rounded-full border text-xs font-semibold",
-                s.done && "border-transparent bg-success-bg text-success",
-                i === next && "border-primary-edge",
-              )}
-            >
-              {s.done ? <Check className="size-3.5" /> : i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">
-                {s.title}
-                {s.done ? (
-                  <span className="sr-only"> (done)</span>
-                ) : i === next ? (
-                  <span className="sr-only"> (next step)</span>
-                ) : null}
-              </p>
-              <p className="text-sm text-muted-foreground">{s.body}</p>
-            </div>
-            {i === next ? (
-              <Button asChild size="sm">
-                <Link href={s.href}>{s.cta}</Link>
-              </Button>
-            ) : null}
-          </li>
+    <div role="status" aria-label="Loading overview" className="space-y-6">
+      <div className="space-y-4 rounded-lg border bg-card p-4">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-4 w-72 max-w-full" />
+        <Skeleton className="h-1.5 w-full" />
+        {Array.from({ length: 5 }).map((_, i) => (
+          <Skeleton key={i} className="h-6 w-full max-w-md" />
         ))}
-      </ol>
-    </Panel>
+      </div>
+      <div className="grid gap-6 rounded-lg border bg-card p-4 sm:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-6 w-32" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

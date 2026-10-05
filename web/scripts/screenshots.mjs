@@ -5,7 +5,7 @@
 //   pnpm build && pnpm start                # or pnpm dev, in another terminal
 //   pnpm screenshots                        # BASE_URL defaults to http://localhost:3000
 //
-// Optional: RUN_ID=<uuid> adds the run detail page; THEME=dark captures dark mode.
+// Optional: RUN_ID=<uuid> adds the run detail page; PROOF_TOKEN=pp1... the verify page; THEME=dark captures dark mode.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,8 +26,23 @@ const routes = [
   ["accountant", "/app/accountant"],
 ];
 if (process.env.RUN_ID) routes.push(["payer-run-detail", `/app/payer/runs/${process.env.RUN_ID}`]);
+// PROOF_TOKEN=pp1... adds the public payment proof page (docs/judge/judge-kit-testnet.json has one).
+if (process.env.PROOF_TOKEN) routes.push(["verify", `/verify#${process.env.PROOF_TOKEN}`]);
 
 const widths = [375, 768, 1440];
+
+/** Scroll through the page so anything that starts when it comes into view (the landing's unseal) has played. */
+async function settle(page) {
+  await page.evaluate(async () => {
+    const step = Math.max(200, Math.floor(window.innerHeight * 0.6));
+    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((r) => setTimeout(r, 120));
+    }
+    window.scrollTo(0, 0);
+  });
+  await page.waitForTimeout(2200);
+}
 
 mkdirSync(OUT, { recursive: true });
 // Resolve localhost to IPv4 so another local server bound to [::1] cannot answer
@@ -44,8 +59,8 @@ try {
     const page = await context.newPage();
     for (const [name, path] of routes) {
       await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
-      // Let skeletons resolve into data or error states.
-      await page.waitForTimeout(1200);
+      // Let skeletons resolve into data or error states, and in-view animations finish.
+      await settle(page);
       const file = join(OUT, `${name}-${width}${THEME === "dark" ? "-dark" : ""}.png`);
       await page.screenshot({ path: file, fullPage: true });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

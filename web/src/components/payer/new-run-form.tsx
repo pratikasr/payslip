@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { UsersRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Repeat, UsersRound } from "lucide-react";
 import { Usd } from "@/components/app/amount";
 import { EmptyState, ErrorState, PageHeader, Panel, TableSkeleton } from "@/components/app/states";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useResource } from "@/hooks/use-resource";
-import { api, toDisplayError, type ApiError, type Contractor } from "@/lib/api";
+import { api, toDisplayError, type ApiError, type Contractor, type Run } from "@/lib/api";
 import { formatPeriodLabel, formatRange, parseUsdToCents } from "@/lib/format";
 import { isValidRange, previousMonth } from "@/lib/period";
 import { cn } from "cn";
@@ -86,6 +86,38 @@ function RunForm({ contractors }: { contractors: Contractor[] }) {
 
   const update = (id: string, patch: Partial<LineState>) =>
     setLines((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+
+  // Repeat a run: the run named in ?repeat=<id>, else the most recent one.
+  const runs = useResource((s) => api.runs(s), "runs");
+  const [repeatId, setRepeatId] = useState<string | null>(null);
+  useEffect(() => {
+    setRepeatId(new URLSearchParams(window.location.search).get("repeat"));
+  }, []);
+  const source: Run | undefined = useMemo(() => {
+    const all = runs.data ?? [];
+    return (
+      all.find((r) => r.id === repeatId) ??
+      [...all].sort((a, b) => b.created_at.localeCompare(a.created_at)).find((r) => r.lines.length > 0)
+    );
+  }, [runs.data, repeatId]);
+  const [repeated, setRepeated] = useState<string | null>(null);
+  const repeat = (run: Run) => {
+    const byContractor = new Map(run.lines.map((l) => [l.contractor_id, l]));
+    setLines(
+      Object.fromEntries(
+        contractors.map((c) => {
+          const l = byContractor.get(c.id);
+          return [c.id, { include: !!l, amount: l ? (l.amount_usd_cents / 100).toFixed(2) : "", invoice: "" }];
+        }),
+      ),
+    );
+    setRepeated(run.period_label);
+  };
+  // Arriving from a run's "Repeat" link fills the form straight away.
+  useEffect(() => {
+    if (repeatId && source?.id === repeatId && repeated === null) repeat(source);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repeatId, source]);
 
   const included = contractors.filter((c) => lines[c.id]?.include);
   const lineErrors = useMemo(() => {
@@ -173,7 +205,19 @@ function RunForm({ contractors }: { contractors: Contractor[] }) {
 
       <Panel
         title="Pay lines"
-        description="One line per contractor. Amounts are in USD; the ZEC amount is fixed at the fill rate when the run is funded."
+        description={
+          repeated
+            ? `Amounts copied from the ${formatPeriodLabel(repeated)} run. Add this period's invoice references.`
+            : "One line per contractor. Amounts are in USD; the ZEC amount is fixed at the fill rate when the run is funded."
+        }
+        actions={
+          source ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => repeat(source)}>
+              <Repeat aria-hidden="true" />
+              Copy amounts from {formatPeriodLabel(source.period_label)}
+            </Button>
+          ) : undefined
+        }
       >
         <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)] gap-4 border-b px-4 py-2 text-xs font-medium text-muted-foreground md:grid">
           <span>Contractor</span>

@@ -38,6 +38,21 @@ export function formatUsd(cents: number | null | undefined, opts: { signed?: boo
   return `${sign}$${groupInteger(whole)}.${frac}`;
 }
 
+/** An amount in hundredths of `currency` (ISO 4217), e.g. 480012 INR -> "₹4,800.12". */
+export function formatFiat(cents: number | null | undefined, currency: string): string {
+  if (cents === null || cents === undefined) return "Not set";
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency}`;
+  }
+}
+
 /** rate e6 -> "$1,354.93". Full precision is available via formatRateFull. */
 export function formatRate(rateE6: number | null | undefined): string {
   if (rateE6 === null || rateE6 === undefined || !Number.isFinite(rateE6)) return "Not set";
