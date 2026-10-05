@@ -95,7 +95,7 @@ PayLine = {
 ```
 
 - `GET /api/runs` returns `{"runs": [Run]}` newest first.
-- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid"}` returns `201` and the Run in `draft`. Repeating the same `idempotency_key` returns `200` and the existing Run. Errors: `invalid_amount` (zero or negative), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long`.
+- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid"}` returns `201` and the Run in `draft`. Repeating the same `idempotency_key` returns `200` and the existing Run. Errors: `invalid_amount` (zero or negative, or over $10,000,000 for one line), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long` (over 64 characters), `invalid_invoice_ref` (empty, or a character outside printable ASCII, or `|`, which separates memo fields). Every line needs an invoice reference because it is written into the encrypted memo.
 - `GET /api/runs/{id}` returns the Run.
 - `DELETE /api/runs/{id}` discards a run that is still a `draft` and returns `204`; any other status returns `409 run_not_draft`.
 - `POST /api/runs/{id}/fund` with `{"origin_chain": "base", "refund_address": "0x..."}` asks the venue for a quote and deposit address and returns the Run in `awaiting_funds`. On testnet with the testnet venue no deposit is needed: the run moves to `funded` at once if the treasury holds enough, otherwise `409 treasury_insufficient` with the treasury address in the hint.
@@ -154,6 +154,7 @@ Reconciliation = {
             "paid_usd_cents": 2845000, "paid_zat": 2099727000, "lines": 6,
             "network_fees_zat": 70000, "unspent_zat": 1203000,
             "variance_usd_cents": 1215, "explained_usd_cents": 1215,
+            "difference_usd_cents": 0, "rounding_tolerance_cents": 7,
             "status": "reconciled" | "variance_unexplained" | "missing_funding_record" | "incomplete"}],
   "lines": [StatementLine plus {"account_index", "label"}],
   "unlabelled": [...],
@@ -161,7 +162,7 @@ Reconciliation = {
 }
 ```
 
-`variance_usd_cents = funded_usd_cents - paid_usd_cents`. `explained_usd_cents` is the ZEC acquired but not paid out (network fees plus unspent treasury value) valued at the run's fill rate. A run is `reconciled` when the two agree to the cent after rounding.
+`variance_usd_cents = funded_usd_cents - paid_usd_cents`. `explained_usd_cents` is the ZEC acquired but not paid out (network fees plus unspent treasury value) valued at the run's fill rate. `difference_usd_cents` is variance minus explained. Each pay line's ZEC is rounded to the zatoshi, so the two can differ by up to one cent per line plus one; that allowance is `rounding_tolerance_cents`, and a run is `reconciled` when the difference is within it. The difference is always reported, so a one-cent rounding gap is visible rather than hidden.
 
 `POST /api/statements/accountant.csv` returns the run reconciliation table followed by every line. `?format=xero` returns a Xero bank statement CSV (`Date,Amount,Payee,Description,Reference`, DD/MM/YYYY) and `?format=quickbooks` a QuickBooks three-column bank upload (`Date,Description,Amount`): each run's funding as money in and each pay line as money out, in USD at the basis written on chain.
 

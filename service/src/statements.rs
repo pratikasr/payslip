@@ -322,6 +322,11 @@ pub struct RunReconciliation {
     pub unspent_zat: Option<i64>,
     pub variance_usd_cents: Option<i64>,
     pub explained_usd_cents: Option<i64>,
+    /// Variance minus explained: what rounding (or an error) leaves over. Shown, never hidden.
+    pub difference_usd_cents: Option<i64>,
+    /// The rounding allowance: each line's ZEC is rounded to the zatoshi, so up to one cent per
+    /// line plus one for the funding record.
+    pub rounding_tolerance_cents: i64,
     pub status: &'static str,
 }
 
@@ -378,11 +383,15 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
             _ => None,
         };
         let tolerance = lines.len() as i64 + 1;
+        let difference = match (variance, explained) {
+            (Some(v), Some(e)) => Some(v - e),
+            _ => None,
+        };
         let status = if record.is_none() {
             "missing_funding_record"
         } else if pending > 0 {
             "incomplete"
-        } else if (variance.unwrap_or(0) - explained.unwrap_or(0)).abs() <= tolerance {
+        } else if difference.unwrap_or(0).abs() <= tolerance {
             "reconciled"
         } else {
             "variance_unexplained"
@@ -401,6 +410,8 @@ pub fn reconcile(c: &Classified) -> Vec<RunReconciliation> {
             unspent_zat: unspent,
             variance_usd_cents: variance,
             explained_usd_cents: explained,
+            difference_usd_cents: difference,
+            rounding_tolerance_cents: tolerance,
             status,
         });
     }
@@ -510,6 +521,7 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
         "unspent_zec",
         "variance_usd",
         "explained_usd",
+        "difference_usd",
         "status",
     ]);
     let opt = |v: Option<String>| v.unwrap_or_default();
@@ -528,6 +540,7 @@ pub fn accountant_csv(runs: &[RunReconciliation], c: &Classified) -> String {
             opt(r.unspent_zat.map(|z| money::format_zec_signed(z as i128))),
             opt(r.variance_usd_cents.map(|v| money::format_usd_signed(v as i128))),
             opt(r.explained_usd_cents.map(|v| money::format_usd_signed(v as i128))),
+            opt(r.difference_usd_cents.map(|v| money::format_usd_signed(v as i128))),
             r.status.to_string(),
         ]);
     }
@@ -1062,8 +1075,13 @@ pub(crate) mod tests {
         let r = &r[0];
         assert_eq!(r.paid_usd_cents, 805_050);
         assert_eq!(r.variance_usd_cents, Some(250));
+        assert_eq!(
+            r.difference_usd_cents,
+            Some(r.variance_usd_cents.unwrap() - r.explained_usd_cents.unwrap())
+        );
+        assert_eq!(r.rounding_tolerance_cents, 3);
         assert!(
-            (r.variance_usd_cents.unwrap() - r.explained_usd_cents.unwrap()).abs() <= 3,
+            r.difference_usd_cents.unwrap().abs() <= r.rounding_tolerance_cents,
             "{r:?}"
         );
         assert_eq!(r.status, "reconciled");
