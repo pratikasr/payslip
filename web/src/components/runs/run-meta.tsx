@@ -342,6 +342,16 @@ export function estimateZat(amountsCents: number[], rateE6: number | null | unde
   return sum;
 }
 
+/**
+ * Whether the run's dollars convert at the testnet venue's simulated rate: a testnet run funded
+ * from the treasury, or not funded yet. A run funded with ZEC is priced at the market rate on any
+ * network (ADR-025), so it reads like a mainnet run even on testnet.
+ */
+export function atSimulatedRate(run: Pick<Run, "funding" | "network">): boolean {
+  const venue = run.funding?.venue;
+  return venue ? venue === "testnet-fixed-rate" : run.network === "testnet";
+}
+
 /** Rate of the run's funding, when it has one. */
 export function fundingRate(run: Run): number | null {
   return run.funding?.rate_usd_per_zec_e6 ?? null;

@@ -33,6 +33,7 @@ import { Problem } from "./problem";
 import {
   archivedLineIds,
   canCancel,
+  atSimulatedRate,
   confirmedCount,
   failureTitle,
   estimateZat,
@@ -306,7 +307,7 @@ function Hero({ run }: { run: Run }) {
 function SummaryStrip({ run }: { run: Run }) {
   const { health } = useHealth();
   const f = run.funding;
-  const testnet = f?.venue === "testnet-fixed-rate" || run.network === "testnet";
+  const testnet = atSimulatedRate(run);
   const muted = "text-muted-foreground";
   // Before the fill, a live quote's locked rate (or the testnet rate) gives the estimate.
   const quoted = liveQuoteRate(run);

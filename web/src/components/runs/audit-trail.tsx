@@ -15,7 +15,7 @@ import { runCoin } from "@/lib/payroll";
 import { roleLabel } from "@/lib/roles";
 import { auditTimeline, chainName, type LogEvent, type TimelineEntry } from "@/lib/run-log";
 import { Problem } from "./problem";
-import { fundingTag, plural, runTitle } from "./run-meta";
+import { atSimulatedRate, fundingTag, plural, runTitle } from "./run-meta";
 
 const HEX64 = /\b[0-9a-f]{64}\b/gi;
 
@@ -305,7 +305,7 @@ export function AuditTrail({
   error?: { message: string; hint: string; code?: string };
 }) {
   const f = run.funding;
-  const testnet = f?.venue === "testnet-fixed-rate" || run.network === "testnet";
+  const testnet = atSimulatedRate(run);
   const coin = runCoin(run);
   return (
     <div className="space-y-8">

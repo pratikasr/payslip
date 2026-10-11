@@ -39,10 +39,21 @@ if [ -z "$CONFIG" ] || [ ! -f "$CONFIG" ]; then
 fi
 CONFIG="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
 
+# The demo knobs given on the command line (DEMO_FUNDING=zec scripts/mainnet-demo.sh ...) win
+# over the config: mainnet.env.example lists DEMO_FUNDING= empty, and sourcing it would otherwise
+# turn a ZEC funding back into a USDC one without a word. Network, port, data folder and
+# passphrase always come from the config.
+DEMO_KNOBS="DEMO_FUNDING DEMO_CONTRACTORS_FILE DEMO_GENERATED_WALLETS DEMO_RUN_SALT DEMO_DEPOSIT_TX DEMO_ORIGIN_CHAIN DEMO_REFUND_ADDRESS"
+for var in $DEMO_KNOBS; do eval "CALLER_$var=\${$var:-}"; done
 set -a
 # shellcheck disable=SC1090
 . "$CONFIG"
 set +a
+for var in $DEMO_KNOBS; do
+  eval "given=\${CALLER_$var}"
+  # shellcheck disable=SC2154
+  if [ -n "$given" ]; then export "$var=$given"; fi
+done
 : "${ZCASH_NETWORK:?ZCASH_NETWORK must be set in $CONFIG}"
 
 # The service also reads service/.env for anything left unset, and that file holds the testnet

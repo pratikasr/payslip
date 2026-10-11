@@ -18,7 +18,7 @@ import { formatDateTime, formatHeight, formatPeriodLabel, settlementName } from 
 import { decodeMemo } from "@/lib/memo";
 import { cn } from "cn";
 import { TYPE } from "@/components/ds/type";
-import { isLineWarning, LineStatus, runTitle } from "./run-meta";
+import { atSimulatedRate, isLineWarning, LineStatus, runTitle } from "./run-meta";
 
 const CHAIN_NAMES: Record<string, string> = { base: "Base", arb: "Arbitrum", eth: "Ethereum", sol: "Solana" };
 
@@ -164,7 +164,7 @@ function DrawerBody({ run, line, logs }: { run: Run; line: PayLine; logs: RunLog
     ]);
   }
   const memo = decodeMemo(line.memo);
-  const testnet = run.funding?.venue === "testnet-fixed-rate" || run.network === "testnet";
+  const testnet = atSimulatedRate(run);
   return (
     <div className="flex min-h-full flex-col">
       <div className="px-6 pt-5 pb-6">

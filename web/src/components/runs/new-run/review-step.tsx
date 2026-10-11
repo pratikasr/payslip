@@ -170,7 +170,9 @@ export function ReviewStep({
         "USDC from your wallet"
       ),
       hint: testnet
-        ? "Testnet coins have no price, so a fixed rate turns payroll dollars into TAZ."
+        ? health?.fund_with_zec
+          ? "Testnet coins have no price, so a fixed rate turns payroll dollars into TAZ. The next step also offers Fund with ZEC at the market rate, as on mainnet."
+          : "Testnet coins have no price, so a fixed rate turns payroll dollars into TAZ."
         : health?.fund_with_zec
           ? `You choose next: send ZEC to the treasury address (funded at the market rate when it confirms), or USDC swapped to ZEC through ${venueLabel(health?.venue)}.`
           : `Swapped to ZEC through ${venueLabel(health?.venue)}. You pick the chain and see the exact amount to send next.`,

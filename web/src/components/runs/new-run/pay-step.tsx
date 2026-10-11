@@ -32,6 +32,7 @@ import { ApprovalStatus } from "../approvals";
 import { CancelRun } from "../cancel-run";
 import { Problem } from "../problem";
 import {
+  atSimulatedRate,
   canCancel,
   confirmedCount,
   estimateZat,
@@ -60,7 +61,7 @@ function funded(run: Run) {
     );
   const acquired = f?.zec_acquired_zat ?? f?.quoted_zat ?? null;
   const reserve = acquired !== null && zat !== null && acquired > zat ? acquired - zat : null;
-  return { rate, zat, reserve, testnet: f?.venue === "testnet-fixed-rate" || run.network === "testnet" };
+  return { rate, zat, reserve, testnet: atSimulatedRate(run) };
 }
 
 /** Step 4: confirm, execute, then follow every payment live until each one is confirmed. */

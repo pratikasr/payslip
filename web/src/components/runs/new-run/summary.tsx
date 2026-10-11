@@ -9,7 +9,7 @@ import { ShieldedMark } from "@/components/ds/status";
 import type { Run, Wallet } from "@/lib/api";
 import { parseUsdToCents } from "@/lib/format";
 import { feeReserveZat, runCoin } from "@/lib/payroll";
-import { confirmedCount, estimateZat, periodTitle, plural, RunTag, runTitle } from "../run-meta";
+import { atSimulatedRate, confirmedCount, estimateZat, periodTitle, plural, RunTag, runTitle } from "../run-meta";
 import type { Draft, DraftCheck } from "./draft";
 
 /** One field of the summary: its spaced-caps caption over the typed value, on green bar. */
@@ -104,7 +104,7 @@ export function DraftSummary({
 
 /** Fund, Pay and Paid: the run's own figures, the coin it set aside and the fees it paid. */
 export function RunSummary({ run, simulatedRate }: { run: Run; simulatedRate: number | null }) {
-  const testnet = run.funding?.venue === "testnet-fixed-rate" || run.network === "testnet";
+  const testnet = atSimulatedRate(run);
   const rate = run.funding?.rate_usd_per_zec_e6 ?? (testnet ? simulatedRate : null);
   const coin = runCoin(run);
   const estimate =

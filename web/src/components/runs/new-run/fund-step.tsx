@@ -203,7 +203,8 @@ function FormHead({ id, title, label }: { id: string; title: string; label: stri
 }
 
 /**
- * Step 3. Testnet draws from the treasury at the simulated rate. Elsewhere the payer chooses:
+ * Step 3. Testnet draws from the treasury at the simulated rate, and offers Fund with ZEC under it
+ * when the service does, so the mainnet flow can be rehearsed on testnet. Elsewhere the payer chooses:
  * ZEC sent to the treasury address (funded at the market rate when it confirms, ADR-025) or a
  * USDC deposit swapped by the venue. A service that does not offer the ZEC method shows the USDC
  * flow alone.
@@ -257,7 +258,16 @@ export function FundStep({
       />
     );
   if (venue === "treasury" && run.status !== "draft")
-    return <ZecDeposit run={run} onRun={onRun} venueName={venueLabel(health?.venue)} notes={notes} />;
+    return (
+      <ZecDeposit
+        run={run}
+        onRun={onRun}
+        venueName={venueLabel(health?.venue)}
+        // The testnet venue takes no USDC: a ZEC request there offers no USDC fallback.
+        usdc={health?.venue !== "testnet-fixed-rate" && network !== "testnet"}
+        notes={notes}
+      />
+    );
   if (!run.funding || run.status === "draft") {
     if (health?.fund_with_zec)
       return <MethodChoice run={run} onRun={onRun} venueName={venueLabel(venue)} notes={notes} />;
@@ -281,9 +291,14 @@ function TestnetFund({
   simulatedRate: number | null;
   notes: React.ReactNode;
 }) {
+  const { health } = useHealth();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  // Fund with ZEC (ADR-025) works on testnet too: the faucet coins in the treasury count at the
+  // market rate, which is how the mainnet flow is rehearsed.
+  const z = useZecRequest(run, onRun);
+  const zecOffered = !!health?.fund_with_zec;
   const n = run.lines.length;
   const estimate = estimateZat(
     run.lines.map((l) => l.amount_usd_cents),
@@ -362,7 +377,7 @@ function TestnetFund({
           size="lg"
           variant={short ? "secondary" : "default"}
           onClick={() => setOpen(true)}
-          disabled={busy || short}
+          disabled={busy || short || z.busy}
         >
           Fund from treasury
         </Button>
@@ -372,6 +387,18 @@ function TestnetFund({
           <FundingNote />
         ) : null}
       </div>
+      {zecOffered ? (
+        <section aria-label="Or fund with ZEC" className="mt-8">
+          <p className="form-label mb-3 text-[0.75rem] font-bold text-strong">Or, as on mainnet</p>
+          <ZecCard
+            run={run}
+            z={z}
+            secondary
+            disabled={busy}
+            note="On testnet the faucet coins already in the treasury count, valued at the market price of ZEC."
+          />
+        </section>
+      ) : null}
       {run.status === "draft" ? <DiscardRun run={run} /> : null}
 
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
@@ -655,6 +682,85 @@ function UsdcCard({
   );
 }
 
+/** Asks the service to fund the run with ZEC; the treasury address and amount come back on the run. */
+function useZecRequest(run: Run, onRun: (run: Run) => void) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const request = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onRun(await api.fundRun(run.id, { method: "zec" }));
+    } catch (err) {
+      setError(toDisplayError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return { busy, error, request };
+}
+
+type ZecRequest = ReturnType<typeof useZecRequest>;
+
+/**
+ * The "Fund with ZEC" card: what the payer sends and at which rate. The treasury address and the
+ * exact amount come back with the request; a treasury that already covers the run funds it at once.
+ */
+function ZecCard({
+  run,
+  z,
+  disabled,
+  secondary,
+  note,
+}: {
+  run: Run;
+  z: ZecRequest;
+  disabled?: boolean;
+  secondary?: boolean;
+  /** A sentence after the card's description, such as what testnet counts. */
+  note?: string;
+}) {
+  return (
+    <Card aria-labelledby="fund-zec-title" className="p-0 sm:px-0">
+      <FormHead id="fund-zec-title" title="Fund with ZEC" label="Shielded, no swap" />
+      <div className="@container px-6 pt-4 pb-6">
+        <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "block")} />
+        <p className="mt-2 text-[0.9375rem] text-muted-foreground">
+          From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another chain.
+          {note ? ` ${note}` : null}
+        </p>
+        <div className="mt-4 border-b border-bar-line">
+          <QuoteRow label="You send" sub="The amount and address come next">
+            ZEC at the market rate, plus a fee reserve and 2% for price moves
+          </QuoteRow>
+          <QuoteRow label="Rate" sub="The USD basis of every payslip">
+            The market rate of the block in which your ZEC confirms
+          </QuoteRow>
+          <QuoteRow label="Time to send">24 hours</QuoteRow>
+        </div>
+        {z.error ? (
+          <FundProblem
+            className="mt-4"
+            error={z.error}
+            title="No treasury address yet"
+            onRetry={z.request}
+            busy={z.busy}
+          />
+        ) : null}
+        <Button
+          size="lg"
+          variant={secondary ? "secondary" : "default"}
+          className="mt-5"
+          onClick={z.request}
+          disabled={z.busy || disabled}
+        >
+          {z.busy ? "Preparing" : "Fund with ZEC"}
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 /**
  * Two cards for a run that is not funded yet: Fund with ZEC (the treasury address and amount
  * come back with the request) and Fund with USDC (the existing quote).
@@ -670,20 +776,8 @@ function MethodChoice({
   venueName: string;
   notes: React.ReactNode;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const z = useZecRequest(run, onRun);
   const q = useUsdcQuote(run, onRun);
-  const requestZec = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      onRun(await api.fundRun(run.id, { method: "zec" }));
-    } catch (err) {
-      setError(toDisplayError(err));
-    } finally {
-      setBusy(false);
-    }
-  };
   return (
     <div>
       <Heading run={run}>
@@ -692,38 +786,8 @@ function MethodChoice({
       </Heading>
       {/* Two forms, one above the other: each needs the column's width for its fields. */}
       <div className="mt-6 grid gap-5">
-        <Card aria-labelledby="fund-zec-title" className="p-0 sm:px-0">
-          <FormHead id="fund-zec-title" title="Fund with ZEC" label="Shielded, no swap" />
-          <div className="@container px-6 pt-4 pb-6">
-            <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "block")} />
-            <p className="mt-2 text-[0.9375rem] text-muted-foreground">
-              From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another
-              chain.
-            </p>
-            <div className="mt-4 border-b border-bar-line">
-              <QuoteRow label="You send" sub="The amount and address come next">
-                ZEC at the market rate, plus a fee reserve and 2% for price moves
-              </QuoteRow>
-              <QuoteRow label="Rate" sub="The USD basis of every payslip">
-                The market rate of the block in which your ZEC confirms
-              </QuoteRow>
-              <QuoteRow label="Time to send">24 hours</QuoteRow>
-            </div>
-            {error ? (
-              <FundProblem
-                className="mt-4"
-                error={error}
-                title="No treasury address yet"
-                onRetry={requestZec}
-                busy={busy}
-              />
-            ) : null}
-            <Button size="lg" className="mt-5" onClick={requestZec} disabled={busy || q.busy}>
-              {busy ? "Preparing" : "Fund with ZEC"}
-            </Button>
-          </div>
-        </Card>
-        <UsdcCard q={q} venueName={venueName} secondary disabled={busy} />
+        <ZecCard run={run} z={z} disabled={q.busy} />
+        <UsdcCard q={q} venueName={venueName} secondary disabled={z.busy} />
       </div>
       {notes}
       {run.status === "draft" ? <DiscardRun run={run} /> : null}
@@ -785,11 +849,14 @@ function ZecDeposit({
   run,
   onRun,
   venueName,
+  usdc,
   notes,
 }: {
   run: Run;
   onRun: (run: Run) => void;
   venueName: string;
+  /** Whether a USDC deposit can stand in for the ZEC (not on testnet). */
+  usdc: boolean;
   notes: React.ReactNode;
 }) {
   const funding: Funding = run.funding!;
@@ -946,13 +1013,15 @@ function ZecDeposit({
             <Button size="lg" onClick={requestAgain} disabled={requesting}>
               {requesting ? "Requesting" : "Request again"}
             </Button>
-            <button
-              type="button"
-              className="font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
-              onClick={() => setShowUsdc((v) => !v)}
-            >
-              {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
-            </button>
+            {usdc ? (
+              <button
+                type="button"
+                className="font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+                onClick={() => setShowUsdc((v) => !v)}
+              >
+                {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
+              </button>
+            ) : null}
           </div>
           {requestError ? <FundProblem error={requestError} title="No new request yet" /> : null}
         </div>
@@ -994,7 +1063,7 @@ function ZecDeposit({
             {progress}
           </p>
           {pollError ? <Problem error={pollError} title="Could not check the treasury" /> : null}
-          {waiting ? (
+          {waiting && usdc ? (
             <button
               type="button"
               className="font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
@@ -1005,7 +1074,7 @@ function ZecDeposit({
           ) : null}
         </div>
       )}
-      {showUsdc && (waiting || closed) ? (
+      {usdc && showUsdc && (waiting || closed) ? (
         <div className="mt-5">
           <UsdcCard q={q} venueName={venueName} secondary />
         </div>
