@@ -589,9 +589,10 @@ The owner judged the first build too basic: default Next.js and shadcn styling, 
 | Product | Route | Shell | Pages |
 | --- | --- | --- | --- |
 | Landing | `/` | marketing header, dark hero and product section | hero with sealed payroll, product accordion, proof strip, how it works, who sees what, security, pricing, FAQ, footer |
-| Company console | `/console` | ConsoleShell (sidebar) | Home, Payroll runs, run page (Pay lines, Privacy view, Audit trail), People with drawer, Payslip access, Treasury |
-| Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts, Review and approve, Fund, Pay |
-| Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Tax documents |
+| Company console | `/console` | ConsoleShell (sidebar) | Home (the Next payroll card and the To do list read the pay schedule and the request queue), Payroll runs, Requests (payment requests from contractors: approve or reject with a note, counts in the sidebar), run page (Pay lines, Privacy view, Audit trail), People with drawer (each person's default amount), Payslip access, Treasury, Settings (the pay schedule and who has a default amount; with sign-in on also the organisation's name and logo for admins); with sign-in on (ADR-026) also Members, Invitations and Audit log, the organisation's name and logo in the sidebar brand, who is signed in at its foot, and no demo bar |
+| Sign-in | `/sign-in`, `/invite/[token]` | none | one centred card: Continue with Google (and the test login for browser tests); the invitation link's welcome |
+| Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts (approved payment requests for the period prefilled and marked "From a request"), Review and approve, Fund, Pay |
+| Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Request a payment (the form: amount, period, invoice number, due date, note, repeat monthly; the requests sent with their status, the txid once paid, the payer's note when rejected), Tax documents |
 | Accountant books | `/books` | BooksShell (Books side of the switch) | Reconciliation, Ledger, Exceptions, Exports |
 | Public payslip | `/verify` | none | one document card on a soft grid |
 

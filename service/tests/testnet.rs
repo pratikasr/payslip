@@ -70,6 +70,7 @@ fn config(url: &str, dir: PathBuf) -> Config {
         max_run_usd_cents: None,
         allowed_hosts: vec![],
         allow_remote_payer: false,
+        auth: payslip::config::AuthConfig::off(),
     }
 }
 

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ExternalLink, Inbox } from "lucide-react";
 import { toast } from "sonner";
 import { Usd } from "@/components/app/amount";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { PageTitle } from "@/components/ds/page";
 import { StatusTag } from "@/components/ds/status";
@@ -35,6 +36,8 @@ type Decision = { kind: "approve" | "reject"; request: PaymentRequest };
 /** The payer's queue of payment requests: what needs a decision first, then everything else. */
 export function RequestsView({ initial }: { initial?: { requests: PaymentRequest[]; counts: RequestCounts } }) {
   const queue = useResource((s) => api.requests(undefined, s), "requests-queue", initial);
+  // Approve and reject are for those who run payroll; everyone else reads the queue.
+  const canDecide = useAuth().can("manage_runs");
   const [filter, setFilter] = useState<Filter>("review");
   const [decision, setDecision] = useState<Decision | null>(null);
   const all = useMemo(() => (queue.data?.requests ?? []).slice().sort(queueOrder), [queue.data]);
@@ -121,7 +124,12 @@ export function RequestsView({ initial }: { initial?: { requests: PaymentRequest
                 </tr>
               ) : (
                 shown.map((r) => (
-                  <RequestRow key={r.id} request={r} onDecide={(kind) => setDecision({ kind, request: r })} />
+                  <RequestRow
+                    key={r.id}
+                    request={r}
+                    canDecide={canDecide}
+                    onDecide={(kind) => setDecision({ kind, request: r })}
+                  />
                 ))
               )}
             </tbody>
@@ -142,13 +150,15 @@ export function RequestsView({ initial }: { initial?: { requests: PaymentRequest
 
 function RequestRow({
   request: r,
+  canDecide,
   onDecide,
 }: {
   request: PaymentRequest;
+  canDecide: boolean;
   onDecide: (kind: "approve" | "reject") => void;
 }) {
-  const canApprove = r.status === "submitted";
-  const canReject = r.status === "submitted" || (r.status === "approved" && !r.run_id);
+  const canApprove = canDecide && r.status === "submitted";
+  const canReject = canDecide && (r.status === "submitted" || (r.status === "approved" && !r.run_id));
   return (
     <tr className="border-b border-hairline align-top" data-request-status={r.status}>
       <td className="max-w-0 py-3 pr-3">

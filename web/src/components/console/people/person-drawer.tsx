@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
 import { useCoinUnit } from "@/components/app/health-provider";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Disclosure } from "@/components/ds/disclosure";
 import { Sensitive } from "@/components/ds/sensitive";
@@ -242,6 +243,7 @@ function PersonBody({
  * (ADR-028), changed in place: Change, an amount, Save. Empty clears it.
  */
 function DefaultAmount({ contractor: c, onSaved }: { contractor: Contractor; onSaved?: (c: Contractor) => void }) {
+  const editable = useAuth().can("manage_contractors");
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -278,9 +280,11 @@ function DefaultAmount({ contractor: c, onSaved }: { contractor: Contractor; onS
     return (
       <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
         {cents ? <Usd cents={cents} /> : <span className="text-muted-foreground">None</span>}
-        <Button variant="ghost" size="xs" onClick={start} aria-label={`Change default amount for ${c.name}`}>
-          Change
-        </Button>
+        {editable ? (
+          <Button variant="ghost" size="xs" onClick={start} aria-label={`Change default amount for ${c.name}`}>
+            Change
+          </Button>
+        ) : null}
       </span>
     );
   }

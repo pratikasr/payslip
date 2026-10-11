@@ -1,6 +1,6 @@
 # Payslip service API
 
-REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web app calls it directly with CORS (origin from `PAYSLIP_WEB_ORIGIN`). Run progress streams over Server-Sent Events.
+REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web app calls it directly with CORS (origin from `PAYSLIP_WEB_ORIGIN`), or, with sign-in on, through its own same-origin proxy at `/api/svc`, which attaches the signed-in member's token (see Sign-in and roles). Run progress streams over Server-Sent Events.
 
 ## Conventions
 
@@ -13,6 +13,8 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | --- | --- | --- |
   | 400 | `invalid_json` | the body is not well-formed JSON |
   | 400 | `invalid_query` | a query parameter cannot be read |
+  | 401 | `unauthenticated` | sign-in is required and the request carries no valid token (missing, expired, signed by an unknown key, for another issuer or audience); the message says which |
+  | 403 | `forbidden` | the signed-in person is not a member, or their role cannot do this; the message names the role and the hint says who can change it |
   | 404 | `not_found` | no such endpoint |
   | 404 | `statements_only` | a payer endpoint on a statements-only deployment |
   | 405 | `method_not_allowed` | the endpoint exists but not with this method (the `Allow` header lists the methods) |
@@ -20,9 +22,73 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | 415 | `json_required` | a POST, PATCH, PUT or DELETE without `Content-Type: application/json` (a bodyless request still sends the header) |
   | 421 | `host_not_allowed` | the `Host` header is not the service's own address or one in `PAYSLIP_ALLOWED_HOSTS` |
   | 422 | `invalid_body` | a field is missing or has the wrong type; the message names the field |
+  | 503 | `auth_unavailable` | sign-in is required and the service cannot fetch the web app's signing keys (`PAYSLIP_AUTH_JWKS_URL`) |
 
 - An error about particular runs also names them in `error.runs`, a list of run ids (`period_overlap`, `idempotency_mismatch`); other errors have no `runs` field.
-- The payer endpoints (wallet, contractors, runs) are meant for the payer's own host. The statement endpoints take viewing keys only and never accept a spending key.
+- The payer endpoints (wallet, contractors, runs) are meant for the payer's own host, or for signed-in members when sign-in is on. The statement endpoints take viewing keys only and never accept a spending key.
+
+## Sign-in and roles
+
+Off by default (`PAYSLIP_AUTH=off`): every payer endpoint is open on the payer's own host, as in the testnet demo. With `PAYSLIP_AUTH=required` (ADR-026):
+
+- Every payer endpoint (wallet, contractors, viewing keys, runs, run progress) and every endpoint below needs `Authorization: Bearer <token>`. The token is a short EdDSA JWT minted by the web app for a signed-in person (Google sign-in through Better Auth); the service checks it against the web app's published keys (`PAYSLIP_AUTH_JWKS_URL`, cached, fetched again on an unknown key id), its issuer (`PAYSLIP_AUTH_ISSUER`), audience (`PAYSLIP_AUTH_AUDIENCE`, `payslip-service`) and expiry, 30 seconds of leeway. The web app's proxy at `/api/svc/api/...` attaches it; the browser never holds it.
+- Health, statements, exports and payment proofs stay public: they are key-based.
+- The token's person becomes a `user` on first sight (matched by Google account id, then token subject, then verified email). The first verified sign-in with `PAYSLIP_BOOTSTRAP_ADMIN_EMAIL`, while the organisation has no admin, creates the organisation (named after the email's domain until renamed) and makes that person its admin. Every later membership comes from an invitation.
+- Roles. A signed-in person who is not a member gets `403 forbidden` everywhere but `GET /api/me` and invitation acceptance.
+
+  | Endpoint | admin | approver | accountant | viewer |
+  | --- | --- | --- | --- | --- |
+  | `GET` wallet, contractors, runs, run funding, progress, log, `/api/org`, `/api/org/members`, `/api/me` | yes | yes | yes | yes |
+  | `GET /api/contractors/{id}/viewing-key`, `GET /api/viewing-keys` | yes | | yes | |
+  | `POST /api/wallet/sync` | yes | | | |
+  | `POST`, `PATCH`, `DELETE` contractors; mark a key shared or not | yes | | | |
+  | `POST /api/runs`, discard, fund, deposit-tx, execute, cancel | yes | yes | | |
+  | `GET /api/schedule`, `GET /api/requests` | yes | yes | yes | yes |
+  | `PUT /api/schedule`, approve and reject payment requests | yes | yes | | |
+  | `PATCH /api/org`, members (role, remove), invitations (list, create, revoke) | yes | | | |
+  | `GET /api/org/audit` | yes | | yes | |
+
+- Audit log. Every successful write under sign-in adds a row (who, their role, the action, the target id, the time, details), and so do the two viewing-key reads (`contractor.key_view`, `keys.export`). Actions: `org.bootstrap`, `org.update`, `member.role`, `member.remove`, `invitation.create`, `invitation.revoke`, `invitation.accept`, `wallet.sync`, `contractor.create|update|archive|key_view|key_shared|key_unshared`, `keys.export`, `run.create|discard|fund|deposit_tx|execute|cancel`, `schedule.update`, `request.approve|reject`. The target of a create is the new id; an invitation's target is its id, never its token.
+
+### GET /api/me
+
+```json
+{"auth": "required",
+ "user": {"id": "...", "email": "amara@acme.test", "name": "Amara", "picture_url": "https://..." | null},
+ "membership": {"role": "admin" | "approver" | "accountant" | "viewer",
+                "org": {"id": "uuid", "name": "Acme Robotics", "logo_url": "https://..." | null, "created_at": "..."},
+                "since": "2026-10-11T09:00:00Z"} | null}
+```
+
+### GET /api/org, PATCH /api/org
+
+`GET` returns the organisation (`id`, `name`, `logo_url`, `created_at`). `PATCH` (admin) with `{name?, logo_url?}` returns it updated: `name` 1 to 120 characters (`400 invalid_name`); `logo_url` an http or https URL of at most 2,048 characters, or `null` to remove it (`400 invalid_logo_url`).
+
+### Members
+
+- `GET /api/org/members` returns `{"members": [{"user_id", "email", "name", "picture_url", "role", "created_at"}]}`.
+- `POST /api/org/members` (admin) with `{"user_id", "role"}` changes a member's role and returns the member. `400 invalid_role`, `404 not_found` (not a member), `409 last_admin` (the only admin cannot be demoted).
+- `DELETE /api/org/members/{user_id}` (admin) removes a member: `204`. `409 last_admin` for the only admin.
+
+### Invitations
+
+Invitations are copy-paste links; the service keeps only the SHA-256 of the token.
+
+- `POST /api/org/invitations` (admin) with `{"email", "role"}` returns `201` and `{"id", "email", "role", "status": "pending", "expires_at", "accepted_at": null, "created_at", "token"}`. The token appears only here: the web app turns it into `<web origin>/invite/<token>`. A link lasts 7 days. An earlier open invitation for the same email is revoked. `400 invalid_email`, `400 invalid_role`, `409 already_a_member`.
+- `GET /api/org/invitations` (admin) returns `{"invitations": [...]}` without tokens, newest first, each with `status` `pending`, `accepted` or `expired` (revoked ones are left out).
+- `DELETE /api/org/invitations/{id}` (admin) revokes an open invitation: `204`. `409 invitation_closed` if it was already accepted or revoked.
+- `POST /api/org/invitations/{token}/accept` needs a signed-in person (any token, no membership) whose verified email is the invited one. Returns `{"membership": {...}}` as in `/api/me`. `404 not_found` (unknown or revoked link), `409 invitation_used`, `409 invitation_expired`, `403 forbidden` (signed in with another email; the message names both), `409 already_a_member`.
+
+### GET /api/org/audit
+
+Admin and accountant. `?limit=` (1 to 500, default 100) and `?before=<id>` for older pages.
+
+```json
+{"entries": [{"id": 42, "at": "2026-10-11T09:05:12Z",
+              "user": {"id": "...", "email": "owner@acme.test", "name": "Owner"} | null,
+              "role": "admin", "action": "invitation.create", "target": "uuid",
+              "details": {"email": "amara@acme.test", "role": "viewer", "expires_at": "..."} | null}]}
+```
 
 ## Health and wallet
 
@@ -33,8 +99,10 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
  "chain_tip": 4465100, "wallet_synced_height": 4465100, "venue": "testnet-fixed-rate",
  "birthday_height": 4460000, "version": "0.1.0", "mode": "full" | "statements",
  "app_fee_bps": 0, "market_prices": true, "simulated_rate_usd_per_zec": 1350000.0 | null,
- "fund_with_zec": true, "max_run_usd_cents": 2500000 | null}
+ "fund_with_zec": true, "max_run_usd_cents": 2500000 | null, "auth": "off" | "required"}
 ```
+
+`auth` is `required` when payer endpoints need a signed-in member (Sign-in and roles above).
 
 `mode` is `statements` when the service runs with `PAYSLIP_MODE=statements`: it holds no wallet, answers statements, payment proofs and health, and every payer endpoint (wallet, contractors, viewing keys and runs, reads included) returns 404 `statements_only`. Such a deployment is safe to host publicly for contractors, accountants and judges. `app_fee_bps` is Payslip's own fee on the USDC to ZEC funding swap (0 when none; ADR-020). `market_prices` says whether statements carry the market value of each payment at receipt (ADR-022). `simulated_rate_usd_per_zec` is the testnet venue's fixed rate in USD per ZEC (`PAYSLIP_TESTNET_RATE_USD`, default 1,350,000), the same value the run executor's venue funds every testnet run at, so a client can estimate a run's ZEC before any fill: `amount_usd_cents / 100 / simulated_rate_usd_per_zec` ZEC. It is `null` on mainnet, with any other venue, and in statements mode. `fund_with_zec` is true when `POST /api/runs/{id}/fund` accepts `"method": "zec"` (ADR-025; every full-mode service, on any network; false in statements mode). `max_run_usd_cents` is `PAYSLIP_MAX_RUN_USD_CENTS`, the largest payroll one run may carry, or `null` when there is no cap.
 
@@ -62,14 +130,17 @@ Contractor = {
   "settlement_choice": "hold_zec" | "convert_usdc",
   "payout_chain": "base" | null, "payout_address": "0x..." | null,
   "fvk_shared_at": "2026-10-05T10:00:00Z" | null,
+  "default_amount_usd_cents": 480000 | null,
   "created_at": "2026-10-05T09:00:00Z"
 }
 ```
 
+`default_amount_usd_cents` is what a scheduled payroll pays the contractor unless they sent a payment request for the period (Pay schedule below); `null` when they are paid by request or by hand.
+
 - `GET /api/contractors` returns `{"contractors": [Contractor]}`.
-- `POST /api/contractors` with `{name, unified_address, settlement_choice, email?, payout_chain?, payout_address?}` returns `201` and the Contractor. The service allocates the next ZIP-32 account. Errors: `invalid_address` (not a unified address for this network), `address_without_shielded_receiver`, `duplicate_address`, `payout_address_required`, `invalid_payout_address` (Base, Arbitrum and Ethereum: `0x` and 40 hex characters; Solana: a base58 public key of exactly 32 bytes).
+- `POST /api/contractors` with `{name, unified_address, settlement_choice, email?, payout_chain?, payout_address?, default_amount_usd_cents?}` returns `201` and the Contractor. The service allocates the next ZIP-32 account. Errors: `invalid_address` (not a unified address for this network), `address_without_shielded_receiver`, `duplicate_address`, `payout_address_required`, `invalid_payout_address` (Base, Arbitrum and Ethereum: `0x` and 40 hex characters; Solana: a base58 public key of exactly 32 bytes).
 - `GET /api/contractors/{id}` returns the Contractor.
-- `PATCH /api/contractors/{id}` with any of the create fields returns the Contractor. The unified address, settlement choice, payout chain and payout address cannot change while a run that pays the contractor is in progress (`409 contractor_in_active_run`); the name and email can. A run in progress is one that is not `draft`, `paid` or `cancelled`. A run pays each contractor with the details they had when it was funded.
+- `PATCH /api/contractors/{id}` with any of the create fields returns the Contractor. The unified address, settlement choice, payout chain and payout address cannot change while a run that pays the contractor is in progress (`409 contractor_in_active_run`); the name, email and default amount can. `default_amount_usd_cents` is a whole number of cents from 1 to 1,000,000,000, or `null` to clear it; a field left out is left as it is (`400 invalid_default_amount`). A run in progress is one that is not `draft`, `paid` or `cancelled`. A run pays each contractor with the details they had when it was funded.
 - `DELETE /api/contractors/{id}` archives the contractor. `409 contractor_in_active_run` if a run that includes them is in progress. A draft that includes an archived contractor cannot be funded (`409 contractor_archived`); discard it and create a new one.
 - `GET /api/contractors/{id}/viewing-key` returns `{"contractor_id", "account_index", "ufvk", "ufvk_wallet", "birthday_height", "network"}`. The `ufvk` string (ZIP 316 Revision 2, `uvf`/`uvftest`) is also the QR payload. `ufvk_wallet` is the same key in the Revision 0 form (`uview`/`uviewtest`) that released wallets such as Zingo and Zkool import; Payslip accepts either.
 - `POST /api/contractors/{id}/viewing-key/shared` records `fvk_shared_at` and returns the Contractor.
@@ -130,7 +201,7 @@ Fund with ZEC (`venue: "treasury"`, ADR-025) has no venue: the payer sends ZEC t
 A pay line's `error` can be set while the line is still in progress, as a warning: `broadcast_rejected` (the node refused the payment; it is rebuilt when it expires) or `waiting_for_funds` (the contractor account cannot cover the payment yet). A run stops with `failed` and one of these codes when the cause does not go away: `broadcast_rejected` (the node refused the same payment, or the allocation, three times), `line_underfunded` (a payment waited 120 blocks for funds), `treasury_insufficient` (the treasury no longer holds the allocation, for example because another run used it), or the funding codes below (`funding_expired` also when a Fund with ZEC request passed its 24 hours unfunded; the hint says to fund again, since ZEC already in the treasury counts).
 
 - `GET /api/runs` returns `{"runs": [Run]}` newest first.
-- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid", "allow_overlap": false}` returns `201` and the Run in `draft`. `idempotency_key` and `allow_overlap` are optional. Errors: `invalid_amount` (zero or negative, or over $10,000,000 for one line), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long` (over 64 characters), `invalid_invoice_ref` (empty, or a character outside printable ASCII, or `|`, which separates memo fields), `invalid_idempotency_key` (empty or over 100 characters), `run_over_cap` (the payroll is over `PAYSLIP_MAX_RUN_USD_CENTS`; the message names both figures, and the same check runs again at funding), and the two `409`s below. Every line needs an invoice reference because it is written into the encrypted memo.
+- `POST /api/runs` with `{"period_start", "period_end", "lines": [{"contractor_id", "amount_usd_cents", "invoice_ref"}], "idempotency_key": "client-uuid", "allow_overlap": false}` returns `201` and the Run in `draft`. `idempotency_key` and `allow_overlap` are optional, and so are `"include_requests": true` (every approved payment request for the period joins the run) and `"request_ids": ["uuid"]` (exactly those; see Payment requests): a request joins its contractor's line when the body has one, else adds a line of its own, and the run's log says how many were taken. Errors: `unknown_request` (400), `request_not_available` (409: not approved, already in a run, for another period, or from an archived contractor), `invalid_amount` (zero or negative, or over $10,000,000 for one line), `invalid_period`, `unknown_contractor`, `duplicate_contractor_line`, `invoice_ref_too_long` (over 64 characters), `invalid_invoice_ref` (empty, or a character outside printable ASCII, or `|`, which separates memo fields), `invalid_idempotency_key` (empty or over 100 characters), `run_over_cap` (the payroll is over `PAYSLIP_MAX_RUN_USD_CENTS`; the message names both figures, and the same check runs again at funding), and the two `409`s below. Every line needs an invoice reference because it is written into the encrypted memo.
   - Idempotency: the service stores a SHA-256 of the request's period and lines (each line's `contractor_id`, `amount_usd_cents` and trimmed `invoice_ref`; line order does not matter) with the key. Repeating the key with the same period and lines returns `200` and the existing Run, before any other check, so a retry never fails on validation or overlap. Repeating it with a different period or different lines is `409 idempotency_mismatch`, with the existing run's id in the message and in `error.runs`; use a new key for a new run. `allow_overlap` is not part of the comparison. A run created before the service stored request hashes keeps the old behaviour: its key returns it whatever the body.
   - Overlap: a run whose period shares at least one day (inclusive) with a run that is not `cancelled` (drafts count) is `409 period_overlap`, after every other check passed. The message lists each overlapping run's id, period and status, and `error.runs` holds their ids, earliest period first. Send `"allow_overlap": true` to create the run anyway, for an extra run such as a bonus or a correction. The check is part of the insert, so two requests at once cannot both pass it.
 
@@ -151,6 +222,61 @@ A pay line's `error` can be set while the line is still in progress, as a warnin
 - `POST /api/runs/{id}/execute` starts or resumes the run executor and returns `202` and the Run. Calling it again while the run is executing is a no-op that returns the current Run. `409 run_cancelled` on a cancelled run. After a restart the service resumes every run past the swap and every run in `awaiting_funds` or `funded` that the payer had executed; funding alone never pays.
 - `POST /api/runs/{id}/cancel` cancels a run that received no money: no fill recorded and no allocation built, in `draft`, `awaiting_funds`, `funded` or `failed`. It returns `200` and the Run in `cancelled`, which no longer counts as active (its contractors can be edited and archived) and stays on record. Cancelling a cancelled run is a no-op. An open deposit address may be abandoned: a deposit sent to it afterwards still reaches the treasury, as balance no run claims. A Fund with ZEC request can always be cancelled: whatever ZEC arrived stays in the treasury for the next run. Errors: `deposit_in_progress` (the venue holds a deposit for the run), `run_has_funds` (ZEC arrived or the allocation was built; execute the run to finish it).
 - `GET /api/runs/{id}/events` is an SSE stream. Event `snapshot` carries the full Run JSON on connect and after every change. Event `log` carries `{"at", "message"}`. A comment ping every 15 seconds keeps proxies open. At most 32 streams are open at once; beyond that the request gets `503 too_many_streams`.
+
+## Pay schedule
+
+One schedule per deployment (one organisation until sign-in's organisations carry it; the row's `org_id` is there for that). It says when payroll is due and the service drafts it (ADR-028): a weekly or biweekly period ends on its pay day (a weekday); a monthly period is the calendar month, paid on a day of that month (`1` to `28`, or `last`). A task runs once at start and then hourly: when today is `draft_days_before` days or fewer before the next pay day and no run (other than a cancelled one) covers the period, it creates a draft run with one line per active contractor who has an approved payment request for the period (the request's amount and reference; several requests from one person make one line) or, failing that, a `default_amount_usd_cents` (with `<start> to <end>` as the reference), writes `Drafted by the pay schedule for pay day ...` to the run's log, and moves the schedule on to the following period. A period a run already covers is skipped the same way. Nothing is funded or paid by the schedule; the draft waits for a person. A pay day that passes with the draft unpaid marks the schedule `overdue`.
+
+```json
+PaySchedule = {
+  "id": "uuid", "cadence": "weekly" | "biweekly" | "monthly",
+  "pay_day": "friday" | "25" | "last", "draft_days_before": 5, "active": true,
+  "next_period_start": "2026-11-01", "next_period_end": "2026-11-30",
+  "next_pay_day": "2026-11-30", "drafts_on": "2026-11-25",
+  "drafted": null | {"run_id": "uuid", "period_start": "2026-10-01", "period_end": "2026-10-31",
+                     "pay_day": "2026-10-31", "status": "draft"},
+  "overdue": false, "created_at", "updated_at"
+}
+```
+
+`drafted` is the run the schedule last drafted (or found covering its period) while that run is not `paid` or `cancelled`; a discarded draft simply leaves it `null`. `next_pay_day` and `drafts_on` are the next period's.
+
+- `GET /api/schedule` returns `{"schedule": PaySchedule | null}`.
+- `PUT /api/schedule` with `{"cadence", "pay_day", "draft_days_before": 5, "active": true}` creates or replaces the schedule and returns `{"schedule": PaySchedule}`. `draft_days_before` (0 to 28) and `active` are optional. The next period is the first whose pay day is on or after today; the service then runs the scheduler at once, so a pay day already inside the draft window gets its draft in the answer. Errors: `invalid_cadence`, `invalid_pay_day` (a weekday for weekly and biweekly, 1 to 28 or `last` for monthly), `invalid_draft_days`.
+
+Both are payer endpoints (404 `statements_only` on a statements-only deployment; with sign-in on, read by any member, set by admins and approvers).
+
+## Payment requests
+
+A contractor asks to be paid for a period; the payer approves or rejects it; an approved request joins the next run for its period as a pay line, scheduled or made by hand; when that line confirms the request is `paid` and carries the line's txid, and a recurring request creates its successor for the following period (the same amount and note, the invoice reference's trailing number up by one, `INV-014` then `INV-015`, or `-2`, `-3` appended; the due date moved with the period). A rejected request stays on record with the payer's note. Discarding or cancelling a run gives its requests back to `approved` with no run, so the next run for the period offers them again. All of it is off chain.
+
+```json
+PaymentRequest = {
+  "id": "uuid", "contractor_id": "uuid", "contractor_name": "Amara Okafor",
+  "amount_usd_cents": 480000, "period_start": "2026-10-01", "period_end": "2026-10-31",
+  "invoice_ref": "INV-2026-014", "due_date": "2026-11-05" | null, "note": "..." | null,
+  "status": "submitted" | "approved" | "rejected" | "paid",
+  "run_id": "uuid" | null, "line_id": "uuid" | null,
+  "recurring": "monthly" | "biweekly" | "weekly" | null,
+  "decision_note": "..." | null, "created_at", "decided_at": "..." | null,
+  "decided_by": "owner@acme.test" | null,
+  "txid": "hex" | null, "explorer_url": "https://..." | null, "paid_at": "2026-11-02T10:04:00Z" | null
+}
+```
+
+`run_id` and `line_id` are set once an approved request is taken into a run; `txid`, `explorer_url` and `paid_at` come from that line. `decided_by` is the deciding member's email when sign-in is on, else `null`.
+
+The contractor's side is keyed by their viewing key, as statements are: the key's fingerprint maps to the contractor whose account it opens (recorded when the contractor is added; for contractors from before, derived from the payer wallet once). These two endpoints exist in every mode, so a contractor can reach them on a public statements-only Payslip too, which knows no contractors and answers `404 unknown_key` with a hint to use the payer's own Payslip.
+
+- `POST /api/portal/requests` with `{"ufvk", "amount_usd_cents", "period_start", "period_end", "invoice_ref", "due_date"?, "note"?, "recurring"?}` returns `201` and the PaymentRequest in `submitted`. The amount and invoice reference follow a pay line's rules (`invalid_amount`, `invalid_invoice_ref`, `invoice_ref_too_long`), the period a run's (`invalid_period`); `invalid_due_date`, `invalid_recurring` (`monthly`, `biweekly` or `weekly`), `note_too_long` (over 1,000 characters); `404 unknown_key` for a key that is not a contractor's of this deployment; the viewing key errors of the statements endpoints.
+- `POST /api/portal/requests/list` with `{"ufvk"}` returns `{"contractor": {"id", "name"}, "requests": [PaymentRequest]}`, newest first.
+
+The payer's side (payer endpoints: 404 `statements_only` on a statements-only deployment; with sign-in on, read by any member, decided by admins and approvers):
+
+- `GET /api/requests?status=submitted|approved|rejected|paid` returns `{"requests": [PaymentRequest], "counts": {"submitted": 3, "approved": 1}}`, newest first; without `status`, every request. `400 invalid_status`.
+- `POST /api/requests/{id}/approve` with `{"note"?}` approves a `submitted` request and returns it. Approving an approved request returns it unchanged; `409 request_decided` (rejected), `409 request_paid`, `409 contractor_archived`, `400 note_too_long`, `404 not_found`.
+- `POST /api/requests/{id}/reject` with `{"note"?}` rejects a `submitted` request, or an `approved` one no run has taken yet, and returns it. `409 request_in_run` (discard or cancel that run first), `409 request_paid`.
+- `POST /api/runs` takes approved requests into the run it creates: `"include_requests": true` takes every approved request for the period, `"request_ids": [...]` exactly those (what the payer kept on the Amounts step). A request joins its contractor's line when the body has one (the payer's amount and reference are kept) and otherwise adds a line for its amount and reference. See Runs.
 
 ## Statements
 

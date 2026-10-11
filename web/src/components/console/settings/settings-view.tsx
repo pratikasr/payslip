@@ -5,6 +5,7 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { CalendarClock, Check } from "lucide-react";
 import { toast } from "sonner";
 import { Usd } from "@/components/app/amount";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card, CardHeader } from "@/components/ds/card";
 import { PageTitle } from "@/components/ds/page";
@@ -14,24 +15,51 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { useResource } from "@/hooks/use-resource";
-import { api, toDisplayError, type ApiError, type Cadence, type Contractor, type PaySchedule } from "@/lib/api";
+import {
+  api,
+  toDisplayError,
+  type ApiError,
+  type Cadence,
+  type Contractor,
+  type Organisation,
+  type PaySchedule,
+} from "@/lib/api";
 import { formatCount, formatDate } from "@/lib/format";
 import { CADENCES, nextDraftSentence, payDayOptions, scheduleSentence } from "@/components/requests/request-meta";
+import { OrgSettings } from "@/components/console/org/settings-view";
 import { Problem } from "@/components/runs/problem";
 import { periodTitle } from "@/components/runs/run-meta";
 
-/** Settings: the pay schedule (ADR-028) and who has a default amount for its drafts. */
-export function SettingsView({ initial }: { initial: { schedule?: PaySchedule | null; contractors?: Contractor[] } }) {
+/**
+ * Settings: with sign-in on, the organisation's name and logo (admins); for everyone, the pay
+ * schedule (ADR-028) and who has a default amount for its drafts. The schedule is changed by
+ * those who run payroll.
+ */
+export function SettingsView({
+  initial,
+}: {
+  initial: { org?: Organisation; schedule?: PaySchedule | null; contractors?: Contractor[] };
+}) {
+  const auth = useAuth();
   const schedule = useResource((s) => api.schedule(s), "settings-schedule", initial.schedule);
   const contractors = useResource((s) => api.contractors(s), "settings-contractors", initial.contractors);
   return (
     <>
-      <PageTitle title="Settings" description="When payroll is drafted, and what each person is usually paid." />
+      <PageTitle
+        title="Settings"
+        description={
+          auth.required
+            ? "The organisation as members see it, when payroll is drafted, and what each person is usually paid."
+            : "When payroll is drafted, and what each person is usually paid."
+        }
+      />
+      <OrgSettings initial={initial.org} />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <ScheduleCard
           schedule={schedule.data ?? null}
           loading={schedule.loading && schedule.data === undefined}
           error={schedule.error}
+          editable={auth.can("manage_runs")}
           onSaved={(s) => schedule.setData(s)}
           onRetry={schedule.reload}
         />
@@ -45,12 +73,15 @@ function ScheduleCard({
   schedule,
   loading,
   error,
+  editable,
   onSaved,
   onRetry,
 }: {
   schedule: PaySchedule | null;
   loading: boolean;
   error: ApiError | undefined;
+  /** False for a role that cannot run payroll: the schedule is shown, not changed. */
+  editable: boolean;
   onSaved: (s: PaySchedule) => void;
   onRetry: () => void;
 }) {
@@ -116,7 +147,12 @@ function ScheduleCard({
       {error && !schedule && !loading ? (
         <Problem className="mt-4" error={error} title="Could not load the schedule" onRetry={onRetry} />
       ) : null}
-      <form onSubmit={save} noValidate className="mt-5 grid gap-4">
+      {!editable ? (
+        <p className="mt-4 text-[0.8125rem] text-muted-foreground">
+          Admins and approvers set the schedule; your role reads it.
+        </p>
+      ) : null}
+      <form onSubmit={save} noValidate className="mt-5 grid gap-4" hidden={!editable}>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor={`${uid}-cadence`}>Cadence</Label>
@@ -197,7 +233,7 @@ function ScheduleCard({
         {problem ? <Problem error={problem} title="The schedule was not saved" /> : null}
         <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-4">
           <Button type="submit" disabled={saving || daysBad}>
-            {saving ? "Saving" : schedule ? "Save schedule" : "Set schedule"}
+            {saving ? "Applying" : schedule ? "Update schedule" : "Set schedule"}
           </Button>
           {schedule && !touched ? (
             <span className="inline-flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">

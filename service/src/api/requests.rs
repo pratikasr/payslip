@@ -5,13 +5,14 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::AppStateRef;
 use crate::{
+    auth::Identity,
     db::{self, Contractor},
     error::{ApiError, ApiResult},
     memo,
@@ -237,9 +238,15 @@ async fn load(s: &AppStateRef, id: &str) -> ApiResult<requests::RequestRow> {
         .ok_or_else(|| ApiError::not_found("Payment request"))
 }
 
+/// Who decided, for the request's record: the signed-in member's email, none with sign-in off.
+fn decider(identity: &Option<Extension<Identity>>) -> Option<String> {
+    identity.as_ref().map(|i| i.user.email.clone())
+}
+
 async fn approve(
     State(s): State<AppStateRef>,
     Path(id): Path<String>,
+    identity: Option<Extension<Identity>>,
     body: Option<Json<DecisionInput>>,
 ) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
@@ -273,13 +280,22 @@ async fn approve(
             "Reject the request, or add them again first.",
         ));
     }
-    requests::decide(&s.db, &id, &["submitted"], "approved", note.as_deref()).await?;
+    requests::decide(
+        &s.db,
+        &id,
+        &["submitted"],
+        "approved",
+        note.as_deref(),
+        decider(&identity).as_deref(),
+    )
+    .await?;
     Ok(Json(requests::json(s.cfg.network, &load(&s, &id).await?)))
 }
 
 async fn reject(
     State(s): State<AppStateRef>,
     Path(id): Path<String>,
+    identity: Option<Extension<Identity>>,
     body: Option<Json<DecisionInput>>,
 ) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
@@ -305,6 +321,14 @@ async fn reject(
             ))
         }
     }
-    requests::decide(&s.db, &id, &["submitted", "approved"], "rejected", note.as_deref()).await?;
+    requests::decide(
+        &s.db,
+        &id,
+        &["submitted", "approved"],
+        "rejected",
+        note.as_deref(),
+        decider(&identity).as_deref(),
+    )
+    .await?;
     Ok(Json(requests::json(s.cfg.network, &load(&s, &id).await?)))
 }

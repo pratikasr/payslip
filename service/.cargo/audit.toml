@@ -1,0 +1,9 @@
+# cargo audit settings (CI runs `cargo audit` in service/).
+
+[advisories]
+# RUSTSEC-2023-0071: a timing side channel in the `rsa` crate's private-key operations (the
+# Marvin attack), with no fixed release. `rsa` is compiled in by jsonwebtoken's rust_crypto
+# backend, but Payslip accepts EdDSA tokens only (service/src/auth/mod.rs) and holds no RSA
+# key, so no RSA operation ever runs. Revisit when jsonwebtoken drops the dependency or rsa
+# ships a fix (ADR-026).
+ignore = ["RUSTSEC-2023-0071"]

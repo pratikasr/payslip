@@ -14,6 +14,7 @@ A DAO or remote-first team pays 5 to 50 contractors on-chain. Today every salary
 - Each contractor is paid with one shielded transaction from a dedicated ZIP-32 account. The memo carries run id, period, invoice reference and the USD basis.
 - Each contractor receives the full viewing key of their own account. It shows their payments and nothing else, because that account pays nobody else.
 - The accountant receives every account's viewing key: every run, every line, no spending power.
+- Payroll can run on a schedule. Under Settings the payer sets a cadence and a pay day; a few days before each pay day Payslip drafts the run from each contractor's usual amount or from the payment request they sent from their portal, which the payer approved from a queue (what Request Finance calls a request or an invoice). The draft waits for a person to review, fund and pay it; nothing moves on its own. A paid request shows its transaction id in the contractor's portal, and a request marked to repeat is sent again for the next period.
 - The statement engine scans the chain with those keys, decodes the memos and renders per-contractor statements and a reconciliation of funded USD against paid USD per run, with the variance explained. CSV export, PDF through print.
 - A contractor who does not want ZEC can choose to have their pay converted to USDC on receipt, with the privacy cost of that leg stated plainly.
 
@@ -161,6 +162,39 @@ On testnet there is no USDC venue (1Click has no testnet), so a clearly labelled
 
 The full runbook is in [docs/DEMO.md](docs/DEMO.md).
 
+## Sign-in
+
+By default there is no login: the console is open on the payer's own machine, which is how the testnet demo and the judge path run. For a hosted deployment, turn sign-in on: people sign in with Google, the first admin invites the others with a link, every member has a role (admin, approver, accountant or viewer), and every change is on an audit log. The web app signs people in (Better Auth 1.7.7) and mints short tokens; the service checks them and decides what each role may do (ADR-026, endpoints in [docs/API.md](docs/API.md)). Needs Node 22.16 or newer.
+
+1. Create the Google OAuth client (needs your Google account, about five minutes):
+   1. Open https://console.cloud.google.com/ and pick or create a project.
+   2. Go to **APIs & Services**, then **OAuth consent screen** (Google now calls this **Google Auth Platform**, **Branding**). Choose **External** so any Google account can sign in (members are limited by invitation, not by Google), enter the app name "Payslip" and your support email, and save. No scopes beyond the defaults and no verification review are needed: Payslip asks only for name, email and profile.
+   3. Go to **APIs & Services**, then **Credentials**, click **Create Credentials**, then **OAuth client ID**. Application type **Web application**, name "Payslip web".
+   4. Under **Authorized redirect URIs** add exactly `<your web address>/api/auth/callback/google`, for example `https://app.example.com/api/auth/callback/google`, and for a local trial `http://127.0.0.1:3000/api/auth/callback/google`. Google requires an exact match and HTTPS for anything but localhost.
+   5. Click **Create** and copy the client ID and client secret.
+2. Configure the web app in `web/.env` (set these before `pnpm build`: the build reads them too):
+
+   ```
+   PAYSLIP_AUTH=required
+   BETTER_AUTH_URL=https://app.example.com           # the web address from step 1.4, no trailing slash
+   BETTER_AUTH_SECRET=<openssl rand -base64 32>
+   GOOGLE_CLIENT_ID=<from step 1.5>
+   GOOGLE_CLIENT_SECRET=<from step 1.5>
+   PAYSLIP_API_INTERNAL_URL=http://127.0.0.1:8080    # where the web server reaches the service (the proxy and server renders)
+   PAYSLIP_GOOGLE_WORKSPACE_DOMAIN=example.com       # optional: only this Google Workspace domain may sign in
+   ```
+
+3. Configure the service in `service/.env`:
+
+   ```
+   PAYSLIP_AUTH=required
+   PAYSLIP_AUTH_JWKS_URL=https://app.example.com/api/auth/jwks   # BETTER_AUTH_URL plus /api/auth/jwks
+   PAYSLIP_BOOTSTRAP_ADMIN_EMAIL=you@example.com                  # the Google account that becomes the first admin
+   ```
+
+4. Start both. Open the web address, sign in with the bootstrap email: that creates the organisation and makes you its admin. Under **Settings** name the organisation and set a logo; under **Invitations** make a link for each colleague and send it to them yourself (no email is sent); they sign in with that Google account and open the link. **Members** shows everyone and lets an admin change roles; **Audit log** shows who did what.
+
+The service keeps only public keys and token hashes, never a Google secret or a session; the browser never holds a token (the web app's `/api/svc` proxy attaches it). With sign-in off nothing above exists, and the "Viewing as" demo switcher stays.
 ## Hosting
 
 `deploy/` has everything for a hosted Payslip: container images for the service and the web app, a compose file that runs the public statements page (`books`: statements-only service, no seed) and the company console (`app`: full service, behind basic auth) on one host, and scripts that create and remove the AWS resources (one EC2 instance behind two CloudFront distributions, encrypted backups to S3). The runbook from a fresh AWS account to a working statements page with the judge kit, with update, rollback and restore, is [deploy/README.md](deploy/README.md).
@@ -172,11 +206,13 @@ cd service && cargo test                                   # unit and executor t
 cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored   # live testnet tests
 cd service && cargo clippy --all-targets -- -D warnings && cargo audit
 cd web && pnpm lint && pnpm typecheck && pnpm build
-cd web && E2E_BASE_URL=http://127.0.0.1:3000 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e   # 31 browser tests, prerequisites below
+cd web && E2E_BASE_URL=http://127.0.0.1:3000 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e   # 46 browser tests with sign-in off, prerequisites below
+scripts/e2e-signin.sh                                                                     # 4 browser tests with sign-in on, on their own ports
+scripts/e2e-requests.sh                                                                   # 4 browser tests: payment requests and the pay schedule, on their own ports
 python3 scripts/adversarial-testnet.py --api http://127.0.0.1:8080 --skip-chain           # adversarial API scenarios
 ```
 
-`pnpm e2e` covers the demo walkthrough, runs, console, portal, payment proofs, books, landing, keyboard, camera QR and wallet funding. It needs Chromium (`pnpm exec playwright install chromium`), a testnet service on a clean data directory (`scripts/fresh-testnet-env.sh <name>`) with a funded treasury, and the web app; `E2E_BASE_URL` defaults to http://127.0.0.1:3100 and `E2E_API_URL` to http://127.0.0.1:8080. The demo walkthrough adds contractors and pays a run, spending testnet coins, and the adversarial script without `--skip-chain` spends coins and restarts the service, so point both at a throwaway service, never at a wallet you care about.
+`pnpm e2e` covers the demo walkthrough, runs, console, portal, payment proofs, books, landing, keyboard, camera QR and wallet funding. It needs Chromium (`pnpm exec playwright install chromium`), a testnet service on a clean data directory (`scripts/fresh-testnet-env.sh <name>`) with a funded treasury, and the web app; `E2E_BASE_URL` defaults to http://127.0.0.1:3100 and `E2E_API_URL` to http://127.0.0.1:8080. The demo walkthrough adds contractors and pays a run, spending testnet coins, and the adversarial script without `--skip-chain` spends coins and restarts the service, so point both at a throwaway service, never at a wallet you care about. `scripts/e2e-signin.sh` starts a throwaway testnet wallet, a service with `PAYSLIP_AUTH=required` on port 8096 and the web app with the test login on port 3304, then runs `web/e2e/auth.spec.ts` (sign in, the first admin, invite a viewer, the viewer cannot run payroll, run progress through the proxy, sign out) and stops both. The sign-in unit and API tests (`cargo test`) sign tokens with a test key and serve a JWKS from a test server. `scripts/e2e-requests.sh` does the same with sign-in off on ports 8093 and 3313 for `web/e2e/requests.spec.ts` (a contractor sends a request from the portal, the payer approves one and rejects another, Run payroll offers the approved one as a prefilled line, and a pay schedule saved on its draft day drafts this month's payroll from default amounts); no coins are needed, since nothing in it funds or pays a run.
 
 CI runs formatting, clippy, tests and audit for the service and lint, typecheck and build for the web on every push.
 

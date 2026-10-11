@@ -128,12 +128,20 @@ pub async fn count_by_status(pool: &Pool, status: &str) -> anyhow::Result<i64> {
     )
 }
 
-/// Records the payer's decision (`approved` or `rejected`) on a request in `from`. Returns false
-/// if the request was not in one of those statuses.
-pub async fn decide(pool: &Pool, id: &str, from: &[&str], to: &str, note: Option<&str>) -> anyhow::Result<bool> {
+/// Records the payer's decision (`approved` or `rejected`) on a request in `from`, with the
+/// deciding member's email when sign-in is on. Returns false if the request was not in one of
+/// those statuses.
+pub async fn decide(
+    pool: &Pool,
+    id: &str,
+    from: &[&str],
+    to: &str,
+    note: Option<&str>,
+    decided_by: Option<&str>,
+) -> anyhow::Result<bool> {
     let placeholders = from.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
-        "UPDATE payment_requests SET status = ?, decision_note = ?, decided_at = ?, decided_by = NULL
+        "UPDATE payment_requests SET status = ?, decision_note = ?, decided_at = ?, decided_by = ?
          WHERE id = ? AND status IN ({placeholders})"
     );
     // Only "?" placeholders are interpolated; every value is bound.
@@ -141,6 +149,7 @@ pub async fn decide(pool: &Pool, id: &str, from: &[&str], to: &str, note: Option
         .bind(to)
         .bind(note)
         .bind(db::now())
+        .bind(decided_by)
         .bind(id);
     for f in from {
         q = q.bind(*f);

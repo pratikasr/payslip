@@ -70,8 +70,10 @@ bs58 = "0.5"
 csv = "1.4"
 dotenvy = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }
 
 [dev-dependencies]
+ed25519-dalek = "2"
 tempfile = "3"
 
 [profile.dev.package."*"]

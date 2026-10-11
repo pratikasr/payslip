@@ -2015,7 +2015,7 @@ async fn a_paid_request_carries_its_txid_and_a_recurring_one_repeats() {
     )
     .await
     .unwrap();
-    assert!(requests::decide(&pool, &r.id, &["submitted"], "approved", None)
+    assert!(requests::decide(&pool, &r.id, &["submitted"], "approved", None, None)
         .await
         .unwrap());
     // The run already has Amara's line: the request rides on it.
