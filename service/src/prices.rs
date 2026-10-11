@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::{bail, Context};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 /// Fiat currencies CoinGecko quotes ZEC in (`/simple/supported_vs_currencies`, 5 Oct 2026).
@@ -32,6 +33,29 @@ pub struct MarketValue {
     /// When the price point was taken (RFC 3339), nearest to the block time.
     pub priced_at: String,
     pub source: &'static str,
+}
+
+/// The market rate at one moment, for a run funded with ZEC (ADR-025).
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct RateAt {
+    /// USD per ZEC times 1e6: the price in cents times 10,000, so a payment converted at this
+    /// rate is worth, to the cent, what [`value_at`] gives for the same block time.
+    pub rate_e6: u64,
+    /// When the price point was taken (RFC 3339), nearest to the time asked for.
+    pub priced_at: String,
+}
+
+/// Seconds a price point may be from a block time when a statement spans a day (five-minute
+/// points). The rate a ZEC-funded run records uses the same gap.
+pub const DAY_MAX_GAP: i64 = 15 * 60;
+
+/// Where the executor reads the market rate for a run funded with ZEC: the price nearest a block
+/// time, as the statement engine values a payment at receipt. Tests stub it.
+#[async_trait]
+pub trait MarketRate: Send + Sync {
+    /// USD per ZEC at `unix` (a block time, or now). `Ok(None)` when no price point is within
+    /// [`DAY_MAX_GAP`] of it; `Err` when the source cannot be reached.
+    async fn usd_rate_at(&self, unix: i64) -> anyhow::Result<Option<RateAt>>;
 }
 
 /// Price points (Unix seconds, price) per request range, with when they were fetched.
@@ -169,6 +193,29 @@ impl Prices {
     }
 }
 
+/// The rate at `t` from the price point nearest it (within `max_gap` seconds): the same point
+/// [`value_at`] uses, so a run funded at this rate and a statement valuing its payments at
+/// receipt agree to the cent for that block time.
+pub fn rate_at(series: &[(i64, f64)], t: i64, max_gap: i64) -> Option<RateAt> {
+    let v = value_at(series, t, crate::money::ZAT_PER_ZEC, max_gap, "usd")?;
+    Some(RateAt {
+        rate_e6: v.price_cents.checked_mul(10_000)?,
+        priced_at: v.priced_at,
+    })
+}
+
+#[async_trait]
+impl MarketRate for Prices {
+    async fn usd_rate_at(&self, unix: i64) -> anyhow::Result<Option<RateAt>> {
+        if !self.enabled() {
+            bail!("market prices are turned off on this service (PAYSLIP_PRICE_API_URL=off)")
+        }
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let series = self.series("usd", unix, unix, now).await?;
+        Ok(rate_at(&series, unix, DAY_MAX_GAP))
+    }
+}
+
 /// The price point nearest `t`, within `max_gap` seconds, applied to `zat`.
 pub fn value_at(series: &[(i64, f64)], t: i64, zat: u64, max_gap: i64, currency: &str) -> Option<MarketValue> {
     let &(at, price) = series.iter().min_by_key(|(pt, _)| (pt - t).abs())?;
@@ -223,6 +270,27 @@ mod tests {
         assert_eq!(v.price_cents, 12_897_861);
         assert_eq!(v.value_cents, 32_244_653);
         assert_eq!(v.currency, "INR");
+    }
+
+    /// ADR-025: a run funded with ZEC records the rate of the price point nearest its funding
+    /// block, and a pay line converted at that rate is worth, to the cent, what the statement
+    /// engine reports as its market value at receipt for the same block time.
+    #[test]
+    fn the_funding_rate_agrees_with_the_value_at_receipt() {
+        let t0 = 1_791_165_600;
+        let series = vec![(t0 - 300, 1_340.10), (t0, 1_338.641_2), (t0 + 300, 1_343.20)];
+        let r = rate_at(&series, t0 + 100, DAY_MAX_GAP).unwrap();
+        assert_eq!(r.rate_e6, 1_338_640_000);
+        assert_eq!(r.priced_at, "2026-10-05T02:00:00Z");
+        for usd_cents in [480_000u64, 625_000, 540_000, 1, 99, 100_000_000] {
+            let zat = crate::money::usd_cents_to_zat(usd_cents, r.rate_e6).unwrap();
+            let basis = crate::money::zat_to_usd_cents(zat, r.rate_e6);
+            let market = value_at(&series, t0 + 100, zat, DAY_MAX_GAP, "usd").unwrap();
+            assert_eq!(market.value_cents, basis, "{usd_cents} cents -> {zat} zat");
+            assert_eq!(market.price_cents * 10_000, r.rate_e6);
+        }
+        assert!(rate_at(&series, t0 + 5_000, DAY_MAX_GAP).is_none());
+        assert!(rate_at(&[], t0, DAY_MAX_GAP).is_none());
     }
 
     #[test]

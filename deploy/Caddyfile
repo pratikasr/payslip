@@ -1,0 +1,38 @@
+# Payslip origin front (deploy/compose.yml). Plain HTTP on four ports: CloudFront terminates TLS.
+#
+# Every request must carry the X-Payslip-Origin header with the secret that deploy/aws/provision.sh
+# set as a custom origin header on this stack's two CloudFront distributions. A request that
+# arrives any other way (another AWS customer's distribution pointed at this instance, which the
+# security group's CloudFront rule would admit) gets 403 and never reaches a service or a web app.
+# ORIGIN_SECRET comes from payslip.env through compose.yml, substituted when Caddy parses this file.
+{
+	auto_https off
+	admin off
+}
+
+(gate) {
+	@direct not header X-Payslip-Origin {$ORIGIN_SECRET}
+	respond @direct "This origin only answers its own CloudFront distributions." 403
+}
+
+# Public statements page and service (books distribution).
+:3001 {
+	import gate
+	reverse_proxy books-web:3000
+}
+
+:8081 {
+	import gate
+	reverse_proxy books-service:8080
+}
+
+# Company console and full-mode service (app distribution, behind CloudFront's basic auth).
+:3002 {
+	import gate
+	reverse_proxy app-web:3000
+}
+
+:8082 {
+	import gate
+	reverse_proxy app-service:8080
+}

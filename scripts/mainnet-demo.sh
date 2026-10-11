@@ -16,7 +16,10 @@
 #   4. creates the run (idempotent: the key is derived from the config and contractor file)
 #   5. funds it: testnet draws from the treasury at the fixed rate; mainnet asks 1Click for a
 #      USDC deposit address and waits for the deposit (pay it from the web app's Fund step
-#      or any wallet; set DEMO_DEPOSIT_TX to report the hash)
+#      or any wallet; set DEMO_DEPOSIT_TX to report the hash). With DEMO_FUNDING=zec the run
+#      is funded with ZEC instead (ADR-025): the script prints the treasury address and the
+#      ZEC to send, and polls until the treasury's confirmed balance covers the run at the
+#      market rate of that block. On testnet this draws faucet coins at the market rate.
 #   6. executes it and streams progress until every line is confirmed
 #   7. writes scripts/demo/out/proof-<network>-<run>.md, the statement CSVs and a judge kit
 #      (judge-kit-<network>.json: every viewing key plus one payment proof)
@@ -188,17 +191,42 @@ st, run = call("POST", "/api/runs", {"period_start": spec["period_start"], "peri
 rid = run["id"]
 stamp(f"Run {rid} ({'created' if st == 201 else 'existing'}), status {run['status']}, payroll ${run['total_usd_cents']/100:,.2f}")
 
-# 3. Fund
+# 3. Fund: USDC through the venue (default), or ZEC sent to the treasury (DEMO_FUNDING=zec).
+method = (os.environ.get("DEMO_FUNDING") or "usdc").strip().lower()
+if method not in ("usdc", "zec"):
+    sys.exit("DEMO_FUNDING must be usdc (the default) or zec.")
 if run["status"] == "draft":
     if NET == "mainnet" and os.environ.get("YES") != "--yes":
         if not sys.stdin.isatty():
             sys.exit("Mainnet funding spends real money. Re-run with --yes to confirm.")
-        if input("Mainnet: request a USDC deposit address for this run? Type yes: ").strip() != "yes":
+        ask = "request the treasury address and ZEC amount" if method == "zec" else "request a USDC deposit address"
+        if input(f"Mainnet: {ask} for this run? Type yes: ").strip() != "yes":
             sys.exit("Stopped before funding.")
-    run = call("POST", f"/api/runs/{rid}/fund", {"origin_chain": os.environ.get("DEMO_ORIGIN_CHAIN") or "base",
-                                                 "refund_address": os.environ.get("DEMO_REFUND_ADDRESS") or None})[1]
+    if method == "zec":
+        run = call("POST", f"/api/runs/{rid}/fund", {"method": "zec"})[1]
+    else:
+        run = call("POST", f"/api/runs/{rid}/fund", {"origin_chain": os.environ.get("DEMO_ORIGIN_CHAIN") or "base",
+                                                     "refund_address": os.environ.get("DEMO_REFUND_ADDRESS") or None})[1]
 f = run.get("funding") or {}
-if run["status"] == "awaiting_funds":
+if run["status"] == "awaiting_funds" and f.get("venue") == "treasury":
+    stamp(f"Fund with ZEC: send {f.get('amount_in')} ZEC to the treasury address {f.get('treasury_address')} "
+          f"before {f.get('deadline')} (1 ZEC = {(f.get('rate_usd_per_zec_e6') or 0) / 1e6:,.2f} USD when requested)")
+    stamp("Send it shielded from any Zcash wallet. The run is funded at the market rate of the block in which it confirms.")
+    last = None
+    while run["status"] == "awaiting_funds":
+        time.sleep(10)
+        run = call("GET", f"/api/runs/{rid}/funding")[1]
+        f = run.get("funding") or {}
+        seen = (f.get("status"), f.get("zec_received_zat"), f.get("zec_pending_zat"), f.get("zec_shortfall_zat"))
+        if seen != last:
+            stamp(f"Treasury: {f.get('status')}, confirmed {(f.get('zec_received_zat') or 0) / 1e8:.8f} ZEC, "
+                  f"confirming {(f.get('zec_pending_zat') or 0) / 1e8:.8f} ZEC, "
+                  f"still needed {(f.get('zec_shortfall_zat') or 0) / 1e8:.8f} ZEC")
+            last = seen
+        if f.get("status") == "expired":
+            sys.exit("The ZEC request expired before enough ZEC confirmed. Re-run this script to request again; "
+                     "ZEC already in the treasury counts toward the new request.")
+elif run["status"] == "awaiting_funds":
     stamp(f"Deposit {f.get('amount_in')} USDC on {f.get('origin_chain')} (chain id {f.get('chain_id')}, token {f.get('token_address')}) to {f.get('deposit_address')} before {f.get('deadline')}")
     stamp("Pay it from the web app's Fund step or any wallet. Waiting for the venue.")
     tx = os.environ.get("DEMO_DEPOSIT_TX")

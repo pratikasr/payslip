@@ -10,7 +10,9 @@ use payslip::{
     api::{self, AppState},
     config::{AuthConfig, Config, VenueKind, ZcashNetwork},
     db::{self, NewContractor, Pool},
+    prices::{MarketRate, RateAt},
     runs::{ChainOps, Executor, Pay},
+    venue::TreasuryVenue,
     viewer::{ViewerRegistry, ViewingKey},
     wallet::SpendError,
 };
@@ -43,6 +45,22 @@ fn config(dir: &Path, bind: SocketAddr) -> Config {
         app_fee_bps: 0,
         app_fee_recipient: None,
         auth: AuthConfig::off(),
+        max_run_usd_cents: None,
+    }
+}
+
+/// A fixed ZEC market rate (1,234.42 USD, CoinGecko on 11 Oct 2026) for runs funded with ZEC.
+struct StubRates;
+
+const STUB_RATE_E6: u64 = 1_234_420_000;
+
+#[async_trait]
+impl MarketRate for StubRates {
+    async fn usd_rate_at(&self, unix: i64) -> anyhow::Result<Option<RateAt>> {
+        Ok(Some(RateAt {
+            rate_e6: STUB_RATE_E6,
+            priced_at: payslip::statements::block_time_rfc3339(unix).unwrap(),
+        }))
     }
 }
 
@@ -68,10 +86,13 @@ async fn start() -> Service {
     }
 }
 
-/// A chain that only knows block times (block h at 1,790,000,000 + 75 h); anything else fails.
+/// A chain that knows block times (block h at 1,790,000,000 + 75 h), its tip, the treasury's
+/// address and an empty treasury; anything that would move money fails.
 struct StubChain;
 
 const STUB_T0: i64 = 1_790_000_000;
+const STUB_TIP: u32 = 4_467_300;
+const STUB_TREASURY: &str = "utest1stubtreasury";
 
 #[async_trait]
 impl ChainOps for StubChain {
@@ -79,16 +100,20 @@ impl ChainOps for StubChain {
         anyhow::bail!("no chain in this test")
     }
     async fn tip(&self) -> anyhow::Result<u32> {
-        anyhow::bail!("no chain in this test")
+        Ok(STUB_TIP)
     }
     async fn spendable(&self, _: u32) -> anyhow::Result<u64> {
-        anyhow::bail!("no chain in this test")
+        Ok(0)
     }
     async fn total(&self, _: u32) -> anyhow::Result<u64> {
-        anyhow::bail!("no chain in this test")
+        Ok(0)
     }
-    async fn account_address(&self, _: u32) -> anyhow::Result<String> {
-        anyhow::bail!("no chain in this test")
+    async fn account_address(&self, account: u32) -> anyhow::Result<String> {
+        if account == 0 {
+            Ok(STUB_TREASURY.into())
+        } else {
+            anyhow::bail!("no chain in this test")
+        }
     }
     async fn transparent_address(&self, _: u32) -> anyhow::Result<String> {
         anyhow::bail!("no chain in this test")
@@ -124,11 +149,16 @@ impl ChainOps for StubChain {
 /// A full-mode service (payer routes mounted) without a payer wallet: its executor drives the
 /// stub chain. Enough for endpoints that touch only payslip.db.
 async fn start_full() -> (Service, Pool) {
+    start_full_with(|_| {}).await
+}
+
+async fn start_full_with(adjust: impl FnOnce(&mut Config)) -> (Service, Pool) {
     let dir = tempfile::tempdir().unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let mut cfg = config(dir.path(), addr);
     cfg.statements_only = false;
+    adjust(&mut cfg);
     let db = db::open(&cfg.app_db_path()).await.unwrap();
     let venue = payslip::venue::build(&cfg).unwrap();
     let executor = Executor::with_chain(
@@ -136,9 +166,11 @@ async fn start_full() -> (Service, Pool) {
         db.clone(),
         Arc::new(StubChain),
         venue.clone(),
+        Arc::new(TreasuryVenue::new(Arc::new(StubRates))),
         Duration::from_millis(5),
         1,
-    );
+    )
+    .with_run_cap(cfg.max_run_usd_cents);
     let state = Arc::new(AppState {
         viewers: ViewerRegistry::new(&cfg),
         db: db.clone(),
@@ -148,7 +180,7 @@ async fn start_full() -> (Service, Pool) {
         contractor_lock: tokio::sync::Mutex::new(()),
         lwd: tokio::sync::Mutex::new(payslip::wallet::lwd::connect(&cfg.lightwalletd_url).unwrap()),
         last_wallet: std::sync::Mutex::new(None),
-        prices: payslip::prices::Prices::new(None, None),
+        prices: Arc::new(payslip::prices::Prices::new(None, None)),
         scan_slots: tokio::sync::Semaphore::new(3),
         sse_slots: Arc::new(tokio::sync::Semaphore::new(api::MAX_EVENT_STREAMS)),
         auth: None,
@@ -745,9 +777,11 @@ mod signin {
             db.clone(),
             Arc::new(StubChain),
             venue.clone(),
+            Arc::new(TreasuryVenue::new(Arc::new(StubRates))),
             Duration::from_millis(5),
             1,
-        );
+        )
+        .with_run_cap(cfg.max_run_usd_cents);
         let state = Arc::new(AppState {
             viewers: ViewerRegistry::new(&cfg),
             db: db.clone(),
@@ -757,7 +791,7 @@ mod signin {
             contractor_lock: tokio::sync::Mutex::new(()),
             lwd: tokio::sync::Mutex::new(payslip::wallet::lwd::connect(&cfg.lightwalletd_url).unwrap()),
             last_wallet: std::sync::Mutex::new(None),
-            prices: payslip::prices::Prices::new(None, None),
+            prices: Arc::new(payslip::prices::Prices::new(None, None)),
             scan_slots: tokio::sync::Semaphore::new(3),
             sse_slots: Arc::new(tokio::sync::Semaphore::new(api::MAX_EVENT_STREAMS)),
             auth: Some(Arc::new(payslip::auth::Verifier::new(&cfg.auth))),
@@ -1646,4 +1680,108 @@ async fn auth_off_keeps_todays_behaviour() {
     assert_eq!((st, code(&v)), (404, "not_found"), "{v}");
     let (st, v) = s.get("/api/health").await;
     assert_eq!((st, v["auth"].as_str()), (200, Some("off")));
+}
+
+/// ADR-025: `POST /api/runs/{id}/fund` with `method: "zec"` answers the treasury address, the
+/// ZEC to send (payroll at the rate plus the fee reserve plus 2 percent), the rate and a
+/// 24-hour deadline, with the run awaiting funds; health says the method exists; the deposit
+/// transaction endpoint and an unknown method are refused with a plain message.
+#[tokio::test]
+async fn fund_with_zec_answers_the_treasury_address_amount_rate_and_deadline() {
+    let (s, pool) = start_full().await;
+    let (st, h) = s.get("/api/health").await;
+    assert_eq!(st, 200);
+    assert_eq!(h["fund_with_zec"], json!(true));
+    assert!(h["max_run_usd_cents"].is_null());
+    let a = contractor(&pool, 1).await;
+    let b = contractor(&pool, 2).await;
+    let (st, run) = s
+        .post(
+            "/api/runs",
+            run_body(
+                "2026-09-01",
+                "2026-09-30",
+                &[(&a, 480_000, "INV-1"), (&b, 625_000, "INV-2")],
+                "k-zec",
+            ),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let id = run["id"].as_str().unwrap().to_string();
+    let (st, v) = s
+        .post(&format!("/api/runs/{id}/fund"), json!({"method": "bogus"}))
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_method"), "{v}");
+    assert!(has_hint(&v));
+    let (st, v) = s.post(&format!("/api/runs/{id}/fund"), json!({"method": "zec"})).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["status"], json!("awaiting_funds"));
+    let f = &v["funding"];
+    assert_eq!(f["venue"], json!("treasury"));
+    assert_eq!(f["status"], json!("awaiting_deposit"));
+    assert_eq!(f["origin_asset"], json!("ZEC"));
+    assert_eq!(f["treasury_address"], json!(STUB_TREASURY));
+    assert_eq!(f["deposit_address"], json!(STUB_TREASURY));
+    let payroll = payslip::money::usd_cents_to_zat(1_105_000, STUB_RATE_E6).unwrap();
+    let reserve = payslip::runs::fee_estimate_zat(2, 0);
+    let required = TreasuryVenue::required_zat(payroll, reserve);
+    assert_eq!(f["zec_required_zat"], json!(required));
+    assert_eq!(f["quoted_zat"], json!(required));
+    assert_eq!(f["amount_in"], json!(payslip::money::format_zec(required)));
+    assert_eq!(f["rate_usd_per_zec_e6"], json!(STUB_RATE_E6));
+    assert_eq!(f["requested_usd_cents"], json!(1_105_000));
+    let deadline = time::OffsetDateTime::parse(
+        f["deadline"].as_str().unwrap(),
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let minutes = (deadline - time::OffsetDateTime::now_utc()).whole_minutes();
+    assert!((23 * 60..=24 * 60).contains(&minutes), "{minutes}");
+    // The empty stub treasury: nothing received, the whole need outstanding at the tip's rate.
+    assert_eq!(f["zec_received_zat"], json!(0));
+    assert_eq!(f["zec_pending_zat"], json!(0));
+    assert_eq!(f["zec_shortfall_zat"], json!(payroll + reserve));
+    assert!(f["funded_at_height"].is_null());
+    // Polling reads the treasury again and answers the same shape.
+    let (st, v) = s.get(&format!("/api/runs/{id}/funding")).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["funding"]["status"], json!("awaiting_deposit"));
+    assert_eq!(v["funding"]["zec_required_zat"], json!(required));
+    let (st, v) = s
+        .post(
+            &format!("/api/runs/{id}/funding/deposit-tx"),
+            json!({"tx_hash": "ab".repeat(32)}),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "deposit_tx_not_needed"), "{v}");
+    // Statements-only deployments fund nothing.
+    let statements = start().await;
+    let (_, h) = statements.get("/api/health").await;
+    assert_eq!(h["fund_with_zec"], json!(false));
+}
+
+/// PAYSLIP_MAX_RUN_USD_CENTS: a payroll over the cap is refused when the run is created, with
+/// the cap in the message; health reports the cap.
+#[tokio::test]
+async fn a_run_over_the_cap_is_refused_at_creation() {
+    let (s, pool) = start_full_with(|c| c.max_run_usd_cents = Some(100_000)).await;
+    let (_, h) = s.get("/api/health").await;
+    assert_eq!(h["max_run_usd_cents"], json!(100_000));
+    let a = contractor(&pool, 1).await;
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 480_000, "INV-1")], "k-cap"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "run_over_cap"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("1000.00"));
+    assert!(has_hint(&v));
+    let (st, v) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&a, 100_000, "INV-1")], "k-under"),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
 }

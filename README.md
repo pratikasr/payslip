@@ -10,7 +10,7 @@ Built for the Zcash track of Colosseum's [Crypto World's Fair](https://colosseum
 
 A DAO or remote-first team pays 5 to 50 contractors on-chain. Today every salary is readable on a block explorer. With Payslip:
 
-- The payer funds a run in USDC from their own wallet. NEAR Intents swaps it into native ZEC, delivered into the shielded Ironwood pool. The fill rate becomes the run's USD basis.
+- The payer funds a run with ZEC sent shielded to the treasury (the run is funded when it confirms, at the market rate of that block, which becomes the USD basis), or in USDC from their own wallet, which NEAR Intents swaps into native ZEC delivered into the shielded Ironwood pool at a fill rate that becomes the USD basis.
 - Each contractor is paid with one shielded transaction from a dedicated ZIP-32 account. The memo carries run id, period, invoice reference and the USD basis.
 - Each contractor receives the full viewing key of their own account. It shows their payments and nothing else, because that account pays nobody else.
 - The accountant receives every account's viewing key: every run, every line, no spending power.
@@ -48,7 +48,7 @@ Payslip's claim is "private to the world, transparent to your accountant". Each 
 2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). On a statements-only Payslip (below), choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
-There is no hosted statements page yet (it needs a hosting account; see M7 under Status). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
+There is no hosted statements page yet; the runbook that puts one on AWS is [deploy/README.md](deploy/README.md) (see Hosting below). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
 
 1. From the repository root, start the service in statements-only mode. It stays in the foreground:
 
@@ -100,7 +100,7 @@ flowchart LR
 ```
 
 1. **Onboard.** The payer adds a contractor's unified address. The service creates the next ZIP-32 account and offers that account's unified full viewing key as text and QR.
-2. **Fund.** The payer enters USD amounts and invoice references. On the Fund step the web app asks 1Click for a quote and deposit address, then sends USDC from the payer's connected wallet with chain and amount pre-filled. The ZEC that arrives in the treasury (account 0) is measured by scanning, and funded USD divided by that ZEC is the run's fill rate.
+2. **Fund.** The payer enters USD amounts and invoice references. On the Fund step they choose. Fund with ZEC: the service shows the treasury address (QR and copy) and the ZEC to send (the payroll at the market rate, a fee reserve and a 2 percent buffer); when the treasury's confirmed balance covers the run, the market rate of that block becomes the run's USD basis (ADR-025), and nothing shows on any public chain. Fund with USDC: the web app asks 1Click for a quote and deposit address, then sends USDC from the payer's connected wallet with chain and amount pre-filled; the ZEC that arrives in the treasury (account 0) is measured by scanning, and funded USD divided by that ZEC is the run's fill rate.
 3. **Pay.** One allocation transaction moves each line's ZEC plus its fee from the treasury into that contractor's account (memo `PS1A`, plus a `PS1R` funding record on the treasury's change, readable only with the treasury key). Then each contractor account sends one shielded payment to its contractor with memo `PS1|run|period|invoice|usd_cents|rate`. Every transaction is stored and its txid persisted before broadcast, so a crash never pays twice.
 4. **State.** The contractor pastes their key and gets a statement: date, ZEC, USD basis, rate, invoice, txid, height, running totals. The accountant loads every key and gets a reconciliation per run: funded USD against paid USD, with the variance explained by network fees and unspent ZEC at the fill rate. Anything without a Payslip memo is listed as unlabelled, never dropped.
 
@@ -157,7 +157,7 @@ On testnet there is no USDC venue (1Click has no testnet), so a clearly labelled
 1. Fill in `scripts/demo/mainnet.env` from `scripts/demo/mainnet.env.example`, including a new `PAYSLIP_SEED_PASSPHRASE` (on mainnet the script refuses to reuse the testnet one in `service/.env`), and `scripts/demo/contractors.mainnet.json` from `scripts/demo/contractors.mainnet.example.json`.
 2. Stop any testnet service on 127.0.0.1:8080 (the web app's Fund step talks to the service there), then run `scripts/mainnet-demo.sh scripts/demo/mainnet.env`. It creates the encrypted seed in `service/data/mainnet/`, onboards the contractors, creates the run and asks before funding: answer no for now.
 3. **Back up before funding.** Copy `service/data/mainnet/payer.seed.age` (and `dev-contractors.seed.age` when using generated demo wallets) off this machine, and keep the passphrase separately, for example in a password manager. `init` shows no recovery phrase: the encrypted file and its passphrase together are the only way back to the treasury.
-4. Run it again with `--yes` and deposit the USDC it asks for from the web app's Fund step.
+4. Run it again with `--yes`. With `DEMO_FUNDING=zec` in the config it prints the treasury address and the ZEC to send; send that amount shielded from any Zcash wallet and the script waits for it to confirm. Otherwise deposit the USDC it asks for from the web app's Fund step.
 
 The full runbook is in [docs/DEMO.md](docs/DEMO.md).
 
@@ -179,7 +179,7 @@ By default there is no login: the console is open on the payer's own machine, wh
    BETTER_AUTH_SECRET=<openssl rand -base64 32>
    GOOGLE_CLIENT_ID=<from step 1.5>
    GOOGLE_CLIENT_SECRET=<from step 1.5>
-   PAYSLIP_API_URL=http://127.0.0.1:8080             # where the service listens, reached by the web server only
+   PAYSLIP_API_INTERNAL_URL=http://127.0.0.1:8080    # where the web server reaches the service (the proxy and server renders)
    PAYSLIP_GOOGLE_WORKSPACE_DOMAIN=example.com       # optional: only this Google Workspace domain may sign in
    ```
 
@@ -194,6 +194,9 @@ By default there is no login: the console is open on the payer's own machine, wh
 4. Start both. Open the web address, sign in with the bootstrap email: that creates the organisation and makes you its admin. Under **Settings** name the organisation and set a logo; under **Invitations** make a link for each colleague and send it to them yourself (no email is sent); they sign in with that Google account and open the link. **Members** shows everyone and lets an admin change roles; **Audit log** shows who did what.
 
 The service keeps only public keys and token hashes, never a Google secret or a session; the browser never holds a token (the web app's `/api/svc` proxy attaches it). With sign-in off nothing above exists, and the "Viewing as" demo switcher stays.
+## Hosting
+
+`deploy/` has everything for a hosted Payslip: container images for the service and the web app, a compose file that runs the public statements page (`books`: statements-only service, no seed) and the company console (`app`: full service, behind basic auth) on one host, and scripts that create and remove the AWS resources (one EC2 instance behind two CloudFront distributions, encrypted backups to S3). The runbook from a fresh AWS account to a working statements page with the judge kit, with update, rollback and restore, is [deploy/README.md](deploy/README.md).
 
 ## Tests
 
@@ -231,7 +234,7 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
 | M5 Web dashboards | done, redesigned with layout conventions informed by Mercury's banking app and Payslip's own mark, colour and components (docs/DESIGN.md section 15), verified on testnet |
-| M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; needs the USDC deposit |
+| M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; Fund with ZEC built (ADR-025); needs the ZEC (or USDC) deposit |
 | M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account, and a hosting account for the public statements page |
 
 ## How it is judged (Rules §8 and FAQ)

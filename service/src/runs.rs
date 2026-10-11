@@ -23,15 +23,59 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
-    config::{Config, ZcashNetwork},
+    config::{Config, VenueKind, ZcashNetwork},
     db::{self, LineRow, Pool, RunRow},
     error::ApiError,
     memo::{AllocationMemo, PayLineMemo, PayslipMemo, Period, RunFundingMemo},
     money,
     payer::{Payer, TREASURY_INDEX},
-    venue::{Funding, QuoteRequest, SwapVenue, VenueError},
+    prices::MarketRate,
+    venue::{Funding, QuoteRequest, SwapVenue, TreasuryVenue, VenueError},
     wallet::SpendError,
 };
+
+mod zec_funding;
+
+/// How a run is funded (`POST /api/runs/{id}/fund`, `method`): a USDC deposit swapped by the
+/// configured venue (the default, and on testnet the fixed-rate venue), or ZEC sent to the
+/// treasury (ADR-025).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FundMethod {
+    #[default]
+    Usdc,
+    Zec,
+}
+
+impl FundMethod {
+    pub fn parse(s: Option<&str>) -> Result<Self, ApiError> {
+        match s.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
+            None | Some("") | Some("usdc") => Ok(FundMethod::Usdc),
+            Some("zec") => Ok(FundMethod::Zec),
+            Some(other) => Err(ApiError::bad_request(
+                "invalid_method",
+                format!("{other:?} is not a funding method."),
+                "Send \"method\": \"zec\" to fund with ZEC sent to the treasury, or \"usdc\" (the default) for a USDC deposit.",
+            )),
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FundMethod::Usdc => "usdc",
+            FundMethod::Zec => "zec",
+        }
+    }
+}
+
+/// A funding request from the API.
+#[derive(Clone, Debug, Default)]
+pub struct FundRequest {
+    pub method: FundMethod,
+    /// USDC only: the chain the deposit comes from (default base).
+    pub origin_chain: Option<String>,
+    /// USDC only: where the venue refunds a swap it cannot complete.
+    pub refund_address: Option<String>,
+}
 
 /// ZIP-317 fee of one pay line transaction: one note in, one output (padded to two actions).
 /// Verified on testnet: a one-input, one-output Ironwood transaction paid 10,000 zat.
@@ -397,7 +441,12 @@ struct Inner {
     network: ZcashNetwork,
     db: Pool,
     chain: Arc<dyn ChainOps>,
+    /// The configured USDC venue (`PAYSLIP_SWAP_VENUE`), behind `method: "usdc"`.
     venue: Arc<dyn SwapVenue>,
+    /// Fund with ZEC (ADR-025), behind `method: "zec"` on every network.
+    treasury: Arc<TreasuryVenue>,
+    /// PAYSLIP_MAX_RUN_USD_CENTS: a run's payroll above it is refused at funding.
+    run_cap: Option<u64>,
     running: Mutex<HashSet<String>>,
     changes: broadcast::Sender<String>,
     poll: Duration,
@@ -464,15 +513,17 @@ impl Drop for RunningGuard {
 }
 
 impl Executor {
-    pub fn new(cfg: Config, db: Pool, payer: Payer, venue: Arc<dyn SwapVenue>) -> Self {
+    pub fn new(cfg: Config, db: Pool, payer: Payer, venue: Arc<dyn SwapVenue>, rates: Arc<dyn MarketRate>) -> Self {
         Self::with_chain(
             cfg.network,
             db,
             Arc::new(PayerChain(payer)),
             venue,
+            Arc::new(TreasuryVenue::new(rates)),
             Duration::from_secs(10),
             cfg.min_confirmations,
         )
+        .with_run_cap(cfg.max_run_usd_cents)
     }
 
     pub fn with_chain(
@@ -480,6 +531,7 @@ impl Executor {
         db: Pool,
         chain: Arc<dyn ChainOps>,
         venue: Arc<dyn SwapVenue>,
+        treasury: Arc<TreasuryVenue>,
         poll: Duration,
         confirm_depth: u32,
     ) -> Self {
@@ -490,6 +542,8 @@ impl Executor {
                 db,
                 chain,
                 venue,
+                treasury,
+                run_cap: None,
                 running: Mutex::new(HashSet::new()),
                 changes,
                 poll,
@@ -500,6 +554,14 @@ impl Executor {
                 block_time_retry_at: Mutex::new(None),
             }),
         }
+    }
+
+    /// Refuses to fund a run whose payroll is above `cap` cents (PAYSLIP_MAX_RUN_USD_CENTS).
+    pub fn with_run_cap(mut self, cap: Option<u64>) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("with_run_cap is called right after with_chain, before the executor is shared")
+            .run_cap = cap;
+        self
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
@@ -601,22 +663,47 @@ impl Executor {
         }
     }
 
-    /// Requests funding from the venue. Valid in `draft`, and again for a run that received no
-    /// money (no fill, no allocation) once its quote is closed: expired (including a deposit
-    /// window past its deadline), refunded or failed. A quote whose deposit address is still
-    /// open, or whose deposit is on its way, is never replaced: a deposit already sent to it
-    /// would then be tracked by no run.
+    /// Requests funding from the configured USDC venue (`method: "usdc"`, the default). See
+    /// [`Executor::fund_with`].
     pub async fn fund(
         &self,
         run_id: &str,
         origin_chain: Option<String>,
         refund_address: Option<String>,
     ) -> Result<(), ApiError> {
+        self.fund_with(
+            run_id,
+            FundRequest {
+                method: FundMethod::Usdc,
+                origin_chain,
+                refund_address,
+            },
+        )
+        .await
+    }
+
+    /// Requests funding. Valid in `draft`, and again for a run that received no money (no fill,
+    /// no allocation) once its funding is closed: expired (including a deposit window past its
+    /// deadline), refunded or failed. A USDC quote whose deposit address is still open, or whose
+    /// deposit is on its way, is never replaced: a deposit already sent to it would then be
+    /// tracked by no run. A Fund with ZEC request may be replaced at any time before the run is
+    /// funded: ZEC sent to the treasury stays there and counts toward the next request.
+    pub async fn fund_with(&self, run_id: &str, req: FundRequest) -> Result<(), ApiError> {
         let db = &self.inner.db;
         let run = db::get_run(db, run_id)
             .await?
             .ok_or_else(|| ApiError::not_found("Run"))?;
-        let testnet = self.inner.venue.kind() == crate::config::VenueKind::TestnetFixedRate;
+        let zec = req.method == FundMethod::Zec;
+        // The testnet venue funds at once from the treasury's own balance; a run it funded is
+        // not funded again.
+        let testnet = !zec && self.inner.venue.kind() == VenueKind::TestnetFixedRate;
+        let funding = run
+            .venue_state
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Funding>(s).ok());
+        let set_aside = funding
+            .as_ref()
+            .is_some_and(|f| f.venue == VenueKind::TestnetFixedRate.as_str() || Self::is_treasury(f));
         match run.status.as_str() {
             "draft" => {}
             "cancelled" => {
@@ -631,17 +718,11 @@ impl Executor {
                 if run.funding_amount.is_none()
                     && run.zec_acquired.is_none()
                     && run.allocation_txid.is_none()
-                    && !(testnet && run.status == "funded") =>
+                    && !(set_aside && run.status == "funded") =>
             {
-                if let Some(f) = run
-                    .venue_state
-                    .as_deref()
-                    .and_then(|s| serde_json::from_str::<Funding>(s).ok())
-                {
-                    if !testnet {
-                        let g = self.current_funding(run_id, &f).await?;
-                        self.requote_allowed(&g)?;
-                    }
+                if let Some(f) = &funding {
+                    let g = self.current_funding(run_id, f).await?;
+                    self.requote_allowed(&g)?;
                 }
             }
             "awaiting_funds" | "failed" => {
@@ -672,13 +753,67 @@ impl Executor {
             ));
         }
         let total: u64 = lines.iter().map(|l| l.amount_usd_basis as u64).sum();
+        if let Some(cap) = self.inner.run_cap {
+            if total > cap {
+                return Err(run_over_cap(total, cap));
+            }
+        }
         let converting = lines.iter().filter(|l| converts(l)).count();
+        let recipient = self.inner.chain.account_address(TREASURY_INDEX).await?;
+        if zec {
+            let quote = self
+                .inner
+                .treasury
+                .quote(&QuoteRequest {
+                    usd_cents: total,
+                    origin_chain: "zcash".into(),
+                    refund_address: None,
+                    recipient,
+                    reserve_zat: fee_estimate_zat(lines.len(), converting),
+                })
+                .await
+                .map_err(price_api_error)?;
+            db::set_venue(
+                db,
+                run_id,
+                &quote.venue,
+                &serde_json::to_value(&quote).map_err(anyhow::Error::from)?,
+            )
+            .await?;
+            db::fix_line_payouts(db, run_id).await?;
+            db::set_execute_requested(db, run_id, false).await?;
+            db::transition(
+                db,
+                run_id,
+                &["draft", "awaiting_funds", "failed", "funded"],
+                "awaiting_funds",
+            )
+            .await?;
+            self.log(
+                run_id,
+                format!(
+                    "Fund with ZEC: send {} ZEC to the treasury address {} before {} (1 ZEC = {} USD)",
+                    quote.amount_in,
+                    quote.treasury_address.clone().unwrap_or_default(),
+                    quote.deadline.clone().unwrap_or_default(),
+                    money::format_rate(quote.quote_rate_e6)
+                ),
+            )
+            .await;
+            // A treasury that already covers the run funds it now; otherwise the answer shows
+            // what has arrived so far. A chain that does not answer leaves the request as is.
+            if let Some(run) = db::get_run(db, run_id).await? {
+                if let Err(e) = self.watch_treasury(&run, &quote, false).await {
+                    tracing::warn!(run = run_id, "could not read the treasury balance: {e:#}");
+                }
+            }
+            return Ok(());
+        }
         let indicative = match self.inner.venue.indicative_rate_e6().await {
             Ok(r) => r,
             Err(e) => return Err(venue_api_error(e)),
         };
         let request_cents = funding_request_cents(total, lines.len(), converting, indicative);
-        let recipient = self.inner.chain.account_address(TREASURY_INDEX).await?;
         if testnet {
             let need = money::usd_cents_to_zat(request_cents, indicative).unwrap_or(u64::MAX);
             self.inner.chain.sync().await.map_err(ApiError::from)?;
@@ -696,9 +831,10 @@ impl Executor {
             .venue
             .quote(&QuoteRequest {
                 usd_cents: request_cents,
-                origin_chain: origin_chain.unwrap_or_else(|| "base".into()),
-                refund_address,
+                origin_chain: req.origin_chain.unwrap_or_else(|| "base".into()),
+                refund_address: req.refund_address,
                 recipient,
+                reserve_zat: fee_estimate_zat(lines.len(), converting),
             })
             .await
             .map_err(venue_api_error)?;
@@ -736,10 +872,16 @@ impl Executor {
         Ok(())
     }
 
-    /// Asks the venue where a run's quote stands now (deadline applied) and stores it.
+    /// Where a run's funding stands now (deadline applied), stored: the venue's answer for a
+    /// USDC quote; for a Fund with ZEC request, the record as it is, expired past its deadline
+    /// (the treasury balance is read by [`Executor::watch_treasury`], not here).
     async fn current_funding(&self, run_id: &str, f: &Funding) -> Result<Funding, ApiError> {
-        let g = self.inner.venue.status(f).await.map_err(venue_api_error)?;
-        let g = apply_deadline(g, OffsetDateTime::now_utc());
+        let g = if Self::is_treasury(f) {
+            zec_funding::apply_zec_deadline(f.clone(), OffsetDateTime::now_utc())
+        } else {
+            let g = self.inner.venue.status(f).await.map_err(venue_api_error)?;
+            apply_deadline(g, OffsetDateTime::now_utc())
+        };
         if &g != f {
             db::set_venue(
                 &self.inner.db,
@@ -754,9 +896,10 @@ impl Executor {
     }
 
     /// Whether a quote in state `f` may be replaced (or the run cancelled): only once no money
-    /// can still reach the treasury through it.
+    /// can still reach the treasury through it. A Fund with ZEC request may always be replaced:
+    /// ZEC sent to the treasury stays there, as balance the next request counts.
     fn requote_allowed(&self, f: &Funding) -> Result<(), ApiError> {
-        if funding_closed(&f.status) {
+        if funding_closed(&f.status) || Self::is_treasury(f) {
             return Ok(());
         }
         Err(match f.status.as_str() {
@@ -809,9 +952,10 @@ impl Executor {
             .as_deref()
             .and_then(|s| serde_json::from_str::<Funding>(s).ok())
         {
-            // The testnet venue moves nothing: its "success" is the treasury's own balance. An
-            // open deposit address may be abandoned; a deposit the venue already holds may not.
-            if f.venue != crate::config::VenueKind::TestnetFixedRate.as_str() {
+            // The testnet venue moves nothing: its "success" is the treasury's own balance, and
+            // ZEC sent for a Fund with ZEC request stays in the treasury either way. An open
+            // USDC deposit address may be abandoned; a deposit the venue already holds may not.
+            if f.venue != VenueKind::TestnetFixedRate.as_str() && !Self::is_treasury(&f) {
                 let g = self.current_funding(run_id, &f).await?;
                 if g.status != "awaiting_deposit" {
                     self.requote_allowed(&g)?;
@@ -827,8 +971,10 @@ impl Executor {
         }
         self.log(
             run_id,
-            if run.status == "awaiting_funds" {
+            if run.status == "awaiting_funds" && !Self::is_treasury_run(&run) {
                 "Run cancelled by the payer. A deposit sent to its old address after this still reaches the treasury as unassigned balance."
+            } else if run.status == "awaiting_funds" {
+                "Run cancelled by the payer. ZEC sent to the treasury for it stays there as balance for the next run."
             } else {
                 "Run cancelled by the payer"
             },
@@ -837,7 +983,8 @@ impl Executor {
         Ok(())
     }
 
-    /// Polls the venue once and stores the result.
+    /// Polls the venue once and stores the result. For a Fund with ZEC request, reads the
+    /// treasury balance instead and funds the run when it covers it.
     pub async fn refresh_funding(&self, run_id: &str) -> Result<(), ApiError> {
         let db = &self.inner.db;
         let run = db::get_run(db, run_id)
@@ -854,6 +1001,12 @@ impl Executor {
                 "Fund the run first.",
             ));
         };
+        if Self::is_treasury(&f) {
+            if run.status == "awaiting_funds" {
+                self.watch_treasury(&run, &f, false).await.map_err(ApiError::from)?;
+            }
+            return Ok(());
+        }
         if matches!(run.status.as_str(), "awaiting_funds" | "funded" | "swapping") {
             let g = self.inner.venue.status(&f).await.map_err(venue_api_error)?;
             // Past the deadline the deposit address is dead: say so instead of offering it.
@@ -914,8 +1067,7 @@ impl Executor {
             ));
         }
         let g = self
-            .inner
-            .venue
+            .venue_of(&f)
             .submit_deposit(&f, tx_hash)
             .await
             .map_err(venue_api_error)?;
@@ -1095,6 +1247,9 @@ impl Executor {
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
             .ok_or_else(|| permanent("not_funded", "The run has no funding request.", "Fund the run first."))?;
+        if Self::is_treasury(&f) {
+            return self.step_zec_funding(run, &f).await;
+        }
         let f = match self.inner.venue.status(&f).await {
             Ok(g) => {
                 let g = apply_deadline(g, OffsetDateTime::now_utc());
@@ -1154,17 +1309,28 @@ impl Executor {
     }
 
     /// The venue filled: measure the ZEC that actually arrived, fix the rate and line amounts.
+    /// The testnet venue and a Fund with ZEC request fixed their figures when they funded the
+    /// run; those are recorded as they are.
     async fn record_fill(&self, run: &RunRow, f: &Funding) -> Result<Outcome, StepError> {
         let db = &self.inner.db;
         let chain = &self.inner.chain;
+        let treasury = Self::is_treasury(f);
         if db::transition(db, &run.id, &["awaiting_funds", "funded"], "swapping").await? {
-            self.log(&run.id, "Venue reports the swap complete").await;
+            self.log(
+                &run.id,
+                if treasury {
+                    "Treasury balance covers the run; recording the funding"
+                } else {
+                    "Venue reports the swap complete"
+                },
+            )
+            .await;
         }
         // The run may have been cancelled meanwhile; the next step reads its status again.
         if db::get_run(db, &run.id).await?.map(|r| r.status).as_deref() != Some("swapping") {
             return Ok(Outcome::Continue);
         }
-        let testnet = f.venue == crate::config::VenueKind::TestnetFixedRate.as_str();
+        let testnet = f.venue == VenueKind::TestnetFixedRate.as_str() || treasury;
         let (funded_cents, acquired) = if testnet {
             (
                 f.funded_usd_cents.unwrap_or(f.requested_usd_cents),
@@ -1191,7 +1357,8 @@ impl Executor {
                 "Check the venue's status page for this deposit, then execute the run again.",
             )
         })?;
-        // The testnet venue's contract is a fixed rate: record it exactly, not the rounded ratio.
+        // The testnet venue's contract is a fixed rate, and a Fund with ZEC request fixed the
+        // market rate of its funding block: record it exactly, not the rounded ratio.
         let rate = if testnet {
             f.rate_usd_per_zec_e6.unwrap_or(fill)
         } else {
@@ -1814,6 +1981,31 @@ fn venue_api_error(e: VenueError) -> ApiError {
             "Retry in a minute. If it persists, check the venue's status page.",
         ),
     }
+}
+
+/// The treasury venue's only outside dependency is the market price.
+fn price_api_error(e: VenueError) -> ApiError {
+    match e {
+        VenueError::Rejected { code, message, hint } => ApiError::bad_request(code, message, hint),
+        VenueError::Unavailable(m) => ApiError::unavailable(
+            "price_unavailable",
+            format!("The ZEC market price is not available: {m}"),
+            "Try again in a minute, or fund the run with USDC.",
+        ),
+    }
+}
+
+/// PAYSLIP_MAX_RUN_USD_CENTS: the run's payroll is over the cap.
+pub fn run_over_cap(total_usd_cents: u64, cap_usd_cents: u64) -> ApiError {
+    ApiError::bad_request(
+        "run_over_cap",
+        format!(
+            "This run's payroll of {} USD is over the cap of {} USD per run.",
+            money::format_usd(total_usd_cents),
+            money::format_usd(cap_usd_cents)
+        ),
+        "Split the payroll into smaller runs, or raise PAYSLIP_MAX_RUN_USD_CENTS on the service.",
+    )
 }
 
 const MIN_YEAR: i32 = 2000;

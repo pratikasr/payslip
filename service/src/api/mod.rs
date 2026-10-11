@@ -44,8 +44,9 @@ pub struct AppState {
     pub lwd: tokio::sync::Mutex<crate::wallet::lwd::Client>,
     /// The last wallet snapshot, served by health while the wallet thread is busy syncing.
     pub last_wallet: std::sync::Mutex<Option<WalletInfo>>,
-    /// ZEC market prices for the value of a payment at receipt.
-    pub prices: crate::prices::Prices,
+    /// ZEC market prices for the value of a payment at receipt, and the rate a run funded with
+    /// ZEC is recorded at (shared with the executor).
+    pub prices: Arc<crate::prices::Prices>,
     /// Chain scans are the expensive requests; at most this many run at once.
     pub scan_slots: tokio::sync::Semaphore,
     /// Open run progress streams (SSE); each holds a connection until the client leaves.
@@ -122,15 +123,18 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         None => db::set_setting(&db, "network", cfg.network.as_str()).await?,
     }
     let venue = venue::build(&cfg)?;
+    let prices = Arc::new(crate::prices::Prices::new(
+        cfg.price_api_url.clone(),
+        cfg.price_api_key.clone(),
+    ));
     let (payer, executor) = if cfg.statements_only {
         (None, None)
     } else {
         let payer = Payer::open(&cfg).await.context("opening the payer wallet")?;
-        let executor = Executor::new(cfg.clone(), db.clone(), payer.clone(), venue.clone());
+        let executor = Executor::new(cfg.clone(), db.clone(), payer.clone(), venue.clone(), prices.clone());
         (Some(payer), Some(executor))
     };
     let lightwalletd_url = cfg.lightwalletd_url.clone();
-    let prices = crate::prices::Prices::new(cfg.price_api_url.clone(), cfg.price_api_key.clone());
     let auth = cfg
         .auth
         .required()
@@ -449,6 +453,10 @@ struct Health {
     simulated_rate_usd_per_zec: Option<f64>,
     /// off, or required: payer routes need a signed-in member (ADR-026).
     auth: &'static str,
+    /// Whether `POST /api/runs/{id}/fund` accepts `method: "zec"` (ADR-025): true in full mode.
+    fund_with_zec: bool,
+    /// PAYSLIP_MAX_RUN_USD_CENTS, the largest payroll one run may carry; None when no cap.
+    max_run_usd_cents: Option<u64>,
 }
 
 /// Skew beyond which the server clock is reported as wrong (block times lag by minutes).
@@ -525,6 +533,8 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         market_prices: s.prices.enabled(),
         simulated_rate_usd_per_zec: s.cfg.simulated_rate_usd_per_zec(),
         auth: s.cfg.auth.mode.as_str(),
+        fund_with_zec: s.cfg.fund_with_zec(),
+        max_run_usd_cents: s.cfg.max_run_usd_cents,
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,
         clock_skew_seconds: skew,

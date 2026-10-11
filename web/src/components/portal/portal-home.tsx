@@ -13,9 +13,11 @@ import { firstName, monthDay, newestFirst, payslipHref } from "@/components/port
 import { usePersonName, usePortal } from "@/components/portal/portal-provider";
 import { RowsSkeleton, ScanProgress, SettlementTag, SimulatedRate } from "@/components/portal/portal-states";
 import { ShareProofDialog } from "@/components/portal/share-proof-dialog";
+import { useSampleCompany } from "@/components/shell/sample-tag";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Statement, StatementLine } from "@/lib/api";
+import { SAMPLE_COMPANY_LINE, companyMark, companyName } from "@/lib/company";
 import { formatPeriodLabel, formatUsd } from "@/lib/format";
 import { cn } from "cn";
 
@@ -46,6 +48,31 @@ export function PortalHome() {
     );
   }
   return <HomeBody statement={s} />;
+}
+
+/**
+ * Who paid: the company under the welcome, with its mark, and on testnet the line that says the
+ * company is a sample. The Treasury key is the company's own, so it gets no "paid to you".
+ */
+function PaidBy({ treasury }: { treasury: boolean }) {
+  const sample = useSampleCompany();
+  const Mark = companyMark();
+  if (treasury && !sample) return null;
+  return (
+    <>
+      {treasury ? null : (
+        <span className="flex items-center gap-1.5" data-testid="portal-paid-by">
+          <Mark className="size-4 shrink-0 text-foreground" />
+          <span>Paid to you by {companyName()}</span>
+        </span>
+      )}
+      {sample ? (
+        <span className="block text-[0.8125rem]" data-testid="portal-sample-line">
+          {SAMPLE_COMPANY_LINE}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 function Scope() {
@@ -97,7 +124,10 @@ function HomeBody({ statement: s }: { statement: Statement }) {
   const last = latestPaid(s.lines);
   return (
     <>
-      <PageTitle title={first ? `Welcome, ${first}` : "Welcome"} />
+      <PageTitle
+        title={first ? `Welcome, ${first}` : "Welcome"}
+        description={<PaidBy treasury={s.account.role === "treasury"} />}
+      />
       {s.account.role === "treasury" ? <TreasuryKeyNote /> : <Scope />}
       {recent.error ? <ErrorState error={recent.error} onRetry={reload} className="mb-5" /> : null}
       {recent.loading ? (

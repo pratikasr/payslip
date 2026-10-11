@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import Link from "next/link";
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
+import { cn } from "cn";
 import { DemoLink } from "@/components/marketing/demo-link";
+import { goldPill } from "@/components/marketing/classes";
 
 export interface NavLink {
   href: string;
@@ -12,9 +13,9 @@ export interface NavLink {
 }
 
 /**
- * The phone menu (below 768px): a button that drops a glass panel under the bar with the page's
- * sections and both calls to action. Escape, a tap outside or choosing a link closes it, and
- * focus returns to the button on Escape.
+ * The menu below 1024px: a button that drops a panel under the bar with the page's sections and
+ * the demo. Escape, a tap outside or choosing a link closes it, and focus returns to the button
+ * on Escape.
  */
 export function MobileMenu({ links }: { links: NavLink[] }) {
   const [open, setOpen] = useState(false);
@@ -33,7 +34,7 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
     const onPointer = (e: PointerEvent) => {
       if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
     };
-    const wide = window.matchMedia("(min-width: 768px)");
+    const wide = window.matchMedia("(min-width: 1024px)");
     const onWide = () => {
       if (wide.matches) setOpen(false);
     };
@@ -50,66 +51,46 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
   const close = () => setOpen(false);
 
   return (
-    <div ref={root} className="md:hidden">
+    <div ref={root} className="lg:hidden">
       <button
         ref={button}
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="inline-grid size-10 place-items-center rounded-full text-[#ededf3] transition-colors hover:bg-white/10"
+        className="-mr-2 inline-grid size-11 place-items-center rounded-full text-ink transition-colors hover:bg-mist"
       >
-        {open ? <X className="size-5" aria-hidden="true" /> : <Menu className="size-5" aria-hidden="true" />}
+        {open ? (
+          <X className="size-5" strokeWidth={1.5} aria-hidden="true" />
+        ) : (
+          <Menu className="size-5" strokeWidth={1.5} aria-hidden="true" />
+        )}
         <span className="sr-only">Menu</span>
       </button>
 
       <div
         id={panelId}
         hidden={!open}
-        className="absolute inset-x-3 top-[64px] z-40 rounded-2xl border border-white/10 bg-[rgba(23,23,33,0.94)] p-2 text-[#ededf3] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.7)] backdrop-blur-xl"
+        className="absolute inset-x-0 top-16 z-40 border-b border-mist bg-paper px-4 pt-2 pb-5 md:px-8"
       >
         <nav aria-label="Main">
           <ul>
             {links.map((l) => (
-              <li key={l.href}>
-                {l.external ? (
-                  <a
-                    href={l.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={close}
-                    className="flex h-12 items-center justify-between rounded-xl px-4 text-[17px] hover:bg-white/[0.06]"
-                  >
-                    {l.label}
-                    <ArrowUpRight className="size-4 text-[#a6a6b2]" aria-hidden="true" />
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                ) : (
-                  <a
-                    href={l.href}
-                    onClick={close}
-                    className="flex h-12 items-center rounded-xl px-4 text-[17px] hover:bg-white/[0.06]"
-                  >
-                    {l.label}
-                  </a>
-                )}
+              <li key={l.href} className="border-b border-mist">
+                <a
+                  href={l.href}
+                  onClick={close}
+                  {...(l.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                  className="flex h-13 items-center rounded-[3px] text-[17px] text-ink"
+                >
+                  {l.label}
+                  {l.external ? <span className="sr-only"> (opens in a new tab)</span> : null}
+                </a>
               </li>
             ))}
           </ul>
         </nav>
-        <div className="mt-2 grid gap-2 border-t border-white/10 p-2 pt-4">
-          <DemoLink
-            onClick={close}
-            className="inline-flex h-11 items-center justify-center rounded-full bg-primary text-[15px] font-medium text-primary-foreground"
-          />
-          <Link
-            href="/verify"
-            onClick={close}
-            className="inline-flex h-11 items-center justify-center rounded-full border border-white/20 text-[15px] text-[#ededf3] hover:bg-white/10"
-          >
-            Check a payslip
-          </Link>
-        </div>
+        <DemoLink onClick={close} className={cn(goldPill, "mt-5 w-full sm:w-auto")} />
       </div>
     </div>
   );

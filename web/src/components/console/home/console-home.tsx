@@ -9,10 +9,12 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card, CardHeader } from "@/components/ds/card";
 import { ActionRow, PageTitle } from "@/components/ds/page";
+import { SampleTag } from "@/components/shell/sample-tag";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
 import { api, UNREACHABLE_CODE, type Contractor, type Run, type Wallet } from "@/lib/api";
+import { companyName } from "@/lib/company";
 import { formatCount } from "@/lib/format";
 import { cn } from "cn";
 import { ExportMenu } from "@/components/console/home/export-menu";
@@ -68,18 +70,25 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
   const returning = !!runs.data?.some((r) => r.status === "paid");
   // With sign-in on, the quick actions follow the role; the service refuses the rest anyway.
   const auth = useAuth();
+  // The title is the employer, as a payroll product shows it; the welcome moves to the quieter line.
+  const welcome = returning || stage === "unknown" ? "Welcome back." : "Welcome to Payslip.";
+  const hint =
+    stage === "add-people"
+      ? " Private payroll on Zcash. Start with the people you pay."
+      : stage === "fund"
+        ? " Your people are in. Put testnet coins in the treasury, then run payroll."
+        : "";
 
   return (
     <>
       <PageTitle
-        title={returning || stage === "unknown" ? "Welcome back" : "Welcome to Payslip"}
-        description={
-          stage === "add-people"
-            ? "Private payroll on Zcash. Start with the people you pay."
-            : stage === "fund"
-              ? "Your people are in. Put testnet coins in the treasury, then run payroll."
-              : undefined
+        title={
+          <span className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="min-w-0 break-words">{companyName()}</span>
+            <SampleTag className="translate-y-px" />
+          </span>
         }
+        description={welcome + hint}
         className="mb-[18px]"
       />
       {/* One gold action: the next step for this company. Actions that cannot work yet are hidden. */}
@@ -193,7 +202,7 @@ function GetStarted({ wallet, contractors, runs }: { wallet?: Wallet; contractor
       title: "Fund the treasury",
       detail:
         network === "mainnet" ? (
-          "Each run is funded with USDC when you approve it"
+          "Each run is funded when you approve it, with ZEC sent to the treasury or with USDC"
         ) : wallet ? (
           funded ? (
             <>

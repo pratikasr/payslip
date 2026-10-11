@@ -73,7 +73,7 @@ async function proxy(req: Request, ctx: { params: Promise<{ path: string[] }> })
       502,
       "service_unreachable",
       "The Payslip service is not answering.",
-      "Start it with: cd service && cargo run. If it is running, check PAYSLIP_API_URL on the web app.",
+      "Start it with: cd service && cargo run. If it is running, check PAYSLIP_API_INTERNAL_URL on the web app.",
     );
   }
   const out = new Headers();

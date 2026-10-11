@@ -16,12 +16,12 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
-import { LogoMark } from "@/components/app/logo";
 import { NetworkBadge } from "@/components/app/network-badge";
 import { useAuth } from "@/components/auth/auth-provider";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Initials } from "@/components/ds/avatar";
 import { AppShell, Bookmark, SidebarBrand, type NavItem, type ShellConfig } from "@/components/shell/app-shell";
+import { SampleTag, useSampleCompany } from "@/components/shell/sample-tag";
 import { Button } from "@/components/ui/button";
 import { useResource } from "@/hooks/use-resource";
 import { api, type Run } from "@/lib/api";
@@ -29,6 +29,7 @@ import { Usd, Zec } from "@/components/app/amount";
 import { latestFillRate, runStateLabel, zatToCents } from "@/components/console/lib";
 import { ConsoleSearch } from "@/components/console/search";
 import { plural, runTitle } from "@/components/runs/run-meta";
+import { companyMark, companyName } from "@/lib/company";
 import { networkLabel } from "@/lib/format";
 import { isCancelled, latestPeriodFirst } from "@/lib/payroll";
 import { roleLabel } from "@/lib/roles";
@@ -38,14 +39,18 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { network } = useHealth();
   const auth = useAuth();
+  const Mark = companyMark();
+  const sample = useSampleCompany();
   const wallet = useResource((s) => api.wallet(s), "shell-wallet");
   const runs = useResource((s) => api.runs(s), "shell-runs");
   // The bookmark is the latest pay period's run (cancelled ones are closed and skipped).
   const latest = runs.data ? latestPeriodFirst(runs.data.filter((r) => !isCancelled(r)))[0] : undefined;
   const open = runs.data?.filter((r) => !["paid", "failed", "cancelled"].includes(r.status)).length ?? 0;
+  // With sign-in on, the organisation an admin named under Settings takes the brand's place;
+  // otherwise the company from NEXT_PUBLIC_PAYSLIP_COMPANY_NAME (lib/company.ts).
   const org = auth.me?.membership?.org;
-  // With sign-in on, the organisation's own pages: members and invitations for everyone to see
-  // who is in, settings for admins, the audit log for admins and accountants.
+  // With sign-in on, the organisation's own pages: members for everyone to see who is in,
+  // invitations and settings for admins, the audit log for admins and accountants.
   const orgNav: NavItem[] = auth.required
     ? [
         { href: "/console/members", label: "Members", icon: UsersRound },
@@ -55,6 +60,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
       ]
     : [];
   const config: ShellConfig = {
+    // The employer, as a payroll product shows it; the chip is the network, the tag says the data is sample.
     brand: (
       <SidebarBrand
         mark={
@@ -63,11 +69,12 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src={org.logo_url} alt="" className="size-[22px] shrink-0 rounded-[5px] object-cover" />
           ) : (
-            <LogoMark className="size-[22px]" />
+            <Mark className="size-[22px]" />
           )
         }
-        name={org?.name || "Payslip"}
+        name={org?.name || companyName()}
         chip={network ? networkLabel(network) : undefined}
+        sub={sample ? <SampleTag /> : undefined}
       />
     ),
     segments: [

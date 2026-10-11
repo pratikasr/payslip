@@ -8,7 +8,6 @@ import { ChevronLeft, Download, ExternalLink, Share } from "lucide-react";
 import { Fiat, Rate, Usd, Zec } from "@/components/app/amount";
 import { useCoinUnit } from "@/components/app/health-provider";
 import { CopyButton } from "@/components/app/copy-button";
-import { LogoMark } from "@/components/app/logo";
 import { ErrorState } from "@/components/app/states";
 import { Initials } from "@/components/ds/avatar";
 import { PageTitle } from "@/components/ds/page";
@@ -20,6 +19,7 @@ import { ShareProofDialog } from "@/components/portal/share-proof-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toDisplayError, type ApiError, type CreatedProof, type Statement, type StatementLine } from "@/lib/api";
+import { SAMPLE_COMPANY_LINE, companyMark, companyName, isSampleCompany } from "@/lib/company";
 import {
   formatDate,
   formatDateTime,
@@ -143,6 +143,9 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
   const market = s.network === "mainnet" && line.market ? line.market : null;
   const title = payslipTitle(line);
   const coin = useCoinUnit();
+  const Mark = companyMark();
+  // The statement names its network, so the sample line follows the document, not the service.
+  const sample = isSampleCompany(s.network);
 
   useDocumentTitle(`${title} | Payslip`);
 
@@ -284,12 +287,15 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           className="rounded-xl border bg-card px-5 py-6 text-card-foreground sm:px-10 sm:py-9 print:max-w-none print:rounded-none print:border-0 print:p-0"
         >
           <header className="flex items-start justify-between gap-4 border-b border-hairline pb-5">
-            <div className="flex items-center gap-2.5">
-              <LogoMark className="size-7" />
-              <div>
-                <p className="text-[0.9375rem] font-medium tracking-tight">Payslip</p>
+            {/* The employer first, as on any payslip; the product and the network under it. */}
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Mark className="size-7 shrink-0" />
+              <div className="min-w-0">
+                <p className="text-[0.9375rem] font-medium tracking-tight" data-testid="payslip-paid-by">
+                  Paid by {companyName()}
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Private payroll on Zcash {networkLabel(s.network).toLowerCase()}
+                  Payslip, private payroll on Zcash {networkLabel(s.network).toLowerCase()}
                 </p>
               </div>
             </div>
@@ -341,9 +347,16 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           </dl>
 
           <footer className="border-t border-hairline pt-5 text-xs text-muted-foreground">
-            Read from the Zcash chain with your viewing key on {formatDate(s.generated_at)}, scanned to block{" "}
-            <span className="num">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are hidden on
-            the public chain.
+            <p>
+              Read from the Zcash chain with your viewing key on {formatDate(s.generated_at)}, scanned to block{" "}
+              <span className="num">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are hidden on
+              the public chain.
+            </p>
+            {sample ? (
+              <p className="mt-1.5" data-testid="payslip-sample-line">
+                {SAMPLE_COMPANY_LINE}. Testnet coins have no value.
+              </p>
+            ) : null}
           </footer>
 
           {proof ? (

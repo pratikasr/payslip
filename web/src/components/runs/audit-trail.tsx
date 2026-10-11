@@ -71,6 +71,36 @@ function eventItem(event: LogEvent, at: string, run: Run, testnet: boolean): Omi
           ),
         detail: "The payroll at the simulated rate, plus a reserve for network fees.",
       };
+    case "zec_request":
+      return {
+        ...base,
+        state: "done",
+        title: (
+          <>
+            Fund with ZEC: send <Zec zat={event.zat} /> to the treasury
+          </>
+        ),
+        detail: (
+          <>
+            At <Rate e6={event.rateE6} /> when requested; funded at the rate of the block in which it confirms.
+          </>
+        ),
+      };
+    case "zec_funded":
+      return {
+        ...base,
+        state: "done",
+        title: (
+          <>
+            Funded with <Zec zat={event.zat} /> from the treasury
+          </>
+        ),
+        detail: (
+          <>
+            At <Rate e6={event.rateE6} />, the market rate of block {formatHeight(event.height)}.
+          </>
+        ),
+      };
     case "quote":
       return {
         ...base,
@@ -260,7 +290,13 @@ export function AuditTrail({
           <CardHeader title="Funding" actions={f ? <StatusTag status={fundingTag(f)} /> : undefined} />
           {f ? (
             <dl className="mt-3 text-[0.9375rem]">
-              <Row label="Source">{testnet ? "Testnet treasury" : venueLabel(f.venue)}</Row>
+              <Row label="Source">
+                {testnet
+                  ? "Testnet treasury"
+                  : f.venue === "treasury"
+                    ? "ZEC sent to the treasury"
+                    : venueLabel(f.venue)}
+              </Row>
               {testnet ? (
                 <>
                   <Row label="Payroll">

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+# Payslip web image (Next.js 15, standalone output). Build context: the repository root
+# (deploy/compose.yml sets it); deploy/Dockerfile.web.dockerignore keeps node_modules, .next and
+# .env files out of the context.
+#
+# NEXT_PUBLIC_* values are inlined at build time, so each deployment (books, app) is its own
+# build with its own arguments. Server-only settings (PAYSLIP_API_INTERNAL_URL, PORT, HOSTNAME)
+# are read when the container starts.
+FROM node:22-bookworm-slim AS builder
+ENV NEXT_TELEMETRY_DISABLED=1
+# The exact pnpm the project pins (web/package.json "packageManager").
+RUN npm install -g pnpm@11.3.0
+WORKDIR /app
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm install --frozen-lockfile --store-dir /root/.local/share/pnpm/store
+COPY web/ ./
+# "/" means the page's own origin: the proxy in front sends /api/* to the service (web/src/lib/api.ts).
+ARG NEXT_PUBLIC_PAYSLIP_API_URL=/
+ARG NEXT_PUBLIC_PAYSLIP_PORTAL_URL=
+ARG NEXT_PUBLIC_PAYSLIP_DEMO=
+ARG NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
+ENV NEXT_PUBLIC_PAYSLIP_API_URL=${NEXT_PUBLIC_PAYSLIP_API_URL} \
+    NEXT_PUBLIC_PAYSLIP_PORTAL_URL=${NEXT_PUBLIC_PAYSLIP_PORTAL_URL} \
+    NEXT_PUBLIC_PAYSLIP_DEMO=${NEXT_PUBLIC_PAYSLIP_DEMO} \
+    NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID}
+# `pnpm build` first copies the ZXing WebAssembly reader into public/zxing (web/scripts).
+RUN pnpm build
+
+FROM node:22-bookworm-slim AS runtime
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 HOSTNAME=0.0.0.0 PORT=3000
+WORKDIR /app
+# The standalone server plus the two folders it does not copy by itself (Next docs: output).
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+# The image's unprivileged user (uid 1000, "node").
+USER 1000:1000
+EXPOSE 3000
+CMD ["node", "server.js"]

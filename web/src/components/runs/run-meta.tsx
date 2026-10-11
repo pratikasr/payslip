@@ -17,7 +17,7 @@ type TagInfo = StatusInfo;
 
 const RUN_TAGS: Record<RunStatus, TagInfo> = {
   draft: { label: "Draft", tone: "neutral", help: "Approved. Fund it to continue." },
-  awaiting_funds: { label: "Awaiting funds", tone: "warning", help: "Waiting for the USDC deposit." },
+  awaiting_funds: { label: "Awaiting funds", tone: "warning", help: "Waiting for the deposit to arrive." },
   funded: { label: "Ready to pay", tone: "neutral", help: "Funds are in the treasury. Pay to send." },
   swapping: { label: "Paying", tone: "neutral", dot: true, help: "Recording the swap." },
   swapped: { label: "Paying", tone: "neutral", dot: true, help: "Preparing the payments." },
@@ -49,7 +49,15 @@ const CLOSED_TAGS: Record<string, TagInfo> = {
 /** The run's state in one word: its status, or what happened to its funding when that is the news. */
 export function runTag(run: Pick<Run, "status" | "funding"> | RunStatus): TagInfo {
   const r = typeof run === "string" ? { status: run, funding: null } : run;
-  if (fundingClosed(r)) return CLOSED_TAGS[r.funding!.status];
+  if (fundingClosed(r)) {
+    if (r.funding!.venue === "treasury")
+      return {
+        label: "Request expired",
+        tone: "warning",
+        help: "Not enough ZEC confirmed in 24 hours. Request again; ZEC already in the treasury counts.",
+      };
+    return CLOSED_TAGS[r.funding!.status];
+  }
   return RUN_TAGS[r.status] ?? { label: r.status, tone: "neutral", help: "" };
 }
 
@@ -85,7 +93,9 @@ const FAILURE_TITLES: Record<string, string> = {
 };
 
 /** What to call a failed run's problem, in plain words. */
-export function failureTitle(run: Pick<Run, "error">): string {
+export function failureTitle(run: Pick<Run, "error"> & Partial<Pick<Run, "funding">>): string {
+  if (run.error?.code === "funding_expired" && run.funding?.venue === "treasury")
+    return "The ZEC request expired before enough ZEC confirmed";
   return (run.error && FAILURE_TITLES[run.error.code]) || "The run stopped";
 }
 
@@ -191,8 +201,33 @@ const FUNDING_TAGS: Record<FundingStatus, TagInfo> = {
 export function fundingTag(funding: Pick<Funding, "status" | "venue">): TagInfo {
   if (funding.venue === "testnet-fixed-rate" && funding.status === "success")
     return { label: "Set aside", tone: "neutral", help: "Coins already in the treasury were set aside for this run." };
+  if (funding.venue === "treasury") {
+    const zec = ZEC_FUNDING_TAGS[funding.status];
+    if (zec) return zec;
+  }
   return FUNDING_TAGS[funding.status] ?? { label: funding.status, tone: "neutral", help: "" };
 }
+
+/** Fund with ZEC (ADR-025): no venue, the treasury's own balance is the deposit. */
+const ZEC_FUNDING_TAGS: Partial<Record<FundingStatus, TagInfo>> = {
+  awaiting_deposit: { label: "Awaiting ZEC", tone: "neutral", help: "Waiting for ZEC to reach the treasury address." },
+  deposit_seen: {
+    label: "ZEC arriving",
+    tone: "neutral",
+    dot: true,
+    help: "ZEC reached the treasury; waiting for it to confirm, or for the rest.",
+  },
+  success: {
+    label: "Funded",
+    tone: "neutral",
+    help: "The treasury's confirmed balance covers this run at the market rate of that block.",
+  },
+  expired: {
+    label: "Request expired",
+    tone: "neutral",
+    help: "Not enough ZEC confirmed in 24 hours. Request again; ZEC already in the treasury counts.",
+  },
+};
 
 /** Whether a contractor holds their payslip key: shared (with the day) or not yet. */
 export function accessTag(c: Pick<Contractor, "fvk_shared_at">): TagInfo {

@@ -88,7 +88,7 @@ curl -sf "$SVC_URL/api/health" > /dev/null || { echo "The service did not start;
 # Web environment. These are read at build time too (static pages), so the build gets them.
 export PAYSLIP_AUTH_TEST_LOGIN=1
 export BETTER_AUTH_URL="$WEB_URL"
-export PAYSLIP_API_URL="$SVC_URL"
+export PAYSLIP_API_INTERNAL_URL="$SVC_URL"
 export NEXT_PUBLIC_PAYSLIP_API_URL="$SVC_URL"
 export PAYSLIP_AUTH_DB="$DIR/auth.db"
 BETTER_AUTH_SECRET="$(cat "$DIR/auth-secret")"

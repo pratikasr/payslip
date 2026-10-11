@@ -8,9 +8,18 @@
   and the page renders without its first-paint data.
 */
 import { headers } from "next/headers";
-import { type Network } from "@/lib/api";
-import { authRequired, serviceUrl } from "@/lib/auth-config";
+import { API_URL, type Network } from "@/lib/api";
+import { authRequired } from "@/lib/auth-config";
 import { serviceToken } from "@/lib/service-session";
+
+/*
+  Where the server-side reads go. A hosted deployment gives the browser the page's own origin
+  (NEXT_PUBLIC_PAYSLIP_API_URL=/), which the Next server cannot use, so PAYSLIP_API_INTERNAL_URL
+  names the service directly (deploy/compose.yml). Read when the server starts, never inlined into
+  the browser bundle; empty falls back to API_URL, which is right for a local run. The sign-in
+  proxy (/api/svc) reaches the service the same way (lib/auth-config.ts serviceUrl()).
+*/
+const SERVER_API_URL = (process.env.PAYSLIP_API_INTERNAL_URL?.trim() || API_URL).replace(/\/+$/, "");
 
 async function requestHeaders(): Promise<Record<string, string>> {
   const h: Record<string, string> = { Accept: "application/json" };
@@ -26,7 +35,7 @@ async function requestHeaders(): Promise<Record<string, string>> {
 
 export async function serverGet<T>(path: string, timeoutMs = 2500): Promise<T | undefined> {
   try {
-    const res = await fetch(`${serviceUrl()}${path}`, {
+    const res = await fetch(`${SERVER_API_URL}${path}`, {
       cache: "no-store",
       headers: await requestHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
@@ -44,7 +53,7 @@ let known: Hint | undefined;
 
 async function probe(path: string, timeoutMs: number): Promise<{ ok: boolean; status: number; body: unknown }> {
   try {
-    const res = await fetch(`${serviceUrl()}${path}`, {
+    const res = await fetch(`${SERVER_API_URL}${path}`, {
       cache: "no-store",
       headers: await requestHeaders(),
       signal: AbortSignal.timeout(timeoutMs),

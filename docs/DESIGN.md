@@ -278,41 +278,47 @@ Month names come from a fixed table rather than `Intl`, so the server and every 
 
 ## 7. Status vocabulary
 
-| Run status | Label | Meaning shown to the user |
-| --- | --- | --- |
-| `draft` | Draft | Created. Fund it to continue. |
-| `awaiting_funds` | Awaiting funds | Waiting for the USDC deposit to reach the swap venue. |
-| `funded` | Funded | ZEC is in the treasury. Execute the run to pay. |
-| `swapping` | Swapping | The venue is converting USDC to ZEC. |
-| `swapped` | Swapped | ZEC received at the recorded fill rate. |
-| `allocating` | Allocating | Moving each line's ZEC from the treasury to the contractor's account. |
-| `paying` | Paying | Broadcasting one shielded payment per contractor. |
-| `paid` | Paid | Every line is paid. |
-| `failed` | Failed | The run stopped. Read the error, fix it, then resume. |
+One word per state, defined once in `web/src/components/runs/run-meta.tsx` and drawn by the one `StatusTag` (`web/src/components/ds/status.tsx`): a 13px tag on a tint with the state's sentence in its tooltip. Tones: neutral (grey) for normal states, success (green) only for a run that is paid, warning (amber) for something that needs the payer, danger (red) for a failure, and a dot beside the word for a state that is still moving. Colour is never the only signal: the word is always there. The table below replaces the first build's vocabulary (updated 5 Oct 2026).
 
-| Pay line status | Label | Meaning |
+| Run status | Tag | Meaning shown to the user |
 | --- | --- | --- |
-| `pending` | Pending | Not started yet. |
-| `allocated` | Allocated | ZEC moved to this contractor's account; payment not sent yet. |
-| `broadcast` | Broadcast | Sent to the network; waiting to be mined. |
-| `confirmed` | Confirmed | Mined in a block. |
-| `failed` | Failed | Did not go through. Resume the run to retry it. |
+| `draft` | Draft | Approved. Fund it to continue. |
+| `awaiting_funds` | Awaiting funds (amber) | Waiting for the USDC deposit. |
+| `funded` | Ready to pay | Funds are in the treasury. Pay to send. |
+| `swapping`, `swapped`, `allocating`, `paying` | Paying (dot) | One word for the executor's steps; the run page says which step in plain words. |
+| `paid` | Paid (green) | Every payment is confirmed on chain. |
+| `failed` | Failed (red) | The run stopped. Open it to resume. |
+| `cancelled` | Cancelled | Closed before any money reached it. Nobody was paid. |
+| awaiting funds with a closed quote | Quote expired (amber), Refunded (amber), Swap failed (red) | What happened to the funding, when that is the news. |
 
-| Funding status | Label |
+| Pay line | Where payments are listed | Meaning |
+| --- | --- | --- |
+| `confirmed` | the gold Shielded mark (dot and word; "Shielded · USDC" for a line paid out as USDC), with the paid time when the service gives `confirmed_at` | Nothing is wrong, so the row says what makes it different: amount, sender and recipient are hidden on chain (the tooltip). No grey "Paid" chip. |
+| `pending` | Waiting; Draft or Not sent when the run is a draft, cancelled or stopped | Not started yet. |
+| `allocated` | Ready to send | Funds are in this contractor's account. |
+| `broadcast` | Sent (dot) | Sent to the network, waiting to be mined. |
+| in progress with an error | Waiting for funds or Retrying (amber, dot) | The service is still working on it. |
+| `failed` | Failed (red), amount struck through | Did not go through. Resume the run to retry it. |
+
+| Funding status | Tag |
 | --- | --- |
 | `awaiting_deposit` | Awaiting deposit |
-| `processing` | Processing |
-| `success` | Received |
-| `refunded`, `failed`, `expired` | Refunded, Failed, Expired (with "Request a new deposit address") |
+| `deposit_seen` | Deposit seen (dot) |
+| `processing` | Swapping (dot) |
+| `incomplete` | Deposit too small (amber) |
+| `success` | Received; on testnet Set aside (nothing arrives: coins already in the treasury are set aside) |
+| `refunded`, `failed`, `expired` | Refunded (amber), Swap failed (red), Quote expired |
+| `awaiting_deposit`, venue `treasury` (Fund with ZEC) | Awaiting ZEC |
+| `deposit_seen`, venue `treasury` | ZEC arriving (confirming, or short: the shortfall is shown) |
+| `success`, venue `treasury` | Funded |
+| `expired`, venue `treasury` | Request expired (with "Request again"; ZEC already in the treasury counts) |
 
-| Reconciliation status | Label | Meaning |
-| --- | --- | --- |
-| `reconciled` | Reconciled | Funded minus paid equals the ZEC not paid out, valued at the fill rate. |
-| `variance_unexplained` | Unexplained variance | The variance is larger than fees plus unspent ZEC can explain. |
-| `missing_funding_record` | No funding record | Payments found, but no funding visible with these keys. Include the treasury key. |
-| `incomplete` | Incomplete | Some lines are not mined yet or not visible with these keys. |
+| Payslip access | Tag |
+| --- | --- |
+| `fvk_shared_at` set | Shared, with the day |
+| not set | Not shared |
 
-Tones: neutral (grey), progress (info blue), success (green), warning (amber), danger (red). A colored dot always sits next to a word, so color is never the only signal.
+Reconciliation statuses belong to Books (`web/src/components/books/books-data.ts`, `statusView`) and are drawn by the same `StatusTag`: Reconciled (the run reconciles, within rounding when the Difference column says so), Unexplained variance, No funding record, Incomplete, and the keys and unpaid states the service reports.
 
 ## 8. Component inventory
 
@@ -608,3 +614,90 @@ Production build serving the demo wallet, 5 Oct 2026, measured during the judge-
 | `/books` | 92 | 100 | 100 |
 | `/portal` | 94 | 100 | 100 |
 | `/verify` | 95 | 100 | 100 |
+
+### UX and accessibility pass, company side (5 Oct 2026)
+
+After the UX audit (`audit2/ux-a11y.md`) the owner said the company dashboard still did not look premium. This pass covers the console, the runs pages, Run payroll, the shells and the shared components. It changes no figure: every number still comes from the service, and where the service has no data (a company name, an admin name, a pay schedule) nothing is invented.
+
+**Shared pieces** (exported for the portal, Books and `/verify` to adopt):
+
+| Piece | File | What it does |
+| --- | --- | --- |
+| `StatusTag`, `ShieldedMark` | `components/ds/status.tsx` | The one status tag (section 7) and the gold mark of a shielded payment: a dot and the word, tooltip "Amount, sender and recipient hidden on chain". |
+| `LineStatus`, `fundingTag`, `accessTag` | `components/runs/run-meta.tsx` | A pay line shows `ShieldedMark` when confirmed and its tag otherwise; funding and payslip access in the same words everywhere. |
+| `SimulatedRate` | `components/ds/simulated-rate.tsx` | The gold "Simulated rate" pill. It opens a note (click, tap or Enter, so it works on phones and by keyboard) that gives the testnet rate and says it is not a price. The rate number appears nowhere else. |
+| `Sensitive`, `SENSITIVE`, `MaskedSecret` | `components/ds/sensitive.tsx` | Privacy mode now blurs keys, invite links, addresses, QR codes and raw log lines as well as amounts: a Tailwind variant on the element (`[html[data-private]_&]:blur`), so no global stylesheet is needed. Invite links show masked with Reveal and Copy. |
+| `Timeline` | `components/ds/timeline.tsx` | Mercury's vertical timeline (gold done, ring current, grey upcoming, amber retry, red failure). |
+| `Disclosure` | `components/ds/disclosure.tsx` | One chevron disclosure on a native `details`, for raw memos, technical details and the raw service log. |
+| `TYPE` | `components/ds/type.ts` | Five sizes: 13 (labels, sublines, tags), 15 (text), 19 (section headings, card figures), 28 (titles), 34 (hero money). Console text was moved onto it; initials are 11px at least. |
+| `Popover` | `components/ui/popover.tsx` | Radix popover (a toggletip) for notes like the simulated rate. |
+| `useFocusReturn` | `components/ui/dialog.tsx` | Every dialog and drawer sends focus back to what opened it when it closes (Radix does this only for a `DialogTrigger`). `DialogContent` uses it by default (`restoreFocus`), the console `Drawer` too, with a fallback for an opener that is gone. |
+| Dates | `lib/format.ts` | Two forms: `formatShortDate` "5 Oct" in tables and lists, `formatDateTime` "5 Oct 2026, 08:13 UTC" where the moment matters; `formatClock` "08:13 UTC" beside a date already on screen. |
+| Coin and settlement words | `lib/format.ts` | `coinUnit` and `settlementName`: "Holds TAZ" on testnet, "Holds ZEC" on mainnet. |
+| Memo and log readers | `lib/memo.ts`, `lib/run-log.ts` | Decode a `PS1` memo into period, invoice, amount and rate; read each service log line into a payroll sentence and group a run's log per person. |
+| Payroll CSV | `lib/payroll-csv.ts` | Every run and line as CSV, made in the browser from the runs already loaded. |
+
+Icons are drawn at stroke 1.5 everywhere in the app (`LucideProvider` in AppShell, FocusShell and the demo bar). Buttons, chips, tabs, nav items and the demo bar's controls get an invisible hit area of at least 44px on touch screens (`pointer: coarse`) without changing their size. A disabled primary button is grey, like every other disabled button.
+
+**Honest figures.** On testnet the only rate is simulated (the service's fixed `PAYSLIP_TESTNET_RATE_USD`, now also in `/api/health` as `simulated_rate_usd_per_zec`). It converts payroll dollars into TAZ and nothing else: fees, the fee reserve, what goes back to the treasury and the treasury balance stay in TAZ, and its number lives only in the `SimulatedRate` note. On mainnet, dollars come from the venue's fill rate (a real price at the time) and are labelled so. The fee reserve shown before funding mirrors the service's own formula (`feeReserveZat`, from `service/src/runs.rs`). "Covers N payrolls" is computed in coin (what the last payroll drew against the balance), so it needs no rate.
+
+**Company home.** "Welcome back" once a payroll is paid, "Welcome to Payslip" before, with one gold action for the company's next step (add the first contractor, fund the treasury on testnet, or run payroll); actions that cannot work yet are hidden. Get started runs full width with its four steps in order. The year chart shows January to December with empty months as faint stubs, the latest month's figure, tooltips and a table view. The treasury card shows coin on testnet and dollars at the fill rate on mainnet, with the runway. Next payroll names the period and never a due date (Payslip has no pay schedule), and appears once someone is on the people list. Payments are grouped under their run ("Sep 2026 payroll · 6 payments · $30,375.50"), each confirmed payment carries the Shielded mark, dates come from `confirmed_at` when the service gives it, and filters show only where something is in them. Export is a menu: Payroll CSV (every run and line: period, run id, contractor, invoice, USD, coin, txid, height, confirmed at, status) and the auditor package. A search in the top bar (Ctrl+K or Command+K) finds people, runs, invoice references and transaction ids; it replaces the duplicate Run payroll button there (the phone menu keeps Run payroll).
+
+**Run page.** A hero with the amount paid, the people and the time it was paid, and a "Shielded on Zcash" tag; then a two-column strip, "On the explorer: 6 transactions. No amounts, no names." next to "Here, with your keys: $30,375.50 to 6 people.", which opens the Privacy view; then the coin figures (contractors got, rate, network fees, set aside or funded, back in treasury), all at 8 decimals. Tab panels show a focus ring. The audit trail is a timeline in payroll words, one entry per person (sent and confirmed together), with the service's raw log behind a disclosure. The payment drawer shows the memo decoded (period, invoice, amount, rate) with "Show raw memo", and the account number under Technical details.
+
+**Run payroll.** Each step's heading takes focus when the flow moves to it, and the document title names the step ("Review and approve, Run payroll | Payslip"). A summary card sits in the right column from 1280px. Approving sends `allow_overlap: true` only when the payer ticked "This is an extra run for the same period"; a 409 `period_overlap` reloads the runs so the overlap box names them, and a 409 `idempotency_mismatch` names the earlier run with Open that run and Approve as a new run. The testnet Fund step checks the balance it already has: when the treasury is short, Fund is disabled and a Top up card gives the shortfall, the address (QR and copy), free testnet coins and Check again (which syncs the wallet).
+
+**People, Payslip access, Treasury.** Account numbers left tables and lists (they are under Technical details in the person drawer). People shows payout, payslip access, total paid and last paid by pay period, with a Share payslips row action; long names truncate with a tooltip in tables and wrap to two lines in the drawer. Payslip access turns "0 of 6 shared" into a checklist with a three-step "How invites work", masks invite links (which now carry the person's name and their account's birthday height, read by the portal and Books), names Mark as shared for voice control ("Mark as shared, Amara Okafor") and offers Undo, which clears the record only. Treasury shows one balance (coin on testnet), its runway, "Up to date with the Zcash chain" with the block in the tooltip, a larger QR with Get free testnet coins, and funding history by run name with the shared funding tags.
+
+**Shell.** The "Viewing as" role switcher shows on testnet; on mainnet only on a build with `NEXT_PUBLIC_PAYSLIP_DEMO=1` (for the recorded demo), so a contractor's invite link on a real deployment shows only their portal. The network badge and the demo bar are live regions only while degraded or offline, and "syncing" shows only when the wallet is more than 10 blocks behind. Console page titles describe the page ("Company home", "Sep 2026 payroll", "Payroll runs"), and an unknown console address shows "Page not found" inside the shell.
+
+**Adopted outside the console, and still to adopt.** Books' reconciliation tag now uses `StatusTag`, the portal's simulated-rate label is the shared `SimulatedRate`, and the portal's list dates (`monthDay` in `components/portal/portal-data.ts`) read "5 Oct" like the rest of the app instead of "Oct 5". Still to switch: `components/portal/portal-states.tsx` (`SettlementTag`'s Shielded tag to `ShieldedMark`), `components/books/ledger-view.tsx` (`StatusTags` and its Shielded tag to `StatusTag` and `ShieldedMark`), `components/books/run-detail.tsx` (the "Simulated rate" text and tag to `SimulatedRate`), `components/books/books-page.tsx` (its raw `details` to `Disclosure`), `components/books/books-data.ts` (`shortRange`'s own month table to `lib/format.ts`) and `components/verify/public-payslip.tsx` (the "Simulated rate" text to `SimulatedRate`).
+
+## 16. Identity: one payment, two views (11 Oct 2026; supersedes the visual direction in section 15, keeps its structure)
+
+The owner judged the Mercury-informed look clean but generic: a console shape any fintech could ship, with nothing that only Payslip can show. This section sets Payslip's own identity. Section 15's structure (the three products, routes, the Run payroll flow, the status vocabulary) stays.
+
+### The idea
+
+Every screen that shows a payment can show it two ways: what the public explorer sees (a shielded transaction: txid, block, action count, and nothing else) and what the viewing key sees (the payslip: who, how much, for which period and invoice). Payslip's identity is that pair, side by side, joined by the one thing they share, the txid. The landing page opens on it with a real transaction; the run page and the payslip carry it as a strip; the contractor portal shows it on every payslip.
+
+### Tokens
+
+Colour, five names, light theme first:
+
+| Name | Hex | Use |
+| --- | --- | --- |
+| Paper | #FFFFFF | the key's view: pages, payslips, the console |
+| Vault | #1C2230 | the explorer's view: the dark panel, redaction bars live only here; also the text ink on paper |
+| Gold | #F4B728 | the thread between the two views, primary actions, the shielded mark; as text on paper use #8A6400 |
+| Ash | #5C6472 on paper, #8B93A5 on vault | secondary text |
+| Mist | #EEF1F5 on paper, #2A3242 on vault | hairlines, surfaces, tracks |
+
+Dark theme: Paper becomes #14181F and Vault panels become #0F1218 with Mist #262C38; Gold unchanged.
+
+Type, three roles:
+
+| Role | Face | Notes |
+| --- | --- | --- |
+| Display | Bricolage Grotesque (variable, optical size axis), weight 500 to 600, tight leading | headlines, the company name, the big money figure on a page. Use the optical size: large sizes get the display cut, small sizes the text cut. |
+| Text | Instrument Sans, 400 and 500, `font-feature-settings: "tnum"` wherever figures align | all UI and body text; replaces Inter |
+| Data | IBM Plex Mono, 400 | txids, keys, block heights, addresses, memos; never for prose |
+
+Scale (px): 13, 15, 17, 22, 30, 44, 64 at 1440; the two largest steps drop one step at 768 and two at 375. Line length under 80 characters. Sentence case everywhere; no all-caps labels; no middle-dot joined strings (write a sentence or use a comma); no arrows appended to links.
+
+### Layout principles
+
+1. The split is the brand. The two-view pair is a full-width panel: vault on the left, paper on the right, the txid repeated at the top of both in Plex Mono, a gold hairline joining them. On a phone the panels stack, vault first.
+2. Redaction bars only ever appear on the vault side, and only for what the chain hides: amount, sender, recipient, memo. They are Mist-on-Vault blocks the width of the hidden value, never a blur.
+3. One orchestrated motion per page: the paper side resolves from redaction bars into values once, on load (landing) or when a key opens a statement (portal). Everything else moves only in answer to a click. Reduced motion shows the final state.
+4. No card kit. Sections flow on Paper with space; a border appears only where it encodes a boundary (the vault panel, a payslip's edge, a table). One radius (12px) for panels, 999px for pills.
+5. Gold is scarce: the thread, the primary action, the shielded mark, the active tab. Never a gold wash or gradient.
+6. Numbers are typeset: display face for the headline figure with raised cents, tabular text face in tables, Plex Mono for chain data.
+
+### Landing page
+
+Order: header; hero with the headline "Private to the world. Transparent to your accountant." and the two-view panel on a real payment; the three people (company, contractor, accountant) as one strip with a sentence and a real figure each; how a run works as a four-step sequence (fund, allocate, pay, read back), numbered because it is a sequence; proof table from the mainnet run (testnet sample until then, labelled); pricing against the $49 products; check it yourself with the judge kit; footer. Left-aligned throughout; the headline is display at 64, two lines.
+
+### Console, portal, books
+
+Tokens and type apply everywhere. The run page's explorer strip becomes a two-view panel above the tabs. The payslip document gets a vault panel titled "What the world sees" with the explorer link. The console home leads with the company name in the display face and the paid-this-year figure. The demo bar stays as the sample-company notice on testnet.

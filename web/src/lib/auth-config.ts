@@ -31,9 +31,16 @@ export function appUrl(): string {
   return (env("BETTER_AUTH_URL") ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
 }
 
-/** Where the service listens, for the server side only (PAYSLIP_API_URL, else the public setting). */
+/**
+ * Where the server side reaches the service: PAYSLIP_API_INTERNAL_URL (a hosted deployment, where
+ * the browser's NEXT_PUBLIC_PAYSLIP_API_URL may be the page's own origin), else the public
+ * setting, else the local default. The same rule as lib/server-api.ts.
+ */
 export function serviceUrl(): string {
-  return (env("PAYSLIP_API_URL") ?? env("NEXT_PUBLIC_PAYSLIP_API_URL") ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+  return (env("PAYSLIP_API_INTERNAL_URL") ?? env("NEXT_PUBLIC_PAYSLIP_API_URL") ?? "http://127.0.0.1:8080").replace(
+    /\/+$/,
+    "",
+  );
 }
 
 /** Where auth.db (sessions, accounts, signing keys) lives: PAYSLIP_AUTH_DB, else ./data/auth.db. */

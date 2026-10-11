@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+# Payslip service image. Build context: the repository root (deploy/compose.yml sets it);
+# deploy/Dockerfile.service.dockerignore sends only the crate sources, so target/ and data/ stay out.
+#
+# Stage 1 compiles the release binary. The cargo registry and the target directory are BuildKit
+# cache mounts, so a rebuild after a source change is incremental. CARGO_BUILD_JOBS defaults to 1:
+# the Zcash crates compile within 2 GB of RAM plus swap that way; raise it on a bigger host.
+FROM rust:1.99-bookworm AS builder
+ARG CARGO_BUILD_JOBS=1
+ENV CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS}
+WORKDIR /build
+COPY service/Cargo.toml service/Cargo.lock ./
+COPY service/src ./src
+COPY service/migrations ./migrations
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,target=/build/target,sharing=locked \
+    cargo build --release --locked --bin payslip-service \
+ && mkdir -p /out && cp target/release/payslip-service /out/payslip-service
+
+# Stage 2: a small runtime. The binary is statically linked against its own SQLite (bundled) and
+# carries the Sapling parameters and the TLS roots (webpki); ca-certificates is there for
+# rustls-native-certs, which reqwest's rustls feature also probes.
+FROM debian:bookworm-slim
+# A pinned ca-certificates version would break the build at the next Debian security update.
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && groupadd --system --gid 10001 payslip \
+ && useradd --system --uid 10001 --gid payslip --home-dir /var/lib/payslip --shell /usr/sbin/nologin payslip \
+ && mkdir -p /var/lib/payslip \
+ && chown payslip:payslip /var/lib/payslip \
+ && chmod 700 /var/lib/payslip
+COPY --from=builder /out/payslip-service /usr/local/bin/payslip-service
+# The data directory: the age-encrypted seed, wallet.db, payslip.db and the viewer scan caches.
+# compose.yml mounts a named volume here; the service chmods it to 0700 on start.
+ENV PAYSLIP_DATA_DIR=/var/lib/payslip
+VOLUME ["/var/lib/payslip"]
+WORKDIR /var/lib/payslip
+USER 10001:10001
+EXPOSE 8080
+# The service shuts down gracefully on Ctrl-C (SIGINT); make `docker stop` send that.
+STOPSIGNAL SIGINT
+ENTRYPOINT ["payslip-service"]
+CMD ["serve"]

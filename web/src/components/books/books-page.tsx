@@ -5,6 +5,7 @@ import { CalendarDays, Check, ChevronDown, RefreshCw, TriangleAlert } from "luci
 import { useHealth } from "@/components/app/health-provider";
 import { PageTitle } from "@/components/ds/page";
 import { useBooks } from "@/components/books/books-provider";
+import { useSampleCompany } from "@/components/shell/sample-tag";
 import {
   isValidPeriod,
   presetPeriods,
@@ -31,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SAMPLE_COMPANY_LINE, companyMark, companyName } from "@/lib/company";
 import { formatHeight, formatPeriodLabel, formatTime, networkLabel } from "@/lib/format";
 
 /**
@@ -60,7 +62,13 @@ export function BooksPage({
       {header ? (
         header(controls, meta)
       ) : (
-        <PageTitle title={title} description={meta} actions={controls} className="sm:items-start" />
+        <PageTitle
+          back={<CompanyLine />}
+          title={title}
+          description={meta}
+          actions={controls}
+          className="sm:items-start"
+        />
       )}
       {header ? null : <PrintPeriod />}
       {scan.status === "error" && scan.error ? (
@@ -74,18 +82,37 @@ export function BooksPage({
   );
 }
 
+/** Whose books these are: the company's mark and name above the page title. */
+function CompanyLine() {
+  const Mark = companyMark();
+  return (
+    <span className="inline-flex items-center gap-1.5 text-foreground" data-testid="books-company">
+      <Mark className="size-4 shrink-0" />
+      <span className="truncate">{companyName()}</span>
+    </span>
+  );
+}
+
 /**
- * What was read and how: the number of viewing keys (and that the public sees none of it), then
- * the network and the blocks scanned. "From block N" is the service's own figure when it sends
- * one, else the birthday the request asked for.
+ * What was read and how: on testnet that the company is a sample, then the number of viewing
+ * keys (and that the public sees none of it), then the network and the blocks scanned. "From
+ * block N" is the service's own figure when it sends one, else the birthday the request asked for.
  */
 function ScanMeta() {
   const { scan, keys } = useBooks();
+  const sample = useSampleCompany();
   const r = scan.result;
   const read = (
-    <span className="block">
-      Read with {keys.length} viewing {keys.length === 1 ? "key" : "keys"}. The public explorer shows none of this.
-    </span>
+    <>
+      {sample ? (
+        <span className="block" data-testid="books-sample-line">
+          {SAMPLE_COMPANY_LINE}.
+        </span>
+      ) : null}
+      <span className="block">
+        Read with {keys.length} viewing {keys.length === 1 ? "key" : "keys"}. The public explorer shows none of this.
+      </span>
+    </>
   );
   if (!r || scan.status !== "ready") return read;
   const from = r.scanned_from_height ?? scan.birthday;

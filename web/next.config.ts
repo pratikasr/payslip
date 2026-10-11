@@ -21,6 +21,9 @@ const OPTIONAL_UNUSED_MODULES = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // A self-contained server in .next/standalone for the container image (deploy/Dockerfile.web);
+  // `pnpm start` and `next dev` are unchanged.
+  output: "standalone",
   experimental: {
     // Import only the Radix primitives used, not the whole radix-ui barrel.
     optimizePackageImports: ["radix-ui"],

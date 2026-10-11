@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+deploy/payslip.env
+deploy/aws/outputs.env
+deploy/aws/outputs-*.env
 *.seed
 *.key
 wallet.db*
@@ -39,3 +42,6 @@ scripts/demo/out/
 # python
 __pycache__/
 *.pyc
+
+# agent worktrees
+.claude/worktrees/

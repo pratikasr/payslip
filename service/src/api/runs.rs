@@ -20,7 +20,7 @@ use crate::{
     db::{self, NewLine, NewRun, RunInsert, RunRow},
     error::{ApiError, ApiResult},
     memo,
-    runs::validate_period,
+    runs::{run_over_cap, validate_period, FundMethod, FundRequest},
 };
 
 pub fn routes() -> Router<AppStateRef> {
@@ -240,6 +240,13 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
             invoice_ref: invoice,
         });
     }
+    // PAYSLIP_MAX_RUN_USD_CENTS (ADR-025): said at creation, and checked again at funding.
+    if let Some(cap) = s.cfg.max_run_usd_cents {
+        let total: u64 = lines.iter().map(|l| l.amount_usd_cents).sum();
+        if total > cap {
+            return Err(run_over_cap(total, cap));
+        }
+    }
     let run = NewRun {
         idempotency_key: input.idempotency_key.as_deref(),
         request_hash: Some(&hash),
@@ -257,6 +264,9 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
 
 #[derive(Deserialize, Default)]
 struct FundInput {
+    /// "usdc" (default): a USDC deposit swapped by the configured venue. "zec": ZEC sent to the
+    /// treasury (ADR-025).
+    method: Option<String>,
     origin_chain: Option<String>,
     refund_address: Option<String>,
 }
@@ -267,8 +277,16 @@ async fn fund(
     body: Option<Json<FundInput>>,
 ) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
+    let method = FundMethod::parse(input.method.as_deref())?;
     s.executor()?
-        .fund(&id, input.origin_chain, input.refund_address)
+        .fund_with(
+            &id,
+            FundRequest {
+                method,
+                origin_chain: input.origin_chain,
+                refund_address: input.refund_address,
+            },
+        )
         .await?;
     Ok(Json(view(&s, &id).await?))
 }

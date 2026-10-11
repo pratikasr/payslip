@@ -61,11 +61,33 @@ export type LogEvent =
   | { type: "failed"; reason: string }
   | { type: "resumed" }
   | { type: "cancelled"; note: string }
+  /** Fund with ZEC (ADR-025): the request, what to send and by when. */
+  | { type: "zec_request"; zat: number; address: string; deadline: string; rateE6: number }
+  /** Fund with ZEC: the treasury's confirmed balance covered the run at the rate of a block. */
+  | { type: "zec_funded"; zat: number; rateE6: number; height: number }
   | { type: "other"; text: string };
 
 const RULES: [RegExp, (m: RegExpExecArray) => LogEvent | null][] = [
   [/^Run created with (\d+) lines?$/, (m) => ({ type: "created", count: Number(m[1]) })],
   [/^Funded from the testnet treasury at the fixed rate [\d.]+ USD per TAZ$/, () => ({ type: "set_aside" })],
+  [
+    /^Fund with ZEC: send ([\d.]+) ZEC to the treasury address (\S+) before (\S+) \(1 ZEC = ([\d.]+) USD\)$/,
+    (m) => {
+      const zat = zatFrom(m[1]);
+      const rateE6 = rateFrom(m[4]);
+      return zat !== null && rateE6 !== null
+        ? { type: "zec_request", zat, address: m[2], deadline: m[3], rateE6 }
+        : null;
+    },
+  ],
+  [
+    /^Funded with ([\d.]+) ZEC from the treasury at ([\d.]+) USD per ZEC \(block ([\d,]+)\)$/,
+    (m) => {
+      const zat = zatFrom(m[1]);
+      const rateE6 = rateFrom(m[2]);
+      return zat !== null && rateE6 !== null ? { type: "zec_funded", zat, rateE6, height: height(m[3]) } : null;
+    },
+  ],
   [
     /^Quote from \S+: deposit ([\d.]+) USDC on (\S*) to (\S*)$/,
     (m) => ({ type: "quote", amount: m[1], chain: m[2], address: m[3] }),
@@ -286,6 +308,10 @@ export function logSentence(message: string, coin: "ZEC" | "TAZ"): string {
       return `Approved: ${e.count} ${e.count === 1 ? "payment" : "payments"}`;
     case "set_aside":
       return "Set aside from the treasury at the simulated rate";
+    case "zec_request":
+      return `Fund with ZEC: send ${coinText(e.zat, coin)} to the treasury`;
+    case "zec_funded":
+      return `Funded with ${coinText(e.zat, coin)} from the treasury at the market rate of block ${e.height.toLocaleString("en-US")}`;
     case "quote":
       return `Quote received: send ${e.amount} USDC on ${chainName(e.chain)}`;
     case "deposit_reported":

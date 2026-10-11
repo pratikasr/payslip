@@ -384,3 +384,58 @@ html[data-private] .money {
 [data-print="text"] {
   display: none;
 }
+
+/*
+  Identity tokens (docs/DESIGN.md section 16: one payment, two views). Scoped to .identity, which
+  only the landing page uses for now, so the console, portal and Books keep the tokens above
+  until the app-wide switch. Paper is the key's view, Vault the explorer's; Gold is the thread
+  between them and the one primary action; Ash and Mist change value on a vault surface
+  (.identity-vault), so the same utilities read right on either side.
+*/
+@theme inline {
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --color-paper: var(--id-paper);
+  --color-vault: var(--id-vault);
+  --color-ink: var(--id-ink);
+  --color-gold: var(--id-gold);
+  --color-gold-ink: var(--id-gold-ink);
+  --color-on-gold: var(--id-on-gold);
+  --color-ash: var(--id-ash);
+  --color-mist: var(--id-mist);
+}
+
+.identity {
+  --id-paper: #ffffff;
+  --id-vault: #1c2230;
+  --id-ink: #1c2230;
+  --id-gold: #f4b728;
+  --id-gold-ink: #8a6400;
+  --id-on-gold: #1c2230;
+  --id-ash: #5c6472;
+  --id-mist: #eef1f5;
+  /* Focus rings: gold text on paper (5.3:1), gold itself on a vault surface. */
+  --ring: #8a6400;
+  color-scheme: light;
+}
+.identity .identity-vault {
+  --id-ink: #ffffff;
+  --id-ash: #8b93a5;
+  --id-mist: #2a3242;
+  --ring: #f4b728;
+}
+.dark .identity {
+  --id-paper: #14181f;
+  --id-vault: #0f1218;
+  --id-ink: #eef1f5;
+  --id-gold-ink: #f4b728;
+  --id-ash: #8b93a5;
+  --id-mist: #262c38;
+  --ring: #f4b728;
+  color-scheme: dark;
+}
+.dark .identity .identity-vault {
+  --id-ink: #eef1f5;
+  --id-ash: #8b93a5;
+  --id-mist: #262c38;
+}

@@ -154,12 +154,16 @@ export function ReviewStep({
         <span className="flex flex-wrap items-center gap-2">
           Set aside from the testnet treasury <SimulatedRate rateE6={simulatedRate} />
         </span>
+      ) : health?.fund_with_zec ? (
+        "ZEC sent to the treasury, or USDC from your wallet"
       ) : (
         "USDC from your wallet"
       ),
       hint: testnet
         ? "Testnet coins have no price, so a fixed rate turns payroll dollars into TAZ."
-        : `Swapped to ZEC through ${venueLabel(health?.venue)}. You pick the chain and see the exact amount to send next.`,
+        : health?.fund_with_zec
+          ? `You choose next: send ZEC to the treasury address (funded at the market rate when it confirms), or USDC swapped to ZEC through ${venueLabel(health?.venue)}.`
+          : `Swapped to ZEC through ${venueLabel(health?.venue)}. You pick the chain and see the exact amount to send next.`,
     },
     {
       label: "Contractors get",

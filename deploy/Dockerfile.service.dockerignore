@@ -1,0 +1,6 @@
+# Build context for deploy/Dockerfile.service is the repository root. Send only the crate sources.
+*
+!service/Cargo.toml
+!service/Cargo.lock
+!service/src/
+!service/migrations/

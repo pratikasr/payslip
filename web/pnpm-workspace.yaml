@@ -6,3 +6,11 @@ allowBuilds:
   keccak: false
   unrs-resolver: false
   utf-8-validate: false
+
+# Security advisories in transitive packages (checked with `pnpm audit --prod`, 5 Oct 2026).
+# postcss inside next and ws inside the WalletConnect stack move to their patched minor
+# versions. uuid (8 and 9) and decode-uri-component (0.2) stay: their fixes are major
+# versions the wallet libraries were not built for, and they run only on the Fund step.
+overrides:
+  "next>postcss": "^8.5.28"
+  "ws@>=8.0.0 <8.21.0": "^8.21.0"

@@ -1,0 +1,161 @@
+# Payslip on one host: two web apps, two services and a plain HTTP front, for the AWS layout in
+# deploy/README.md (CloudFront terminates TLS and sends every request to this host with a secret
+# header). Run every command with the project env file:
+#
+#   docker compose --env-file payslip.env config        # check the rendered file
+#   docker compose --env-file payslip.env build          # one image at a time on a small host
+#   docker compose --env-file payslip.env run --rm app-service init
+#   docker compose --env-file payslip.env up -d
+#
+# Only caddy publishes ports (3001, 8081, 3002, 8082). The four application containers are reachable
+# on the compose network alone. Memory limits add up above a t3.small's 2 GB on purpose: they are
+# ceilings, and install.sh adds swap; measured use is about 1.4 GB.
+name: payslip
+
+x-service: &service
+  image: payslip-service:local
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile.service
+    args:
+      CARGO_BUILD_JOBS: ${CARGO_BUILD_JOBS:-1}
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-web: &web
+  restart: unless-stopped
+  environment: &web-env
+    PORT: "3000"
+    HOSTNAME: 0.0.0.0
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  caddy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+      - "8081:8081"
+      - "3002:3002"
+      - "8082:8082"
+    environment:
+      ORIGIN_SECRET: ${ORIGIN_SECRET:?set ORIGIN_SECRET in payslip.env (from deploy/aws/outputs.env)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - books-web
+      - books-service
+      - app-web
+      - app-service
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # Public statements service: no seed, no wallet, payer routes not mounted (PAYSLIP_MODE=statements).
+  books-service:
+    <<: *service
+    environment:
+      PAYSLIP_MODE: statements
+      ZCASH_NETWORK: ${ZCASH_NETWORK:?set ZCASH_NETWORK in payslip.env}
+      LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-}
+      PAYSLIP_DATA_DIR: /var/lib/payslip
+      PAYSLIP_BIND: 0.0.0.0:8080
+      # Host header values: the books distribution (CloudFront forwards the viewer's Host), the
+      # instance's own DNS name (what CloudFront sends when it does not), and the compose name the
+      # books-web server uses for its server-side reads.
+      PAYSLIP_ALLOWED_HOSTS: ${BOOKS_HOST:?set BOOKS_HOST in payslip.env},${INSTANCE_DNS:?set INSTANCE_DNS in payslip.env},books-service:8080,${EXTRA_ALLOWED_HOSTS:-}
+      PAYSLIP_WEB_ORIGIN: https://${BOOKS_HOST}
+      PAYSLIP_VIEWER_BIRTHDAY_HEIGHT: ${PAYSLIP_VIEWER_BIRTHDAY_HEIGHT:-}
+      PAYSLIP_PRICE_API_KEY: ${PAYSLIP_PRICE_API_KEY:-}
+    volumes:
+      - books-data:/var/lib/payslip
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  books-web:
+    <<: *web
+    image: payslip-web-books:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_PAYSLIP_API_URL: /
+        NEXT_PUBLIC_PAYSLIP_PORTAL_URL: https://${BOOKS_HOST}
+        NEXT_PUBLIC_PAYSLIP_DEMO: ""
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ""
+    environment:
+      <<: *web-env
+      PAYSLIP_API_INTERNAL_URL: http://books-service:8080
+    depends_on:
+      - books-service
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # Company service: holds the encrypted seed and the spending keys. It listens on the compose
+  # network only (its port is not published). The service refuses a non-loopback bind in full
+  # mode unless PAYSLIP_ALLOW_REMOTE_PAYER=1; here that is safe because what reaches it is caddy
+  # (which requires the CloudFront origin secret) behind the app distribution's basic auth, and the
+  # instance's security group admits the origin ports from CloudFront's ranges only. See
+  # deploy/README.md "What protects the company service".
+  app-service:
+    <<: *service
+    environment:
+      PAYSLIP_MODE: full
+      ZCASH_NETWORK: ${ZCASH_NETWORK:?set ZCASH_NETWORK in payslip.env}
+      LIGHTWALLETD_URL: ${LIGHTWALLETD_URL:-}
+      PAYSLIP_DATA_DIR: /var/lib/payslip
+      PAYSLIP_BIND: 0.0.0.0:8080
+      PAYSLIP_ALLOW_REMOTE_PAYER: "1"
+      PAYSLIP_SEED_PASSPHRASE: ${PAYSLIP_SEED_PASSPHRASE:?set PAYSLIP_SEED_PASSPHRASE in payslip.env}
+      PAYSLIP_ALLOWED_HOSTS: ${APP_HOST:?set APP_HOST in payslip.env},${INSTANCE_DNS:?set INSTANCE_DNS in payslip.env},app-service:8080,${EXTRA_ALLOWED_HOSTS:-}
+      PAYSLIP_WEB_ORIGIN: https://${APP_HOST}
+      PAYSLIP_SWAP_VENUE: ${PAYSLIP_SWAP_VENUE:-}
+      PAYSLIP_TESTNET_RATE_USD: ${PAYSLIP_TESTNET_RATE_USD:-}
+      PAYSLIP_MIN_CONFIRMATIONS: ${PAYSLIP_MIN_CONFIRMATIONS:-}
+      PAYSLIP_BIRTHDAY_HEIGHT: ${PAYSLIP_BIRTHDAY_HEIGHT:-}
+      NEAR_INTENTS_JWT: ${NEAR_INTENTS_JWT:-}
+      PAYSLIP_APP_FEE_BPS: ${PAYSLIP_APP_FEE_BPS:-}
+      PAYSLIP_APP_FEE_RECIPIENT: ${PAYSLIP_APP_FEE_RECIPIENT:-}
+      PAYSLIP_PRICE_API_KEY: ${PAYSLIP_PRICE_API_KEY:-}
+    volumes:
+      - app-data:/var/lib/payslip
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+
+  app-web:
+    <<: *web
+    image: payslip-web-app:local
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        NEXT_PUBLIC_PAYSLIP_API_URL: /
+        # Invite and proof links open on the public books host, which contractors can reach.
+        NEXT_PUBLIC_PAYSLIP_PORTAL_URL: https://${BOOKS_HOST}
+        NEXT_PUBLIC_PAYSLIP_DEMO: ${NEXT_PUBLIC_PAYSLIP_DEMO:-}
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:-}
+    environment:
+      <<: *web-env
+      PAYSLIP_API_INTERNAL_URL: http://app-service:8080
+    depends_on:
+      - app-service
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+volumes:
+  # Persistent data directories. backup.sh archives both; see deploy/README.md for restore.
+  books-data:
+  app-data:

@@ -8,6 +8,8 @@
 import { expect, test } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+/** The company the build was made for (NEXT_PUBLIC_PAYSLIP_COMPANY_NAME), "Payslip Labs" by default. */
+const COMPANY = process.env.E2E_COMPANY_NAME?.trim() || "Payslip Labs";
 
 interface Line {
   status: string;
@@ -48,9 +50,24 @@ test("home renders on the server from the live service and matches its figures",
   expect(html).toContain(paid.length > 0 ? "Paid to contractors" : "Get started");
 
   await page.goto("/console", { waitUntil: "networkidle" });
-  await expect(
-    page.getByRole("heading", { name: paid.length > 0 ? "Welcome back" : "Welcome to Payslip", level: 1 }),
-  ).toBeVisible();
+  // The title is the company, as a payroll product shows the employer; the welcome sits under it.
+  const title = page.getByRole("heading", { level: 1 });
+  await expect(title).toContainText(COMPANY);
+  await expect(page.getByText(paid.length > 0 ? /^Welcome back\./ : /^Welcome to Payslip\./)).toBeVisible();
+  // The sidebar names the company too; on testnet both carry the quiet "Sample data" tag.
+  const sidebar = page.locator("aside").filter({ hasText: COMPANY }).first();
+  await expect(sidebar).toBeVisible();
+  const { network } = await get<{ network: string }>("/api/health");
+  const sampleTags = page.getByText("Sample data", { exact: true });
+  if (network === "testnet") {
+    await expect(sampleTags).toHaveCount(2);
+    await expect(sidebar.getByText("Sample data", { exact: true })).toHaveAttribute(
+      "title",
+      "Sample company on Zcash testnet",
+    );
+  } else {
+    await expect(sampleTags).toHaveCount(0);
+  }
   await expect(page.getByRole("link", { name: /^Add (your first )?contractor$/ }).first()).toHaveAttribute(
     "href",
     "/console/people?add=1",
@@ -251,7 +268,7 @@ test("the demo bar names the network on the first paint, and phones see it too",
   const sentence =
     health.network === "mainnet"
       ? "Payslip on Zcash mainnet. Payments here are real."
-      : "You are in the Payslip demo on Zcash testnet. Nothing here is real money.";
+      : "Sample company on Zcash testnet. Nothing here is real money.";
   // Server HTML: the network is known before any client code runs, and never the other one.
   const html = await (await request.get("/console")).text();
   expect(html).toContain(sentence.replace(/'/g, "&#x27;"));
