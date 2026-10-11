@@ -321,12 +321,12 @@ pub struct Approval {
     pub at: String,
 }
 
-/// A run's approvals, oldest first.
+/// A run's approvals in the order they were recorded (rowid breaks ties within the same second).
 pub async fn approvals(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<Approval>> {
     Ok(sqlx::query_as(
         "SELECT a.user_id, u.name, u.email, a.role, a.at
          FROM run_approvals a JOIN users u ON u.id = a.user_id
-         WHERE a.run_id = ? ORDER BY a.at, a.user_id",
+         WHERE a.run_id = ? ORDER BY a.at, a.rowid",
     )
     .bind(run_id)
     .fetch_all(pool)
