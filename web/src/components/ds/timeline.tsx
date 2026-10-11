@@ -16,7 +16,7 @@ export interface TimelineItem {
 }
 
 /**
- * The vertical timeline: a dot per step on a thin rail, ink for what happened, a gold ring for
+ * The vertical timeline: a dot per step on a thin rail, ink for what happened, an ink ring for
  * what is happening, grey for what has not, red for a failure, amber for a retry. The words carry
  * the state, so colour is never the only signal. Used by a payment's drawer and a run's audit
  * trail.
@@ -42,7 +42,7 @@ export function Timeline({ items, className, label }: { items: TimelineItem[]; c
               className={cn(
                 "relative mt-1.5 size-2.5 justify-self-center rounded-full",
                 e.state === "done" && "bg-foreground",
-                e.state === "current" && "border-2 border-gold bg-card",
+                e.state === "current" && "border-2 border-foreground bg-card",
                 e.state === "upcoming" && "bg-border",
                 e.state === "failed" && "bg-destructive",
                 e.state === "warning" && "bg-warning",

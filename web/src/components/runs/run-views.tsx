@@ -151,7 +151,7 @@ function VaultRow({ tx, what }: { tx: Tx | null; what: string }) {
               rel="noreferrer"
               data-txid={tx.txid}
               title={tx.txid}
-              className="rounded-[3px] font-mono text-ink underline decoration-ink/30 decoration-1 underline-offset-[3px] transition-colors hover:decoration-gold"
+              className="rounded-[3px] font-mono text-ink underline decoration-ink/30 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
             >
               {shortTx(tx.txid)}
               <span className="sr-only"> (opens on the explorer in a new tab)</span>

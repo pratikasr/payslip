@@ -69,29 +69,24 @@ export function People() {
       id="who-sees-what"
       title="Who sees what"
       lead="One payroll, three kinds of key. Every contractor is paid from an account of their own, so what each person can read is set by the keys they hold."
-      className="pt-0 md:pt-0 xl:pt-0"
     >
-      <ul className="mt-10 grid border-t border-ink md:mt-14 lg:grid-cols-3">
+      {/* A form of three boxes, ruled like the slips of a pay packet. */}
+      <ul className="mt-10 grid border-2 border-ink md:mt-14 lg:grid-cols-3">
         {PEOPLE.map((p, i) => (
           <li
             key={p.who}
             className={cn(
-              "border-mist pt-6 pb-8 md:grid md:grid-cols-[13rem_minmax(0,1fr)] md:gap-x-10 lg:flex lg:flex-col lg:px-8 lg:pt-7 lg:pb-2",
-              i > 0 && "border-t lg:border-t-0 lg:border-l",
-              i === 0 && "lg:pl-0",
-              i === PEOPLE.length - 1 && "lg:pr-0",
+              "flex flex-col px-4 pt-5 pb-6 sm:px-6",
+              i > 0 && "border-t border-ink lg:border-t-0 lg:border-l",
+              i === 1 && "bg-bar",
             )}
           >
-            <div>
-              <h3 className="text-[15px] font-medium">{p.who}</h3>
-              <p className={cn(t.figure44, "mt-4")}>{p.figure}</p>
-            </div>
-            <div className="flex flex-col lg:flex-1">
-              <p className={cn(t.body, "mt-4 max-w-[30rem] md:mt-0 lg:mt-4")}>{p.sentence}</p>
-              <div className="mt-auto pt-6">
-                <Accounts reads={p.reads} label={p.readsLabel} />
-                <p className={cn(t.small, "mt-3 max-w-[30rem] text-ash")}>{p.holds}</p>
-              </div>
+            <h3 className={t.label}>{p.who}</h3>
+            <p className={cn(t.figure, "mt-5")}>{p.figure}</p>
+            <p className={cn(t.body, "mt-4 max-w-[30rem]")}>{p.sentence}</p>
+            <div className="mt-auto pt-6">
+              <Accounts reads={p.reads} label={p.readsLabel} />
+              <p className={cn(t.small, "mt-3 max-w-[30rem] text-ash")}>{p.holds}</p>
             </div>
           </li>
         ))}
@@ -100,7 +95,7 @@ export function People() {
   );
 }
 
-/** One mark per account: filled where this person's key opens it, an outline where it does not. */
+/** One box per account, like the boxes of a form: filled where this key opens it, empty where not. */
 function Accounts({ reads, label }: { reads: (name: string) => boolean; label: string }) {
   return (
     <p role="img" aria-label={label} className="flex flex-wrap gap-1.5">
@@ -109,8 +104,8 @@ function Accounts({ reads, label }: { reads: (name: string) => boolean; label: s
           key={a.name}
           title={a.name}
           className={cn(
-            "inline-flex h-7 min-w-9 items-center justify-center rounded-full border px-2 text-[13px] leading-none",
-            reads(a.name) ? "border-ink bg-ink text-paper" : "border-ash/40 text-ash",
+            "inline-flex h-7 min-w-8 items-center justify-center border-[1.5px] px-1.5 font-type text-[0.8125rem] leading-none font-bold",
+            reads(a.name) ? "border-ink bg-ink text-paper" : "border-ink/45 border-dashed text-ash",
           )}
         >
           {a.short}

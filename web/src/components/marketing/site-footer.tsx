@@ -3,6 +3,7 @@ import { cn } from "cn";
 import { LogoMark } from "@/components/app/logo";
 import { GITHUB_URL, HACKATHON_URL, repoDir, repoFile } from "@/components/marketing/data";
 import { DemoLink } from "@/components/marketing/demo-link";
+import { TearLine } from "@/components/ds/paper";
 import { Container, OutLink } from "@/components/marketing/parts";
 import { t, textLink } from "@/components/marketing/classes";
 
@@ -38,16 +39,19 @@ const COLUMNS: { title: string; links: FooterLink[] }[] = [
   },
 ];
 
-const link = "rounded-[3px] text-ink/80 transition-colors hover:text-ink";
+const link = "text-ink decoration-1 underline-offset-[4px] hover:underline";
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-mist">
-      <Container className="grid gap-12 pt-12 pb-10 md:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+    <footer>
+      <Container>
+        <TearLine />
+      </Container>
+      <Container className="grid gap-12 pt-12 pb-14 md:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <div className="max-w-[26rem]">
           <span className="inline-flex items-center gap-2.5 text-ink">
             <LogoMark className="size-[22px]" />
-            <span className="font-display text-[17px] leading-none font-semibold">Payslip</span>
+            <span className="font-type text-[1.125rem] leading-none font-bold">Payslip</span>
           </span>
           <p className={cn(t.small, "mt-4 text-ash")}>
             Payslip is open-source software, not a bank. Payments settle on Zcash; USDC funding swaps run through NEAR
@@ -66,10 +70,10 @@ export function SiteFooter() {
             const id = `footer-${c.title.split(" ")[0].toLowerCase()}`;
             return (
               <nav key={c.title} aria-labelledby={id}>
-                <p id={id} className="text-[13px] text-ash">
+                <p id={id} className={cn(t.label, "text-ash")}>
                   {c.title}
                 </p>
-                <ul className="mt-3 space-y-2 text-[15px]">
+                <ul className="mt-3.5 space-y-2 font-type text-[0.875rem]">
                   {c.links.map((l) => (
                     <li key={l.label}>
                       {l.demo ? (

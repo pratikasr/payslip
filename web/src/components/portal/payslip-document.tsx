@@ -285,7 +285,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
                   rel="noreferrer"
                   data-txid={line.txid}
                   data-print="hide"
-                  className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-gold"
+                  className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
                 >
                   {host ? `Open it on ${host}` : "Open it on a public block explorer"}
                   <span className="sr-only"> (opens in a new tab)</span>

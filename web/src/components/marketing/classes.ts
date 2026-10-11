@@ -1,32 +1,31 @@
 /*
-  The landing page's type scale and shared class names (docs/DESIGN.md section 16): 13, 15, 17,
-  22, 30, 44 and 64px at 1440, the two largest steps one step smaller from 768px and two below it.
-  Display and text are Geist (font-display, font-text), chain data is Geist Mono (font-mono).
-  Headlines are Geist 600 at line-height 1.05, tracked -0.02em from 22 to 30px and -0.035em from
-  44px up; body is 400 at 15 to 17px, line-height 1.55. Colours are the identity tokens in
-  globals.css.
+  The landing page's type and shared class names (docs/DESIGN.md section 17, pay advice on
+  paper). Display is Redaction 35 at 700 with the ink filter (.inked); the dot matrix
+  (DotGothic16) sets the figures; Courier Prime is the typewriter for navigation, buttons, form
+  labels and chain data; Libre Franklin is the text. Colours are the paper tokens in globals.css.
 */
 export const t = {
-  h1: "font-display text-[30px] leading-[1.05] font-semibold tracking-[-0.02em] text-balance md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]",
-  h2: "font-display text-[22px] leading-[1.05] font-semibold tracking-[-0.02em] text-balance md:text-[30px] xl:text-[44px] xl:tracking-[-0.035em]",
-  /** A large figure on its own: the hero amount, a person's figure, a price. */
-  figure44:
-    "font-display text-[30px] leading-[1.05] font-semibold tracking-[-0.02em] xl:text-[44px] xl:tracking-[-0.035em]",
-  h3: "font-display text-[22px] leading-[1.05] font-semibold tracking-[-0.02em]",
-  lead: "text-[17px] leading-[1.55] text-ash",
-  body: "text-[15px] leading-[1.55]",
-  small: "text-[13px] leading-[1.5]",
-  data: "font-mono text-[13px] leading-[1.5] tracking-normal",
+  h1: "inked font-display text-[2.75rem] leading-[0.98] font-bold tracking-[-0.012em] sm:text-[3.5rem] lg:text-[4.25rem] xl:text-[5rem] xl:leading-[0.96]",
+  h2: "inked font-display text-[2rem] leading-[1.02] font-bold tracking-[-0.01em] text-balance md:text-[2.75rem]",
+  h3: "inked font-display text-[1.375rem] leading-[1.1] font-bold",
+  /** A large figure on its own, in dot matrix: a person's figure, a price. */
+  figure: "inked font-dot text-[2.25rem] leading-none tracking-[0.02em] md:text-[2.75rem]",
+  lead: "text-[1.0625rem] leading-[1.6] text-ash md:text-[1.125rem]",
+  body: "text-[0.9375rem] leading-[1.6]",
+  small: "text-[0.8125rem] leading-[1.5]",
+  data: "font-type text-[0.8125rem] leading-[1.5] tracking-normal",
+  /** A form label: Courier Prime in spaced caps. */
+  label: "form-label text-[0.75rem] leading-tight font-bold",
 } as const;
 
-/** The one gold action per view. */
-export const goldPill =
-  "inline-flex h-11 items-center justify-center rounded-full bg-gold px-6 text-[15px] font-medium text-on-gold transition-[filter] hover:brightness-[0.94]";
+/** The primary key: ink-filled, white typewriter text, square, 2px ink border. */
+export const inkButton =
+  "inline-flex h-11 items-center justify-center border-2 border-ink bg-ink px-[18px] font-type text-[0.875rem] font-bold text-paper transition-colors hover:border-ink-soft hover:bg-ink-soft";
 
-/** A quieter pill for the header, where the hero's gold action is already on screen. */
-export const quietPill =
-  "inline-flex h-9 items-center justify-center rounded-full border border-ink/20 px-4 text-[15px] font-medium text-ink transition-colors hover:border-ink/50";
+/** The secondary key: the same, outlined. */
+export const ghostButton =
+  "inline-flex h-11 items-center justify-center border-2 border-ink bg-transparent px-[18px] font-type text-[0.875rem] font-bold text-ink transition-colors hover:bg-muted";
 
 /** A text link in running copy: ink, a quiet underline that darkens on hover. */
 export const textLink =
-  "rounded-[3px] text-ink underline decoration-ash/50 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink";
+  "text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink";

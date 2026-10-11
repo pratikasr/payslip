@@ -51,7 +51,7 @@ export function PrivacyView({ run }: { run: Run }) {
 
       <section
         aria-labelledby="explorer-shows"
-        className="identity-vault flex min-w-0 flex-col rounded-xl bg-vault text-ink dark:border dark:border-mist"
+        className="identity-vault flex min-w-0 flex-col carbon-paper border border-carbon-line text-carbon-ink"
       >
         <div className="flex flex-wrap items-start justify-between gap-2 px-5 pt-5 pb-3 sm:px-[22px]">
           <div className="min-w-0">
@@ -61,7 +61,7 @@ export function PrivacyView({ run }: { run: Run }) {
             <p className="text-[0.8125rem] text-ash">These transactions, live on chain.</p>
           </div>
           <span className="inline-flex h-6 items-center gap-1.5 rounded-[4px] bg-mist px-2 text-[0.8125rem]">
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-gold" />
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-stamp" />
             Shielded
           </span>
         </div>

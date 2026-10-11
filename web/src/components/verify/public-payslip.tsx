@@ -290,7 +290,7 @@ export function PublicPayslip() {
   return (
     <div className={styles.page}>
       <style>{PRINT_CSS}</style>
-      <div className={proof ? styles.wide : styles.card}>
+      <div className={cn("paper feed-edges", proof ? styles.wide : styles.card)}>
         {/* The masthead names the issuer and the company it was issued for, on screen and on paper. */}
         <p className="mb-5 flex items-start gap-2 text-[0.8125rem] text-muted-foreground" data-testid="verify-issuer">
           <Mark className="mt-px size-5 shrink-0 text-foreground" />
@@ -490,7 +490,7 @@ function ProofView({
               target="_blank"
               rel="noreferrer"
               data-txid={proof.txid}
-              className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-gold"
+              className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
             >
               {host ? `Open it on ${host}` : "Open it on a public block explorer"}
               <span className="sr-only"> (opens in a new tab)</span>

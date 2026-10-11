@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "cn";
+import { FormRow, FormRows } from "@/components/ds/paper";
 import { SEP_RUN, payLineMemo } from "@/components/marketing/data";
 import { Coin, Usd } from "@/components/marketing/money";
 import { Height, Section, TxLink } from "@/components/marketing/parts";
@@ -41,7 +42,7 @@ const STEPS: { title: string; body: string; evidence: ReactNode }[] = [
     body: "Each payroll account sends one shielded payment to its contractor. The encrypted memo carries the period, the invoice and the dollar amount.",
     evidence: (
       <div>
-        <p className={cn(t.data, "text-ink [overflow-wrap:anywhere]")}>
+        <p className={cn(t.data, "border border-bar-line bg-bar px-2.5 py-2 text-ink [overflow-wrap:anywhere]")}>
           {payLineMemo(amara)
             .split("|")
             .map((part, i) => (
@@ -85,13 +86,17 @@ export function HowItWorks() {
       title="How a payroll run works"
       lead={`Four steps, each one on chain. The figures are the sample company's ${run.periodLabel} run.`}
     >
-      <ol className="mt-10 md:mt-14">
+      <ol className="mt-10 border-b-2 border-ink md:mt-14">
         {STEPS.map((s, i) => (
           <li
             key={s.title}
-            className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-5 border-t border-mist py-7 md:grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-8 md:py-9 xl:grid-cols-[4rem_minmax(0,1.1fr)_minmax(0,1fr)]"
+            className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-x-4 gap-y-5 border-t-2 border-ink py-7 md:grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-8 md:py-9 xl:grid-cols-[3.5rem_minmax(0,1.1fr)_minmax(0,1fr)]"
           >
-            <span aria-hidden="true" className={cn(t.h3, "text-ash tabular-nums")}>
+            {/* The step's number, boxed like a numbered field on a form. */}
+            <span
+              aria-hidden="true"
+              className="grid size-9 place-items-center border-2 border-ink font-type text-[1.125rem] leading-none font-bold tabular-nums md:size-11 md:text-[1.375rem]"
+            >
               {i + 1}
             </span>
             <div className="min-w-0">
@@ -109,17 +114,17 @@ export function HowItWorks() {
   );
 }
 
+/** What the chain holds for a step, as rows of a form on green bar. */
 function Facts({ rows, note }: { rows: [string, ReactNode][]; note?: string }) {
   return (
     <div>
-      <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[15px]">
+      <FormRows className="border border-bar-line">
         {rows.map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt className="text-ash">{k}</dt>
-            <dd className="min-w-0 tabular-nums">{v}</dd>
-          </div>
+          <FormRow key={k} label={k} className="tabular-nums">
+            {v}
+          </FormRow>
         ))}
-      </dl>
+      </FormRows>
       {note ? <p className={cn(t.small, "mt-2 text-ash")}>{note}</p> : null}
     </div>
   );

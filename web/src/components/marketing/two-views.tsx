@@ -1,130 +1,145 @@
 import Link from "next/link";
 import { cn } from "cn";
-import { truncateMiddle } from "@/lib/format";
 import {
-  ChainFacts,
-  PaperView,
-  Redacted,
-  Reveal,
-  Thread,
-  TwoViews,
-  TxidLines,
-  VaultView,
-  ViewField,
-  ViewTitle,
-} from "@/components/ds/two-views";
+  CarbonCopy,
+  FormRow,
+  FormRows,
+  Inked,
+  PayAdvice,
+  PayAmount,
+  Redaction,
+  TwoCopies,
+} from "@/components/ds/paper";
+import { formatDateTime, formatHeight, truncateMiddle } from "@/lib/format";
 import { HERO_PAYMENT as P } from "@/components/marketing/data";
 import { Coin, Usd } from "@/components/marketing/money";
 import { t, textLink } from "@/components/marketing/classes";
 
 /*
-  The landing hero's pair, built from the shared two-view panel (components/ds/two-views.tsx):
-  what the public explorer shows for one real transaction, and what Amara Okafor's viewing key
-  shows for the same transaction. Eight rows a side, level across the seam from 768px. The thread
-  draws and the paper side resolves once, on load; reduced motion shows the values at once.
+  The landing page's pair, built from the shared paper forms (components/ds/paper.tsx): one real
+  transaction as Amara Okafor's pay advice, the white original her viewing key reads, and as its
+  yellow carbon copy, what the public explorer shows. The rows run in the same order on both, so
+  each ink bar sits across from the value it hides; each bar is as wide as that value in the
+  typewriter face. The ink lifts off the original's values once, on load; reduced motion shows
+  them at once.
 */
 
-const ROWS = 8;
+const short = truncateMiddle(P.txid, 8, 6);
+const paid = formatDateTime(P.blockTime);
 
-export function HeroTwoViews({ className }: { className?: string }) {
+/** The values the chain hides, as the key reads them; the carbon sizes its bars from them. */
+const PRIVATE = [
+  { label: "Employer", value: P.payer },
+  { label: "Payee", value: P.name },
+  { label: "Period", value: P.periodLabel },
+  { label: "Invoice", value: P.invoice },
+];
+
+export function HeroCopies({ className }: { className?: string }) {
   return (
-    <TwoViews
-      rows={ROWS}
+    <TwoCopies
       motion
       className={className}
-      caption={<>One payment, two views: what the Zcash explorer shows, and what {P.name}&apos;s viewing key shows.</>}
-    >
-      <VaultView labelledBy="vault-title">
-        <ViewTitle id="vault-title" title="What the explorer shows">
-          A shielded transaction in the {P.pool} pool, with {P.actions} actions.
-        </ViewTitle>
-        <div className="flex items-center pb-5">
-          <a
-            href={P.explorerUrl}
-            target="_blank"
-            rel="noreferrer"
-            data-txid={P.txid}
-            className={cn(t.data, "block rounded-[3px] text-ink transition-colors hover:text-gold")}
+      caption={
+        <>
+          One payment, two copies: the pay advice {P.name}&apos;s viewing key reads, and what the Zcash explorer shows.
+        </>
+      }
+      original={
+        <PayAdvice titleId="advice-title">
+          <FormRows>
+            {PRIVATE.map((r, i) => (
+              <FormRow key={r.label} label={r.label}>
+                <Inked delay={700 + i * 110} className={cn(r.label !== "Invoice" && "uppercase")}>
+                  {r.value}
+                </Inked>
+              </FormRow>
+            ))}
+          </FormRows>
+          <PayAmount
+            sub={
+              <Inked delay={1240}>
+                <Coin zat={P.zat} unit={P.coin} />
+              </Inked>
+            }
           >
-            <TxidLines txid={P.txid} />
-            <span className="sr-only"> (transaction on the Zcash testnet explorer, opens in a new tab)</span>
-          </a>
-          <Thread side="vault" className="ml-4" />
-        </div>
-        <ChainFacts height={P.height} time={P.blockTime} />
-        <ViewField label="Amount">
-          <Redacted className={cn(t.figure44, "w-[3.95em]")} />
-          <Redacted className="mt-1.5 w-[7.3em] text-[13px]" />
-        </ViewField>
-        <ViewField label="Sender">
-          <Redacted className="w-[7.95em] text-[15px]" />
-        </ViewField>
-        <ViewField label="Recipient">
-          <Redacted className="w-[6.4em] text-[15px]" />
-          <Redacted className={cn(t.data, "mt-0.5 w-[19ch]")} />
-        </ViewField>
-        <ViewField label="Memo">
-          <Redacted className="w-[min(100%,16.5em)] text-[15px]" />
-        </ViewField>
-        <p className="border-t border-mist pt-5 text-[15px]">
-          <a
-            href={P.explorerUrl}
-            target="_blank"
-            rel="noreferrer"
-            data-txid={P.txid}
-            className={cn(textLink, "decoration-ink/40")}
-          >
-            Open it on {P.explorerName}
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
-        </p>
-      </VaultView>
-
-      <PaperView labelledBy="paper-title">
-        <ViewTitle id="paper-title" title={`What ${P.name.split(" ")[0]}'s viewing key shows`}>
-          Her {P.periodLabel} payslip, read from the same transaction.
-        </ViewTitle>
-        <div className="flex items-center pb-5">
-          <Thread side="paper" />
-          <p className={cn(t.data, "text-ink")}>
-            <TxidLines txid={P.txid} />
+            <Inked delay={1140}>
+              <Usd cents={P.usdCents} />
+            </Inked>
+          </PayAmount>
+          <FormRows>
+            <FormRow label="Txid">
+              <span title={P.txid}>{short}</span>
+              <span className="sr-only">, transaction {P.txid}</span>
+            </FormRow>
+            <FormRow label="Block">{formatHeight(P.height)}</FormRow>
+            <FormRow label="Paid">
+              <span className="uppercase">{paid}</span>
+            </FormRow>
+          </FormRows>
+          <p className={cn(t.data, "mt-4 px-2.5")}>
+            <Link href={`/verify#${P.proofToken}`} className={textLink}>
+              Check the payment proof
+            </Link>
           </p>
-        </div>
-        <ChainFacts height={P.height} time={P.blockTime} timeLabel="Paid" />
-        <ViewField label="Amount">
-          <Reveal delay={960} className={t.figure44}>
-            <Usd cents={P.usdCents} />
-          </Reveal>
-          <Reveal delay={1080} className="mt-1.5 text-[13px] text-ash">
-            <Coin zat={P.zat} unit={P.coin} />
-          </Reveal>
-        </ViewField>
-        <ViewField label="Sender">
-          <Reveal delay={1200} className="text-[15px]">
-            {P.payer}
-          </Reveal>
-        </ViewField>
-        <ViewField label="Recipient">
-          <Reveal delay={1320} className="text-[15px]">
-            {P.name}
-          </Reveal>
-          <Reveal delay={1400} className={cn(t.data, "mt-0.5 text-ash")}>
-            <span title={P.recipient} className="whitespace-nowrap">
-              {truncateMiddle(P.recipient, 10, 8)}
-            </span>
-          </Reveal>
-        </ViewField>
-        <ViewField label="Memo">
-          <Reveal delay={1520} className="text-[15px]">
-            {P.periodLabel} pay, invoice <span className="whitespace-nowrap">{P.invoice}</span>
-          </Reveal>
-        </ViewField>
-        <p className="border-t border-mist pt-5 text-[15px]">
-          <Link href={`/verify#${P.proofToken}`} className={textLink}>
-            Check the payment proof
-          </Link>
-        </p>
-      </PaperView>
-    </TwoViews>
+        </PayAdvice>
+      }
+      carbon={
+        <CarbonCopy
+          titleId="carbon-title"
+          className="h-full"
+          foot={
+            <p className={cn(t.data, "mt-3 px-2.5")}>
+              <a
+                href={P.explorerUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-txid={P.txid}
+                className="text-carbon-ink underline decoration-carbon-ink/40 decoration-1 underline-offset-[3px] hover:decoration-carbon-ink"
+              >
+                Open it on {P.explorerName}
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </p>
+          }
+          note="The public copy of the same payment. Zcash shows that a shielded transaction happened, in which block and when. Everything else stays inked out unless you hold a viewing key."
+        >
+          <FormRows tone="ruled">
+            {PRIVATE.map((r) => (
+              <FormRow key={r.label} label={r.label}>
+                <Redaction width={`${r.value.length}ch`} />
+              </FormRow>
+            ))}
+            <FormRow label="Amount" className="py-2">
+              <Redaction className="h-9 align-middle sm:h-11" width="min(100%, 14.5rem)" />
+            </FormRow>
+            <FormRow label="Txid" valueClassName="carbon-print">
+              <a
+                href={P.explorerUrl}
+                target="_blank"
+                rel="noreferrer"
+                data-txid={P.txid}
+                title={P.txid}
+                className="text-carbon-ink underline decoration-carbon-ink/35 decoration-1 underline-offset-[3px] hover:decoration-carbon-ink"
+              >
+                {short}
+                <span className="sr-only">
+                  , transaction {P.txid} on the Zcash testnet explorer (opens in a new tab)
+                </span>
+              </a>
+            </FormRow>
+            <FormRow label="Block" valueClassName="carbon-print">
+              {formatHeight(P.height)}
+            </FormRow>
+            <FormRow label="Paid" valueClassName="carbon-print uppercase">
+              {paid}
+            </FormRow>
+            <FormRow label="Pool" valueClassName="carbon-print">
+              {P.pool}, {P.actions} actions
+            </FormRow>
+          </FormRows>
+        </CarbonCopy>
+      }
+    />
   );
 }

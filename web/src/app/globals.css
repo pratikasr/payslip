@@ -5,22 +5,39 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Payslip's tokens (docs/DESIGN.md section 16: one payment, two views). Five colours carry the
-  identity. Paper is the key's view: pages, payslips, the console. Vault is the explorer's view:
-  the dark panel where redaction bars live, and the ink on paper. Gold is the thread between the
-  two views, the primary action, the shielded mark and the active tab; as text on paper it is
-  #8A6400. Ash is secondary text and Mist the hairlines, surfaces and tracks; both change value on
-  a vault surface (.identity-vault). Status colours stay semantic and are never decorative.
+  Payslip's tokens (docs/DESIGN.md section 17: pay advice on paper). The app is a desk with sheets
+  of paper on it. The key's view of a payment is the white original of a pay advice; the
+  explorer's view is the yellow carbon copy of the same form, with the private fields inked out.
+
+    Desk       the grey the sheets lie on, and the sidebar
+    Paper      sheets, with a faint fibre grain (.paper)
+    Ink        text, primary buttons, rules on forms
+    Ink soft   secondary text
+    Rule       hairlines
+    Green bar  alternating form and ledger rows
+    Carbon     the explorer's copy: canary paper, carbon line, carbon ink
+    Redaction  the ink bars over what the chain hides
+    Stamp      the SHIELDED stamp and destructive actions only
+    Gold       the logo's bar only
+
+  The app's roles (background, foreground, muted, border, primary, card and the rest) are set
+  from these, so every screen reads as paper without its own colours. .identity-vault marks a
+  carbon copy: ink, soft ink and rules take their carbon values there and the roles follow.
+  Status colours stay semantic and are never decorative.
 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Geist for display and text alike; Geist Mono for chain data (docs/DESIGN.md section 16). */
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-text: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Libre Franklin for text; Courier Prime the typewriter; Redaction 35 the display; DotGothic16 the dot matrix. */
+  --font-sans: var(--font-libre-franklin), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--font-libre-franklin), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-redaction-35), Georgia, serif;
+  --font-display-regular: var(--font-redaction-35-regular), Georgia, serif;
+  --font-heading: var(--font-redaction-35), Georgia, serif;
+  --font-serif: var(--font-redaction), Georgia, serif;
+  --font-mono: var(--font-courier-prime), ui-monospace, "Courier New", monospace;
+  --font-type: var(--font-courier-prime), ui-monospace, "Courier New", monospace;
+  --font-dot: var(--font-dotgothic), var(--font-courier-prime), ui-monospace, monospace;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -60,7 +77,19 @@
   --color-redact: var(--redact);
   --color-viz: var(--viz);
   --color-viz-soft: var(--viz-soft);
-  /* The five identity names as utilities (bg-paper, bg-vault, text-ink, text-ash, bg-mist, bg-gold, text-gold-ink). */
+  /* The paper names as utilities (bg-desk, bg-bar, bg-carbon, text-carbon-ink, text-stamp, border-rule). */
+  --color-desk: var(--desk);
+  --color-rule: var(--rule);
+  --color-ink-soft: var(--ink-soft);
+  --color-bar: var(--bar);
+  --color-bar-line: var(--bar-line);
+  --color-carbon: var(--carbon);
+  --color-carbon-line: var(--carbon-line);
+  --color-carbon-ink: var(--carbon-ink);
+  --color-carbon-soft: var(--carbon-soft);
+  --color-stamp: var(--stamp);
+  --color-tear: var(--tear);
+  /* Section 16's names, kept for the screens that still use them: they now resolve to paper. */
   --color-paper: var(--id-paper);
   --color-vault: var(--id-vault);
   --color-ink: var(--id-ink);
@@ -69,6 +98,7 @@
   --color-on-gold: var(--id-on-gold);
   --color-ash: var(--id-ash);
   --color-mist: var(--id-mist);
+  /* Square corners: paper has none. rounded-full stays round for avatars and dots. */
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
@@ -79,137 +109,166 @@
 }
 
 :root {
-  /* The five names. */
+  /* The paper names (light). */
+  --desk: #e8e9eb;
+  --rule: #cfd3da;
+  --ink-soft: #545b69;
+  --bar: #edf3ec;
+  --bar-line: #c9d6c7;
+  --carbon: #fbf1c7;
+  --carbon-line: #e5d48f;
+  --carbon-ink: #2a3557;
+  --carbon-soft: #5d5638;
+  --redact-edge: transparent;
+  --stamp: #b42a2a;
+  --tear: #9aa1ab;
+  --feed-line: #b9bdc5;
+  --sheet-shadow: 0 1px 1px rgb(20 24 32 / 0.06), 0 14px 40px -16px rgb(20 24 32 / 0.22);
+  /* Paper fibre: fractal noise in a grey that only darkens, at low alpha. */
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5  0 0 0 0 0.52  0 0 0 0 0.56  0 0 0 .08 0'/></filter><rect width='100%' height='100%' filter='url(%23f)'/></svg>");
+
+  /* Section 16's names, now paper. */
   --id-paper: #ffffff;
-  --id-vault: #1c2230;
+  --id-vault: #fbf1c7;
   --id-ink: #1c2230;
   --id-gold: #f4b728;
-  --id-gold-ink: #8a6400;
+  --id-gold-ink: #1c2230;
   --id-on-gold: #1c2230;
-  --id-ash: #5c6472;
-  --id-mist: #eef1f5;
+  --id-ash: #545b69;
+  --id-mist: #dfe2e7;
 
-  /* The app's roles, from the five names. */
-  --radius: 0.5rem;
+  /* The app's roles, from the paper names. */
+  --radius: 0rem;
   --background: #ffffff;
   --foreground: #1c2230;
-  --strong: #343c4b;
-  --muted-foreground: #5c6472;
+  --strong: #2c3342;
+  --muted-foreground: #545b69;
   /* Not for text: dividers, empty chart stubs, icons beside a label. */
-  --faint: #8b93a5;
+  --faint: #8b919c;
   --card: #ffffff;
   --card-foreground: #1c2230;
   --popover: #ffffff;
   --popover-foreground: #1c2230;
-  --raised: #f6f8fa;
-  --sidebar: #ffffff;
-  --chip: #eef1f5;
-  --avatar: #eef1f5;
+  --raised: #f4f5f7;
+  --sidebar: #e8e9eb;
+  --chip: #eceef1;
+  --avatar: #eceef1;
   --banner: #1c2230;
-  --banner-foreground: #eef1f5;
-  --primary: #f4b728;
-  --primary-edge: #f4b728;
-  --primary-foreground: #1c2230;
-  /* Gold is never a wash: the soft step is Mist. */
-  --primary-soft: #eef1f5;
-  --secondary: #eef1f5;
+  --banner-foreground: #ffffff;
+  /* The primary action is ink, filled; gold is the logo's alone. */
+  --primary: #1c2230;
+  --primary-edge: #1c2230;
+  --primary-foreground: #ffffff;
+  --primary-soft: #eceef1;
+  --secondary: #eceef1;
   --secondary-foreground: #1c2230;
-  --muted: #f3f5f8;
-  --accent: #f3f5f8;
+  --muted: #f1f2f4;
+  --accent: #f1f2f4;
   --accent-foreground: #1c2230;
-  --destructive: #b0175f;
-  --danger-bg: #fbe8f0;
-  --success: #036e43;
-  --success-bg: #e3f3eb;
-  --warning: #8a5a00;
-  --warning-bg: #fdf3d7;
-  --info: #2f4a7a;
-  --info-bg: #e8eef8;
-  --link: #8a6400;
-  --border: #e3e7ed;
-  --hairline: #eef1f5;
-  --input: #868e9c;
-  /* Gold as text on paper (5.4:1); gold itself on a vault surface. */
-  --ring: #8a6400;
-  --redact: #eef1f5;
+  --destructive: #b42a2a;
+  --danger-bg: #f9e9e7;
+  --success: #1f6237;
+  --success-bg: #edf3ec;
+  --warning: #6f5000;
+  --warning-bg: #fbf1c7;
+  --info: #2a3557;
+  --info-bg: #e9edf5;
+  --link: #1c2230;
+  --border: #cfd3da;
+  --hairline: #dfe2e7;
+  /* The ruled baseline of an input: 3.7:1 on paper, so the field reads as a field. */
+  --input: #7b8290;
+  --ring: #1c2230;
+  --redact: #11141b;
   --viz: #1c2230;
-  --viz-soft: #c3cad5;
+  --viz-soft: #b8bec8;
 }
 
+/* Dark: carbon paper. */
 .dark {
-  --id-paper: #14181f;
-  --id-vault: #0f1218;
-  --id-ink: #eef1f5;
-  --id-gold-ink: #f4b728;
-  --id-ash: #8b93a5;
-  --id-mist: #262c38;
+  --desk: #0f1218;
+  --rule: #2b313c;
+  --ink-soft: #a7adb8;
+  --bar: #1c232a;
+  --bar-line: #2c3833;
+  --carbon: #2a2616;
+  --carbon-line: #4a4224;
+  --carbon-ink: #e9d98a;
+  --carbon-soft: #c4b77f;
+  /* A 1px edge so an ink bar still reads on dark paper. */
+  --redact-edge: #3a404b;
+  --stamp: #e05a5a;
+  --tear: #5d6470;
+  --feed-line: #343a46;
+  --sheet-shadow: 0 1px 1px rgb(0 0 0 / 0.4), 0 18px 44px -18px rgb(0 0 0 / 0.7);
+  --grain: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='f'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.88  0 0 0 0 0.84  0 0 0 .05 0'/></filter><rect width='100%' height='100%' filter='url(%23f)'/></svg>");
 
-  --background: #14181f;
-  --foreground: #eef1f5;
-  --strong: #d3d8e0;
-  --muted-foreground: #8b93a5;
-  --faint: #6b7385;
-  --card: #14181f;
-  --card-foreground: #eef1f5;
-  --popover: #1b2029;
-  --popover-foreground: #eef1f5;
-  --raised: #1a1f28;
-  --sidebar: #14181f;
-  --chip: #262c38;
-  --avatar: #262c38;
+  --id-paper: #171b23;
+  --id-vault: #2a2616;
+  --id-ink: #e6e2d6;
+  --id-gold-ink: #e6e2d6;
+  --id-on-gold: #1c2230;
+  --id-ash: #a7adb8;
+  --id-mist: #2b313c;
+
+  --background: #171b23;
+  --foreground: #e6e2d6;
+  --strong: #d6d2c6;
+  --muted-foreground: #a7adb8;
+  --faint: #6b7180;
+  --card: #171b23;
+  --card-foreground: #e6e2d6;
+  --popover: #1c212a;
+  --popover-foreground: #e6e2d6;
+  --raised: #1c2129;
+  --sidebar: #0f1218;
+  --chip: #232934;
+  --avatar: #232934;
   --banner: #0f1218;
-  --banner-foreground: #eef1f5;
-  --primary: #f4b728;
-  --primary-edge: #f4b728;
-  --primary-foreground: #1c2230;
-  --primary-soft: #262c38;
-  --secondary: #262c38;
-  --secondary-foreground: #eef1f5;
-  --muted: #1b2029;
+  --banner-foreground: #e6e2d6;
+  --primary: #e6e2d6;
+  --primary-edge: #e6e2d6;
+  --primary-foreground: #171b23;
+  --primary-soft: #232934;
+  --secondary: #232934;
+  --secondary-foreground: #e6e2d6;
+  --muted: #1f242d;
   --accent: #1f252f;
-  --accent-foreground: #eef1f5;
-  --destructive: #fc92b4;
-  --danger-bg: #3a1a28;
-  --success: #77c599;
-  --success-bg: #15302a;
-  --warning: #f6c453;
-  --warning-bg: #2e2512;
-  --info: #8da4f5;
-  --info-bg: #1d2340;
-  --link: #f4b728;
-  --border: #2e3542;
-  --hairline: #262c38;
-  --input: #6b7385;
-  --ring: #f4b728;
-  --redact: #262c38;
-  --viz: #eef1f5;
+  --accent-foreground: #e6e2d6;
+  --destructive: #e05a5a;
+  --danger-bg: #3a1c1c;
+  --success: #8fc9a0;
+  --success-bg: #1c232a;
+  --warning: #e9d98a;
+  --warning-bg: #2a2616;
+  --info: #a9b8e0;
+  --info-bg: #1d2233;
+  --link: #e6e2d6;
+  --border: #2b313c;
+  --hairline: #252a34;
+  --input: #767d8b;
+  --ring: #e6e2d6;
+  --redact: #000000;
+  --viz: #e6e2d6;
   --viz-soft: #4a5263;
 }
 
 /*
-  A vault surface: the explorer's side of a two-view panel (components/ds/two-views.tsx). Ink
-  turns white, Ash and Mist take their vault values, and the app's own roles follow, so shared
-  pieces (a money figure, a muted line, a focus ring) read right on it.
+  A carbon copy: the explorer's side of a pair (components/ds/paper.tsx, two-views.tsx). Ink,
+  soft ink and rules take their carbon values, and the app's own roles follow, so shared pieces
+  (a money figure, a muted line, a focus ring) print right on canary paper.
 */
 .identity-vault {
-  --id-ink: #ffffff;
-  --id-ash: #8b93a5;
-  --id-mist: #2a3242;
-  --foreground: #ffffff;
-  --muted-foreground: #8b93a5;
-  --border: #2a3242;
-  --hairline: #2a3242;
-  --link: #f4b728;
-  --ring: #f4b728;
-  color-scheme: dark;
-}
-.dark .identity-vault {
-  --id-ink: #eef1f5;
-  --id-ash: #8b93a5;
-  --id-mist: #262c38;
-  --foreground: #eef1f5;
-  --border: #262c38;
-  --hairline: #262c38;
+  --id-ink: var(--carbon-ink);
+  --id-ash: var(--carbon-soft);
+  --id-mist: var(--carbon-line);
+  --foreground: var(--carbon-ink);
+  --muted-foreground: var(--carbon-soft);
+  --border: var(--carbon-line);
+  --hairline: var(--carbon-line);
+  --link: var(--carbon-ink);
+  --ring: var(--carbon-ink);
+  --bar: transparent;
 }
 
 @layer base {
@@ -220,19 +279,35 @@
     @apply font-sans;
     -webkit-text-size-adjust: 100%;
   }
-  /* Body text: Geist 400 at 15 to 17px, line-height 1.55 (docs/DESIGN.md section 16). */
+  /* The desk. Sheets of paper (.paper) lie on it. Body text: Libre Franklin 400, line-height 1.55. */
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply text-foreground antialiased;
+    background-color: var(--desk);
     line-height: 1.55;
   }
-  /* Figures in tables line up digit for digit. */
+  /*
+    Tables are typewritten forms: Courier Prime cells with figures that line up, a ruled header in
+    spaced caps, and green-bar rows. A row's own background (a group heading) wins over the bar.
+  */
   table {
+    font-family: var(--font-type);
     font-variant-numeric: tabular-nums;
+  }
+  thead th {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  tbody > tr:nth-child(odd):not([data-group], [data-plain]) {
+    background-color: var(--bar);
+  }
+  table[data-plain] tbody > tr {
+    background-color: transparent;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  /* Focus: a 2px ink outline, offset from the thing it marks. */
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
@@ -254,9 +329,9 @@
 
 @layer utilities {
   /*
-    Money, typeset: tabular digits, cents smaller and raised (src/components/app/amount.tsx). The
-    tracking comes from the figure around it, so a headline figure keeps the display treatment
-    (TYPE.hero in src/components/ds/type.ts).
+    Money, typeset: tabular digits, cents smaller and raised (src/components/app/amount.tsx). On a
+    printed form (the dot matrix, the typewriter and every table) the cents print level, the way a
+    line printer or a typewriter sets them.
   */
   .money {
     font-variant-numeric: tabular-nums;
@@ -268,6 +343,13 @@
     vertical-align: 0.38em;
     letter-spacing: 0;
     margin-left: 0.5px;
+  }
+  .font-dot .money-cents,
+  .font-type .money-cents,
+  table .money-cents {
+    font-size: 1em;
+    vertical-align: baseline;
+    margin-left: 0;
   }
   /* The last four coin digits, dimmed by colour rather than opacity so they keep 4.5:1 contrast. */
   .money-tail {
@@ -286,6 +368,111 @@
   .figure .num {
     font-variant-numeric: proportional-nums;
     font-feature-settings: "tnum" 0;
+  }
+
+  /*
+    The print effects (filters defined once in the root layout). Ink is for display type, large
+    amounts, redaction bars and the stamp only; paragraphs, tables and form values stay crisp.
+  */
+  .inked {
+    filter: url(#ps-ink);
+  }
+  .carbon-print {
+    filter: url(#ps-carbon);
+  }
+  .stamped {
+    filter: url(#ps-stamp);
+  }
+
+  /* A sheet of paper: the card colour with its fibre grain. */
+  .paper {
+    background-color: var(--card);
+    background-image: var(--grain);
+  }
+  .sheet-shadow {
+    box-shadow: var(--sheet-shadow);
+  }
+  /* Canary paper for the carbon copy, with the same grain. */
+  .carbon-paper {
+    background-color: var(--id-vault);
+    background-image: var(--grain);
+  }
+  /* Spaced caps: form labels only (the one place section 17 allows them). */
+  .form-label {
+    font-family: var(--font-type);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  /* Green-bar rows for a list of form rows that is not a table: every other row on the bar. */
+  .green-bar > :nth-child(odd):not([data-plain]) {
+    background-color: var(--bar);
+  }
+
+  /*
+    Continuous-form edges, Payslip's signature: a strip of tractor-feed holes in a dashed margin
+    down both sides of every sheet (the landing page, the console, portal and Books content sheet,
+    the run page, payslip and proof), continuous for the sheet's full height. The holes are
+    punched through to the desk colour in both themes, so they read as real cutouts. The sheet
+    pads itself clear of them: a 32px margin with small holes below 640px, so content keeps its
+    width, 40px to 1023px and 52px from 1024px. Dialogs and small cards have none.
+  */
+  .feed-edges {
+    --feed-w: 32px;
+    --feed-hole: 4.5px;
+    --feed-step: 34px;
+    position: relative;
+    padding-inline: var(--feed-w);
+  }
+  @media (min-width: 640px) {
+    .feed-edges {
+      --feed-w: 40px;
+      --feed-hole: 5.5px;
+      --feed-step: 40px;
+    }
+  }
+  @media (min-width: 1024px) {
+    .feed-edges {
+      --feed-w: 52px;
+      --feed-hole: 6.5px;
+      --feed-step: 44px;
+    }
+  }
+  .feed-edges::before,
+  .feed-edges::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: var(--feed-w);
+    pointer-events: none;
+    z-index: 1;
+    background-image: radial-gradient(
+      circle at calc(var(--feed-w) / 2) calc(var(--feed-step) / 2),
+      var(--desk) var(--feed-hole),
+      transparent calc(var(--feed-hole) + 0.75px)
+    );
+    background-size: var(--feed-w) var(--feed-step);
+    background-repeat: repeat-y;
+  }
+  .feed-edges::before {
+    left: 0;
+    border-right: 1px dashed var(--feed-line);
+  }
+  .feed-edges::after {
+    right: 0;
+    border-left: 1px dashed var(--feed-line);
+  }
+
+  /* The ink bar over a hidden value: near-black, a rough edge from the ink filter, never a blur. */
+  .redaction {
+    display: inline-block;
+    height: 1.05em;
+    max-width: 100%;
+    vertical-align: -0.18em;
+    background-color: var(--redact);
+    box-shadow: 0 0 0 1px var(--redact-edge);
+    border-radius: 1px;
+    filter: url(#ps-ink);
   }
 }
 
@@ -335,10 +522,6 @@ html[data-private] .money {
   filter: blur(7px);
 }
 
-/*
-  Print: a clean statement on A4 or Letter. Navigation, buttons and anything
-  marked data-print="hide" disappear; colors fall back to black on white.
-*/
 @media print {
   @page {
     size: auto;
@@ -381,8 +564,33 @@ html[data-private] .money {
     --id-gold-ink: #000000;
     --id-ash: #333333;
     --id-mist: #d9d9d9;
+    --desk: #ffffff;
+    --bar: #f2f2f2;
+    --carbon: #ffffff;
+    --carbon-ink: #000000;
+    --carbon-soft: #333333;
+    --carbon-line: #cccccc;
+    --redact: #000000;
+    --redact-edge: transparent;
+    --stamp: #000000;
+    --grain: none;
+    --sheet-shadow: none;
   }
-  /* The explorer's view prints as a ruled box beside the paper: black on white, bars in grey. */
+  /* Paper effects stay on screen: print is crisp black on white. */
+  .inked,
+  .carbon-print,
+  .stamped,
+  .redaction {
+    filter: none !important;
+  }
+  .feed-edges {
+    padding-inline: 0 !important;
+  }
+  .feed-edges::before,
+  .feed-edges::after {
+    display: none !important;
+  }
+  /* The carbon copy prints as a ruled box beside the original: black on white, bars in black. */
   .identity-vault,
   .dark .identity-vault {
     --id-ink: #000000;
@@ -393,10 +601,14 @@ html[data-private] .money {
     --border: #999999;
     --hairline: #cccccc;
     --link: #000000;
+    --carbon-ink: #000000;
+    --carbon-soft: #333333;
+    --carbon-line: #cccccc;
     border: 0.5pt solid #999999 !important;
     break-inside: avoid;
   }
   [data-redact]::before,
+  .redaction,
   [data-thread] {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
@@ -477,43 +689,32 @@ html[data-private] .money {
 }
 
 /*
-  The two-view panel's one orchestrated motion (docs/DESIGN.md section 16), for a panel that asks
-  for it (TwoViews motion, the landing hero): the gold thread draws from the explorer's txid to
-  the key's txid, a dot landing at each end, then each private value on the paper side resolves
-  from a Mist bar into its value, top to bottom. Values are in the markup from the start, so
+  The pay advice's one orchestrated motion (docs/DESIGN.md sections 16 and 17), for a pair that
+  asks for it (TwoCopies or TwoViews with motion, the landing page): each private value on the
+  white original starts under an ink bar, the same bar the yellow copy keeps, and the bar lifts
+  off it, top to bottom, as if the key were read. Values are in the markup from the start, so
   screen readers and reduced motion get the final state at once; nothing here runs under reduced
   motion.
 */
 @media (prefers-reduced-motion: no-preference) {
-  .tv-motion .tv-thread {
-    transform-origin: left center;
-    animation: tv-draw 520ms cubic-bezier(0.55, 0, 0.25, 1) 240ms both;
-  }
-  .tv-motion .tv-thread-paper {
-    animation-duration: 200ms;
-    animation-delay: 760ms;
-    animation-timing-function: linear;
-  }
-  .tv-motion .tv-dot {
-    animation: tv-pop 260ms cubic-bezier(0.3, 1.4, 0.5, 1) 180ms both;
-  }
-  .tv-motion .tv-dot-paper {
-    animation-delay: 920ms;
-  }
   .tv-motion .tv-reveal {
     position: relative;
   }
   .tv-motion .tv-reveal > .tv-value {
-    animation: tv-fade 380ms ease-out calc(var(--tv-delay, 1000ms) + 220ms) both;
+    animation: tv-fade 320ms ease-out calc(var(--tv-delay, 900ms) + 260ms) both;
   }
   .tv-motion .tv-reveal::after {
     content: "";
     position: absolute;
-    inset: 0.14em 0;
-    border-radius: 4px;
-    background: var(--id-mist);
+    inset: 0.1em -0.1em;
+    background: var(--redact);
+    filter: url(#ps-ink);
     transform-origin: right center;
-    animation: tv-unbar 560ms cubic-bezier(0.65, 0, 0.35, 1) var(--tv-delay, 1000ms) both;
+    animation: tv-unbar 520ms cubic-bezier(0.65, 0, 0.35, 1) var(--tv-delay, 900ms) both;
+  }
+  .tv-motion .tv-thread {
+    transform-origin: left center;
+    animation: tv-draw 520ms cubic-bezier(0.55, 0, 0.25, 1) 240ms both;
   }
 }
 @keyframes tv-draw {
@@ -522,11 +723,6 @@ html[data-private] .money {
   }
   to {
     transform: scaleX(1);
-  }
-}
-@keyframes tv-pop {
-  from {
-    transform: scale(0);
   }
 }
 @keyframes tv-unbar {

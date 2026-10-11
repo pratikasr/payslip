@@ -27,7 +27,7 @@ function PopoverContent({
         sideOffset={sideOffset}
         collisionPadding={12}
         className={cn(
-          "z-50 w-72 max-w-[calc(100vw-1.5rem)] rounded-xl bg-popover p-3.5 text-[0.8125rem] leading-relaxed text-popover-foreground shadow-[0_1px_4px_rgba(183,187,219,0.14),0_0_1px_rgba(175,178,206,0.9),0_8px_12px_rgba(14,14,45,0.08)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 dark:ring-1 dark:ring-white/10",
+          "z-50 w-72 max-w-[calc(100vw-1.5rem)] paper sheet-shadow border border-border p-3.5 text-[0.8125rem] leading-relaxed text-popover-foreground outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 dark:ring-1 dark:ring-white/10",
           className
         )}
         {...props}

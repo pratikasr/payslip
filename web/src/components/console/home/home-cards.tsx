@@ -73,7 +73,7 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
         title={
           <span className="inline-flex items-center gap-1.5">
             Paid to contractors in {year}
-            <ShieldCheck className="size-4 text-gold-ink" aria-label="Every payment shielded" />
+            <ShieldCheck className="size-4 text-foreground" aria-label="Every payment shielded" />
           </span>
         }
         actions={

@@ -33,8 +33,8 @@ export function FocusShell({
 }) {
   return (
     <>
-      <div className="min-h-[calc(100dvh-3rem)] bg-background">
-        <header role="banner" className="flex items-center gap-3.5 px-4 py-5 sm:px-10" data-print="hide">
+      <div className="paper feed-edges min-h-[calc(100dvh-3rem)]">
+        <header role="banner" className="flex items-center gap-3.5 px-2.5 py-5 sm:px-10" data-print="hide">
           <LogoMark className="size-[26px]" />
           <span aria-hidden="true" className="h-[22px] w-px bg-border" />
           <span className="min-w-0 truncate text-[0.9375rem]">{context}</span>
@@ -44,7 +44,7 @@ export function FocusShell({
           </span>
           <Link
             href={closeHref}
-            className="inline-flex size-9 items-center justify-center rounded-full text-strong hover:bg-muted pointer-coarse:size-11"
+            className="inline-flex size-9 items-center justify-center text-strong hover:bg-muted pointer-coarse:size-11"
             aria-label="Close"
           >
             <X className="size-5" aria-hidden="true" />
@@ -52,7 +52,7 @@ export function FocusShell({
         </header>
         <div
           className={cn(
-            "grid gap-6 px-4 pt-2 pb-28 sm:px-10 lg:gap-16",
+            "grid gap-6 px-2.5 pt-2 pb-28 sm:px-10 lg:gap-16",
             rail ? "lg:grid-cols-[260px_minmax(0,560px)]" : "justify-center lg:grid-cols-[minmax(0,640px)]",
             rail && summary && "xl:grid-cols-[220px_minmax(0,560px)_minmax(0,300px)] xl:gap-12",
           )}
@@ -72,10 +72,7 @@ export function FocusShell({
           ) : null}
         </div>
         {footer ? (
-          <div
-            className="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-background/95 backdrop-blur"
-            data-print="hide"
-          >
+          <div className="paper fixed inset-x-0 bottom-0 z-30 border-t border-hairline" data-print="hide">
             <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3 sm:px-10">{footer}</div>
           </div>
         ) : null}
@@ -84,14 +81,14 @@ export function FocusShell({
   );
 }
 
-/** One step in the rail: done (tick), current (gold edge) or upcoming (muted). */
+/** One step in the rail: done (tick), current (ink edge) or upcoming (muted). */
 export function RailStep({ state, children }: { state: "done" | "current" | "upcoming"; children: ReactNode }) {
   return (
     <div
       aria-current={state === "current" ? "step" : undefined}
       className={cn(
         "flex items-center gap-2 border-l-2 py-[7px] pl-3.5 text-[0.9375rem]",
-        state === "current" && "border-gold font-medium text-foreground",
+        state === "current" && "border-foreground font-medium text-foreground",
         state === "done" && "border-hairline text-strong",
         state === "upcoming" && "border-hairline text-muted-foreground",
       )}

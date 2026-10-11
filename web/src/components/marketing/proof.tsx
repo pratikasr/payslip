@@ -24,35 +24,39 @@ export function Proof() {
         </>
       }
     >
-      <p className="mt-6 text-[13px] text-ash">{HERO_PAYMENT.label}</p>
-      <table className="mt-4 w-full border-collapse text-left text-[15px]">
+      <p className={cn(t.label, "mt-8 text-ash")}>{HERO_PAYMENT.label}</p>
+      <table className="mt-3 w-full border-collapse border-b-2 border-ink text-left text-[0.875rem] sm:text-[0.9375rem]">
         <caption className="sr-only">
           The sample company&apos;s payroll payments on Zcash testnet: who was paid and how much, from the viewing keys,
           and each transaction and block, from the explorer
         </caption>
         <thead>
-          <tr className="hidden text-[13px] text-ash sm:table-row">
-            <th scope="colgroup" colSpan={3} className="pb-2 font-normal">
+          <tr data-group="" className="hidden text-[0.75rem] sm:table-row">
+            <th scope="colgroup" colSpan={3} className="pb-2 font-bold text-ash">
               From the viewing keys
             </th>
-            <th scope="colgroup" colSpan={2} className="border-l border-mist pb-2 pl-4 font-normal md:pl-6">
+            <th
+              scope="colgroup"
+              colSpan={2}
+              className="border-l border-carbon-line bg-carbon pt-1.5 pb-2 pl-4 font-bold text-carbon-ink md:pl-6"
+            >
               On the explorer
             </th>
           </tr>
-          <tr className="border-y border-ink text-[13px]">
-            <th scope="col" className="py-2.5 pr-4 font-medium">
+          <tr className="border-y-2 border-ink text-[0.75rem]">
+            <th scope="col" className="py-2.5 pr-4 pl-2 font-bold">
               Paid to
             </th>
-            <th scope="col" className="hidden py-2.5 pr-4 font-medium sm:table-cell">
+            <th scope="col" className="hidden py-2.5 pr-4 font-bold sm:table-cell">
               Invoice
             </th>
-            <th scope="col" className="py-2.5 pr-4 text-right font-medium">
+            <th scope="col" className="py-2.5 pr-4 text-right font-bold">
               Amount
             </th>
-            <th scope="col" className="hidden border-l border-mist py-2.5 pr-4 pl-4 font-medium sm:table-cell md:pl-6">
+            <th scope="col" className="hidden border-l border-rule py-2.5 pr-4 pl-4 font-bold sm:table-cell md:pl-6">
               Block
             </th>
-            <th scope="col" className="py-2.5 font-medium">
+            <th scope="col" className="py-2.5 pr-2 font-bold">
               Transaction
             </th>
           </tr>
@@ -75,36 +79,36 @@ export function Proof() {
 function RunRows({ run }: { run: ProofRun }) {
   return (
     <tbody>
-      <tr className="border-b border-mist">
+      <tr data-group="" className="border-b border-ink">
         {/* The run's heading spans the key columns: three from 640px, two on a phone without Invoice. */}
-        <th scope="rowgroup" colSpan={3} className="hidden pt-8 pr-4 pb-3 align-bottom font-normal sm:table-cell">
+        <th scope="rowgroup" colSpan={3} className="hidden pt-8 pr-4 pb-3 pl-2 align-bottom font-normal sm:table-cell">
           <RunHeading run={run} />
         </th>
-        <th scope="rowgroup" colSpan={2} className="pt-8 pr-4 pb-3 align-bottom font-normal sm:hidden">
+        <th scope="rowgroup" colSpan={2} className="pt-8 pr-4 pb-3 pl-2 align-bottom font-normal sm:hidden">
           <RunHeading run={run} />
         </th>
-        <td className="hidden border-l border-mist pt-8 pr-4 pb-3 pl-4 align-bottom sm:table-cell md:pl-6">
+        <td className="hidden border-l border-rule pt-8 pr-4 pb-3 pl-4 align-bottom sm:table-cell md:pl-6">
           <Height height={run.allocation.height} className="text-ash" />
         </td>
         <td className="pt-8 pb-3 align-bottom">
-          <span className="block text-[13px] text-ash">Allocation</span>
+          <span className={cn(t.label, "block text-ash")}>Allocation</span>
           <TxLink txid={run.allocation.txid} />
         </td>
       </tr>
       {run.lines.map((l) => (
-        <tr key={l.txid} className="border-b border-mist align-top">
-          <th scope="row" className="py-2.5 pr-4 font-normal">
+        <tr key={l.txid} className="border-b border-bar-line align-top">
+          <th scope="row" className="py-2.5 pr-4 pl-2 font-normal">
             <span className="block">{l.name}</span>
-            <span className="block text-[13px] text-ash sm:hidden">{l.invoice}</span>
+            <span className="block text-[0.8125rem] text-ash sm:hidden">{l.invoice}</span>
           </th>
           <td className="hidden py-2.5 pr-4 text-ash sm:table-cell">{l.invoice}</td>
           <td className="py-2.5 pr-4 text-right whitespace-nowrap">
             <Usd cents={l.usdCents} />
           </td>
-          <td className="hidden border-l border-mist py-2.5 pr-4 pl-4 sm:table-cell md:pl-6">
+          <td className="hidden border-l border-rule py-2.5 pr-4 pl-4 sm:table-cell md:pl-6">
             <Height height={l.height} />
           </td>
-          <td className="py-2.5">
+          <td className="py-2.5 pr-2">
             <TxLink txid={l.txid} />
             <span className={cn(t.data, "block text-ash sm:hidden")}>
               <span className="sr-only">Block </span>
@@ -121,7 +125,7 @@ function RunHeading({ run }: { run: ProofRun }) {
   return (
     <>
       <span className={cn(t.h3, "block")}>{run.periodLabel} payroll</span>
-      <span className="mt-1 block text-[13px] text-ash">
+      <span className="mt-1.5 block font-sans text-[0.8125rem] text-ash">
         Run {run.runId.slice(0, 8)}, <Usd cents={runTotalCents(run)} className="tracking-normal" /> to{" "}
         {run.lines.length} people. Allocated from the treasury in one transaction.
       </span>

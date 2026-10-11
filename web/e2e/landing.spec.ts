@@ -1,7 +1,8 @@
 /*
   The landing page (/): every section is present in the order of docs/DESIGN.md section 16, the
-  hero shows one real payment in its two views (the explorer's hides what the chain hides, the
-  key's reads it), the reveal plays once and not at all with reduced motion, every transaction
+  hero shows one real payment as its two copies (section 17: the yellow carbon the explorer shows
+  inks out what the chain hides, the white pay advice the key reads shows it), the reveal plays
+  once and not at all with reduced motion, every transaction
   link opens the testnet explorer, every focus stop shows, the phone menu works and the header
   stays reachable.
 
@@ -104,13 +105,13 @@ test("every section is present, in order", async ({ page }) => {
   await expect(footer).toContainText("Zcash track");
 });
 
-test("the hero shows one payment in two views", async ({ page }) => {
+test("the hero shows one payment in two copies", async ({ page }) => {
   await page.goto("/");
-  const views = page.getByRole("figure", { name: /^One payment, two views/ });
-  const vault = views.getByRole("group", { name: "What the explorer shows" });
-  const paper = views.getByRole("group", { name: "What Amara's viewing key shows" });
+  const views = page.getByRole("figure", { name: /^One payment, two copies/ });
+  const vault = views.getByRole("group", { name: "What the explorer sees" });
+  const paper = views.getByRole("group", { name: "Pay advice" });
 
-  // Both views head with the same transaction, in the same block, at the same moment.
+  // Both copies carry the same transaction, in the same block, at the same moment.
   for (const side of [vault, paper]) {
     await expect(side).toContainText(HERO_TXID.slice(0, 32));
     await expect(side).toContainText(HERO_TXID.slice(32));
@@ -118,21 +119,21 @@ test("the hero shows one payment in two views", async ({ page }) => {
     await expect(side).toContainText("5 Oct 2026, 08:13 UTC");
   }
 
-  // The explorer's view hides the amount, sender, recipient and memo, and names no one.
+  // The explorer's copy inks out the employer, payee, period, invoice and amount, and names no one.
   await expect(vault).toContainText("2 actions");
-  await expect(vault.getByText("Hidden on chain")).toHaveCount(6);
+  await expect(vault.getByText("Hidden on chain")).toHaveCount(5);
   for (const secret of ["$", "TAZ", "Amara", "Sample company", "INV-2026-014"]) {
     await expect(vault).not.toContainText(secret);
   }
 
-  // The key's view reads them.
+  // The key's copy reads them.
   for (const value of ["$4,800.00", "0.00355556 TAZ", "Sample company", "Amara Okafor", "INV-2026-014"]) {
     await expect(paper).toContainText(value);
   }
   await expect(paper).not.toContainText("Hidden on chain");
   await expect(page.getByText("Sample company on Zcash testnet.")).toBeVisible();
 
-  // Each view links to its own check: the explorer, and the judge kit's proof of this payment.
+  // Each copy links to its own check: the explorer, and the judge kit's proof of this payment.
   await expect(vault.getByRole("link", { name: /^Open it on testnet\.zecblock\.com/ })).toHaveAttribute(
     "href",
     `https://testnet.zecblock.com/tx/${HERO_TXID}`,
@@ -145,7 +146,7 @@ test("the hero shows one payment in two views", async ({ page }) => {
   );
 });
 
-/** Animations on the two-view panel (the thread and the bars), finished or not. */
+/** Animations on the two copies (the ink lifting off the pay advice), finished or not. */
 const panelAnimations = (page: Page) =>
   page.evaluate(() =>
     document
@@ -158,7 +159,7 @@ test("the reveal plays once, and not at all with reduced motion", async ({ page 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   expect(await panelAnimations(page)).toEqual([]);
-  await expect(page.getByRole("group", { name: "What Amara's viewing key shows" })).toContainText("$4,800.00");
+  await expect(page.getByRole("group", { name: "Pay advice" })).toContainText("$4,800.00");
 
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.reload();

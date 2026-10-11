@@ -176,13 +176,13 @@ export function Drawer({
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/15 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/25 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <DialogPrimitive.Content
           aria-describedby={undefined}
           tabIndex={-1}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
-          className="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l bg-card text-card-foreground shadow-[0_0_48px_-12px_rgba(14,14,45,0.25)] outline-none data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right sm:inset-y-2 sm:right-2 sm:w-[440px] sm:rounded-xl sm:border"
+          className="paper sheet-shadow fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l text-card-foreground outline-none data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right sm:inset-y-2 sm:right-2 sm:w-[440px] sm:border"
         >
           <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2 sm:px-6">
             <div className="min-w-0 truncate text-[0.8125rem] text-muted-foreground">{eyebrow}</div>

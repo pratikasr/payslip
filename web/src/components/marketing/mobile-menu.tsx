@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "cn";
 import { DemoLink } from "@/components/marketing/demo-link";
-import { goldPill } from "@/components/marketing/classes";
+import { inkButton } from "@/components/marketing/classes";
 
 export interface NavLink {
   href: string;
@@ -58,7 +58,7 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((o) => !o)}
-        className="-mr-2 inline-grid size-11 place-items-center rounded-full text-ink transition-colors hover:bg-mist"
+        className="-mr-2 inline-grid size-11 place-items-center text-ink transition-colors hover:bg-muted"
       >
         {open ? (
           <X className="size-5" strokeWidth={1.5} aria-hidden="true" />
@@ -71,17 +71,17 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
       <div
         id={panelId}
         hidden={!open}
-        className="absolute inset-x-0 top-16 z-40 border-b border-mist bg-paper px-4 pt-2 pb-5 md:px-8"
+        className="paper absolute inset-x-0 top-full z-40 border-b border-rule px-4 pt-2 pb-5 shadow-[0_12px_24px_-16px_rgb(20_24_32_/_0.35)] sm:px-6"
       >
         <nav aria-label="Main">
           <ul>
             {links.map((l) => (
-              <li key={l.href} className="border-b border-mist">
+              <li key={l.href} className="border-b border-dotted border-tear">
                 <a
                   href={l.href}
                   onClick={close}
                   {...(l.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                  className="flex h-13 items-center rounded-[3px] text-[17px] text-ink"
+                  className="flex h-13 items-center font-type text-[1.0625rem] text-ink"
                 >
                   {l.label}
                   {l.external ? <span className="sr-only"> (opens in a new tab)</span> : null}
@@ -90,7 +90,7 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
             ))}
           </ul>
         </nav>
-        <DemoLink onClick={close} className={cn(goldPill, "mt-5 w-full sm:w-auto")} />
+        <DemoLink onClick={close} className={cn(inkButton, "mt-5 w-full sm:w-auto")} />
       </div>
     </div>
   );

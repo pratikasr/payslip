@@ -61,14 +61,14 @@ function SidebarBody({
 }) {
   const pathname = usePathname();
   return (
-    <div className="flex h-full flex-col gap-3 px-2.5 py-3 text-[0.9375rem]">
+    <div className="flex h-full flex-col gap-3 px-2.5 py-3 font-type text-[0.875rem]">
       {/* In the phone menu the close button sits top right: keep the brand's chip clear of it. */}
       <div className={cn("px-1.5 pt-1", menu && "pr-10")}>{config.brand}</div>
       {/* The menu closes itself when the action navigates (see AppShell). */}
       {menu && config.menuAction ? <div className="px-1">{config.menuAction}</div> : null}
       {config.segments ? (
         <div
-          className="grid grid-cols-2 rounded-lg bg-chip p-[3px] text-[0.8125rem]"
+          className="grid grid-cols-2 border-2 border-foreground text-[0.8125rem]"
           role="navigation"
           aria-label="Product"
         >
@@ -79,8 +79,8 @@ function SidebarBody({
               onClick={onNavigate}
               aria-current={s.active ? "page" : undefined}
               className={cn(
-                "rounded-md py-1.5 text-center text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-2.5",
-                s.active && "bg-background font-medium text-foreground shadow-[0_0_0_1px_var(--border)]",
+                "py-1.5 text-center font-bold text-foreground transition-colors hover:bg-card pointer-coarse:py-2.5",
+                s.active && "bg-foreground text-background hover:bg-foreground",
               )}
             >
               {s.label}
@@ -100,10 +100,10 @@ function SidebarBody({
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "relative flex items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-strong transition-colors hover:bg-muted hover:text-foreground pointer-coarse:py-2.5",
-                      // The active item is the sidebar's active tab: Mist, ink, and a gold edge.
+                      "relative flex items-center gap-2.5 px-2 py-[7px] text-strong transition-colors hover:bg-card/60 hover:text-foreground pointer-coarse:py-2.5",
+                      // The active item is a sheet pulled from the stack: paper, ink, a 2px ink edge.
                       active &&
-                        "bg-chip font-medium text-foreground before:absolute before:inset-y-2 before:-left-2.5 before:w-0.5 before:rounded-full before:bg-gold before:content-[''] hover:bg-chip",
+                        "paper font-bold text-foreground shadow-[inset_2px_0_0_var(--foreground),0_1px_1px_rgb(20_24_32_/_0.08)] hover:bg-card",
                     )}
                   >
                     <item.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -125,7 +125,8 @@ function SidebarBody({
 }
 
 /**
- * The app shell: a 220px sidebar on Paper with a Mist edge, a quiet top bar, and a centred content
+ * The app shell (docs/DESIGN.md section 17): a 220px sidebar on the desk with typewriter
+ * navigation, and the content on one sheet of paper beside it, with a quiet top bar and a centred
  * column about 970px wide. On phones the sidebar slides in from a menu button.
  */
 export function AppShell({ config, children }: { config: ShellConfig; children: ReactNode }) {
@@ -136,15 +137,16 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
     // Icons are drawn at stroke 1.5 everywhere (LucideProvider in the root layout).
     <>
       <div className="grid min-h-[calc(100dvh-3rem)] md:grid-cols-[220px_minmax(0,1fr)] print:block">
-        <div className="hidden border-r border-hairline bg-sidebar md:block" data-print="hide">
+        <div className="hidden bg-sidebar md:block" data-print="hide">
           <aside className="sticky top-0 h-[calc(100dvh-3rem)] overflow-y-auto">
             <SidebarBody config={config} />
           </aside>
         </div>
-        <div className="min-w-0">
+        {/* The content is one sheet of continuous-form paper on the desk, feed holes down both sides. */}
+        <div className="paper sheet-shadow feed-edges min-w-0 print:bg-none print:shadow-none">
           <header
             role="banner"
-            className="sticky top-0 z-30 flex h-[52px] items-center gap-3 border-b border-hairline bg-background/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6"
+            className="paper sticky top-0 z-30 flex h-[52px] items-center gap-3 border-b border-hairline px-2.5 sm:px-6"
             data-print="hide"
           >
             <DialogPrimitive.Root open={open} onOpenChange={setOpen}>
@@ -180,7 +182,7 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
               </span>
             </div>
           </header>
-          <main id="main" className="mx-auto w-full max-w-[1018px] px-4 pt-7 pb-16 sm:px-6 lg:pt-8">
+          <main id="main" className="mx-auto w-full max-w-[1018px] px-2.5 pt-7 pb-16 sm:px-6 lg:pt-8">
             {children}
           </main>
         </div>
@@ -207,11 +209,11 @@ export function SidebarBrand({
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 pb-1">
       {mark}
-      <span className="col-start-2 line-clamp-2 min-w-0 font-display text-[0.9375rem] leading-tight font-semibold break-words">
+      <span className="inked col-start-2 line-clamp-2 min-w-0 font-display text-[1.0625rem] leading-tight font-bold break-words">
         {name}
       </span>
       {chip ? (
-        <span className="col-start-3 rounded-md bg-foreground px-1.5 py-1 text-[0.8125rem] leading-none font-medium text-background">
+        <span className="col-start-3 bg-foreground px-1.5 py-1 font-type text-[0.75rem] leading-none font-bold tracking-[0.06em] text-background uppercase">
           {chip}
         </span>
       ) : null}
@@ -235,7 +237,7 @@ export function Bookmark({
   return (
     <Link
       href={href}
-      className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 rounded-[7px] px-2 py-1.5 text-strong hover:bg-muted pointer-coarse:py-2.5"
+      className="grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 px-2 py-1.5 text-strong hover:bg-card/60 pointer-coarse:py-2.5"
     >
       <Icon className="mt-[3px] size-4 text-muted-foreground" aria-hidden="true" />
       <span className="truncate">{label}</span>

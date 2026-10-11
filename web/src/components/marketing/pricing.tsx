@@ -3,23 +3,21 @@ import { GITHUB_URL, PRICING } from "@/components/marketing/data";
 import { OutLink, Section } from "@/components/marketing/parts";
 import { t, textLink } from "@/components/marketing/classes";
 
-/* Pricing as the README states it, set against the $49 products. */
+/* Pricing as the README states it, set against the $49 products: two price slips side by side. */
 export function Pricing() {
   return (
     <Section id="pricing" title="Pricing">
-      <div className="mt-10 grid grid-cols-2 border-t border-ink pt-8 md:mt-14">
-        <div className="pr-4 md:pr-10">
-          <h3 className="text-[15px] font-medium">Payslip, hosted</h3>
-          <p className="mt-4 font-display text-[30px] leading-none font-semibold tracking-[-0.02em] md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]">
-            ${PRICING.hostedUsd}
-          </p>
+      <div className="mt-10 grid gap-4 sm:grid-cols-2 sm:gap-0 md:mt-14">
+        <div className="border-2 border-ink px-4 pt-5 pb-6 sm:px-6">
+          <h3 className={t.label}>Payslip, hosted</h3>
+          <p className="inked mt-5 font-dot text-[3rem] leading-none md:text-[4.5rem]">${PRICING.hostedUsd}</p>
           <p className={cn(t.body, "mt-4 max-w-[26rem]")}>
             Per active contractor per month. Every payment is shielded.
           </p>
         </div>
-        <div className="border-l border-mist pl-4 md:pl-10">
-          <h3 className="text-[15px] font-medium">{PRICING.competitors}</h3>
-          <p className="mt-4 font-display text-[30px] leading-none font-semibold tracking-[-0.02em] text-ash md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]">
+        <div className="border border-rule bg-bar px-4 pt-5 pb-6 sm:border-l-0 sm:px-6">
+          <h3 className={cn(t.label, "text-ash")}>{PRICING.competitors}</h3>
+          <p className="inked mt-5 font-dot text-[3rem] leading-none text-ash md:text-[4.5rem]">
             ${PRICING.competitorUsd}
           </p>
           <p className={cn(t.body, "mt-4 max-w-[26rem] text-ash")}>

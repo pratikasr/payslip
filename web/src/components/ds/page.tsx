@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "cn";
 import { TYPE } from "@/components/ds/type";
 
-/** Page title: the display face at the title size, actions to the right on wide screens. */
+/** Page title: Redaction 35 at the title size, inked, actions to the right on wide screens. */
 export function PageTitle({
   title,
   description,
@@ -28,7 +28,7 @@ export function PageTitle({
   );
 }
 
-/** A row of pill actions under the title: the one gold action, and quiet ones beside it. */
+/** A row of actions under the title: the one ink-filled action, and outlined ones beside it. */
 export function ActionRow({ children, end }: { children: ReactNode; end?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-wrap items-center gap-2">
@@ -38,7 +38,7 @@ export function ActionRow({ children, end }: { children: ReactNode; end?: ReactN
   );
 }
 
-/** A section heading inside a page, in the text face at the heading size, with an optional control beside it. */
+/** A section heading inside a page, in Redaction at the heading size, with an optional control beside it. */
 export function SectionHeader({
   title,
   children,

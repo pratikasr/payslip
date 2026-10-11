@@ -78,17 +78,30 @@ export function CheckIt() {
         </>
       }
     >
-      <p className="mt-5 text-[15px]">
-        <OutLink href={repoFile(JUDGE_KIT.path)} className={cn(textLink, t.data, "text-[13px]")}>
+      <p className="mt-5">
+        <OutLink href={repoFile(JUDGE_KIT.path)} className={cn(textLink, t.data, "break-all")}>
           {JUDGE_KIT.path}
         </OutLink>
       </p>
-      <ul className="mt-10 grid gap-x-10 border-t border-ink md:mt-14 md:grid-cols-2 xl:grid-cols-4 xl:gap-x-8">
-        {WAYS.map((w) => (
-          <li key={w.where} className="flex flex-col border-b border-mist py-6 xl:border-b-0">
-            <h3 className="text-[15px] font-medium">{w.where}</h3>
-            <p className={cn(t.body, "mt-2 text-ash")}>{w.body}</p>
-            <p className="mt-auto pt-4 text-[15px]">{w.link}</p>
+      {/* A checklist: four ways to check, each a box to tick. */}
+      <ul className="mt-10 grid border-2 border-ink md:mt-14 md:grid-cols-2 xl:grid-cols-4">
+        {WAYS.map((w, i) => (
+          <li
+            key={w.where}
+            className={cn(
+              "flex flex-col px-4 pt-5 pb-6 sm:px-6",
+              i > 0 && "border-t border-ink",
+              i === 1 && "md:border-t-0 md:border-l",
+              i === 2 && "md:border-t xl:border-t-0 xl:border-l",
+              i === 3 && "md:border-l",
+            )}
+          >
+            <h3 className={cn(t.label, "flex items-center gap-2.5")}>
+              <span aria-hidden="true" className="inline-block size-4 shrink-0 border-[1.5px] border-ink" />
+              {w.where}
+            </h3>
+            <p className={cn(t.body, "mt-3 text-ash")}>{w.body}</p>
+            <p className={cn(t.data, "mt-auto pt-4 text-[0.875rem]")}>{w.link}</p>
           </li>
         ))}
       </ul>

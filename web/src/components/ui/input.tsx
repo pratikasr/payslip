@@ -1,13 +1,14 @@
 import * as React from "react"
 import { cn } from "cn"
 
+/** Typewriter text on a ruled baseline, the way a form is filled in (docs/DESIGN.md section 17). */
 function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input
       type={type}
       data-slot="input"
       className={cn(
-        "h-9 w-full min-w-0 rounded-lg border border-input bg-card px-2.5 py-1 text-[1.0625rem] transition-colors outline-hidden file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-[0.8125rem] file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-[0.9375rem] dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "h-9 w-full min-w-0 rounded-none border-0 border-b border-input bg-transparent px-1 py-1 font-type text-[1.0625rem] transition-colors outline-hidden file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-[0.8125rem] file:font-bold file:text-foreground placeholder:text-muted-foreground hover:border-foreground focus-visible:border-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-b-2 aria-invalid:border-destructive md:text-[0.9375rem]",
         className
       )}
       {...props}

@@ -29,7 +29,8 @@ export function StatusTag({ status, className }: { status: StatusInfo; className
 export const SHIELDED_HELP = "Amount, sender and recipient hidden on chain";
 
 /**
- * The gold mark of a shielded payment: a dot and the word, with what it means in the tooltip. It
+ * The mark of a shielded payment: a tiny red stamp, the word in typewriter caps in a box, with
+ * what it means in the tooltip (docs/DESIGN.md section 17). It
  * stands where a normal status would be, so a payment row says what makes it different (nobody
  * else can read it) instead of a grey "Paid". In a table, say once what it means (the caption
  * does); `explain` adds the sentence for screen readers where the mark stands alone.
@@ -48,15 +49,14 @@ export function ShieldedMark({
 }) {
   return (
     <span
-      className={cn("inline-flex items-center gap-1.5 text-[0.8125rem] whitespace-nowrap text-link", className)}
+      className={cn("inline-flex items-center gap-1.5 text-[0.8125rem] whitespace-nowrap", className)}
       title={SHIELDED_HELP}
     >
-      <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-primary-edge" />
-      <span>
+      <span className="inline-block -rotate-2 border-[1.5px] border-stamp px-1 py-px font-type text-[0.6875rem] leading-none font-bold tracking-[0.12em] text-stamp uppercase">
         {label}
-        {explain ? <span className="sr-only">: {SHIELDED_HELP.toLowerCase()}</span> : null}
-        {detail ? <span className="text-muted-foreground">{detail}</span> : null}
+        {explain ? <span className="sr-only normal-case">: {SHIELDED_HELP.toLowerCase()}</span> : null}
       </span>
+      {detail ? <span className="font-type text-muted-foreground">{detail}</span> : null}
     </span>
   );
 }
