@@ -340,10 +340,13 @@ docker compose --env-file payslip.env build books-service     # only the images 
 docker compose --env-file payslip.env build books-web app-web
 docker compose --env-file payslip.env run --no-deps --rm caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose --env-file payslip.env up -d
+docker compose --env-file payslip.env restart caddy              # only after a Caddyfile change
 ```
 
 The `validate` line checks a changed `Caddyfile` before `caddy` restarts on it (a bad one would
-leave the front down). Service migrations run on start (sqlx). A change to `BOOKS_HOST`,
+leave the front down). `up -d` does not restart `caddy` for a Caddyfile change, because the file is
+a bind mount and the container's admin port is off, so `caddy reload` cannot be used either; the
+`restart` line is what applies it. Service migrations run on start (sqlx). A change to `BOOKS_HOST`,
 `APP_HOST`, `NEXT_PUBLIC_*` or `PAYSLIP_AUTH` needs the web images rebuilt, because those values
 are read at build time.
 
