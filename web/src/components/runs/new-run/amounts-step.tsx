@@ -4,10 +4,11 @@ import { useId } from "react";
 import { Usd } from "@/components/app/amount";
 import { useCoinUnit } from "@/components/app/health-provider";
 import { Initials } from "@/components/ds/avatar";
+import { Tag } from "@/components/ds/tag";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
-import type { Contractor, Run } from "@/lib/api";
+import type { Contractor, PaymentRequest, Run } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { endsAfterToday } from "@/lib/payroll";
 import { cn } from "cn";
@@ -42,6 +43,7 @@ export function AmountsStep({
   check,
   submitted,
   source,
+  requests,
 }: {
   draft: Draft;
   setDraft: (update: (d: Draft) => Draft) => void;
@@ -50,6 +52,8 @@ export function AmountsStep({
   submitted: boolean;
   /** The run amounts can be copied from, when there is one. */
   source: Run | undefined;
+  /** Approved payment requests for this period, by contractor: their lines are prefilled (ADR-028). */
+  requests?: Map<string, PaymentRequest[]>;
 }) {
   const coin = useCoinUnit();
   const months = recentMonths();
@@ -190,6 +194,18 @@ export function AmountsStep({
                     <span className="block truncate text-[0.8125rem] text-muted-foreground">
                       {l.include ? settlementText(c, coin) : "Not paid in this run"}
                     </span>
+                    {requests?.get(c.id)?.length ? (
+                      <span className="mt-1 flex flex-wrap items-center gap-1.5" data-testid={`from-request-${c.id}`}>
+                        <Tag tone="info">From a request</Tag>
+                        <span className="truncate text-[0.8125rem] text-muted-foreground">
+                          {requests
+                            .get(c.id)!
+                            .map((r) => r.invoice_ref)
+                            .join(", ")}
+                          {l.include ? "" : ", left for the next run"}
+                        </span>
+                      </span>
+                    ) : null}
                   </span>
                 </label>
                 <div className="col-start-2 grid grid-cols-2 gap-2 sm:contents">

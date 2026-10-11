@@ -291,6 +291,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
         onClose={close}
         onEdit={(c) => setEditing(c)}
         onArchive={(c) => setArchiving(c)}
+        onSaved={upsert}
       />
       <ContractorDialog
         open={adding || !!editing}

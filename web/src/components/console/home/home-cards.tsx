@@ -6,8 +6,10 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  CalendarClock,
   Check,
   FileKey2,
+  Inbox,
   KeyRound,
   Landmark,
   ListChecks,
@@ -17,9 +19,10 @@ import {
 import { compactUsd, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { Card, CardHeader } from "@/components/ds/card";
+import { Tag } from "@/components/ds/tag";
 import { TYPE } from "@/components/ds/type";
 import { Button } from "@/components/ui/button";
-import type { Contractor, Run, Wallet } from "@/lib/api";
+import type { Contractor, PaySchedule, Run, Wallet } from "@/lib/api";
 import { formatCount, formatPeriodLabel, formatShortDate, formatUsd, MINUS } from "@/lib/format";
 import { nextPayPeriod } from "@/lib/payroll";
 import { TESTNET_FAUCET_URL } from "@/lib/public-url";
@@ -339,24 +342,62 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
   );
 }
 
+/** The run the pay schedule drafted (or found covering its period), while it still needs the payer. */
+export function scheduledDraft(schedule: PaySchedule | null | undefined, runs: Run[]): Run | undefined {
+  const d = schedule?.drafted;
+  if (!d || d.status === "paid" || d.status === "cancelled") return undefined;
+  return runs.find((r) => r.id === d.run_id && r.status !== "paid" && r.status !== "cancelled");
+}
+
 /**
- * The next payroll: the unfinished run when there is one, else the period after the latest paid
- * payroll (the same period Run payroll proposes). Payslip has no pay schedule, so the card names
- * the period, never a due date.
+ * The next payroll. With a pay schedule (ADR-028): the run it drafted, with the pay day to
+ * review it by, else the schedule's next period with its pay day and draft day. Without one:
+ * the unfinished run when there is one, else the period after the latest paid payroll (the
+ * period Run payroll proposes), named by its period and never by a due date.
  */
-export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractors: Contractor[] }) {
+export function NextPayrollCard({
+  runs,
+  contractors,
+  schedule,
+}: {
+  runs: Run[];
+  contractors: Contractor[];
+  schedule?: PaySchedule | null;
+}) {
   if (contractors.length === 0) return null;
-  const open = openRun(runs);
-  const period = open ? { from: open.period_start, to: open.period_end } : nextPayPeriod(runs);
+  const drafted = scheduledDraft(schedule, runs);
+  const open = drafted ?? openRun(runs);
+  const period = open
+    ? { from: open.period_start, to: open.period_end }
+    : schedule
+      ? { from: schedule.next_period_start, to: schedule.next_period_end }
+      : nextPayPeriod(runs);
   const title = periodTitle(period.from, period.to);
   const end = new Date(`${period.to}T00:00:00Z`);
   const today = new Date().toISOString().slice(0, 10);
   const ended = period.to < today;
   const estimate = paidRuns(runs)[0];
   const people = plural(open ? open.lines.length : contractors.length, "person", "people");
+  const reviewBy = drafted && schedule?.drafted?.pay_day ? formatShortDate(schedule.drafted.pay_day) : null;
+  const sub = drafted
+    ? `Drafted, review by ${reviewBy ?? "the pay day"}, ${people}`
+    : open
+      ? `${runStateLabel(open)}, ${people}`
+      : schedule && schedule.active && schedule.next_pay_day
+        ? `Pay day ${formatShortDate(schedule.next_pay_day)}${schedule.drafts_on ? `, drafts on ${formatShortDate(schedule.drafts_on)}` : ""}, ${people}`
+        : `${ended ? "Period ended" : "Period ends"} ${formatShortDate(period.to)}, ${people}`;
   return (
     <Card className="flex flex-col" aria-labelledby="next-title">
-      <CardHeader id="next-title" title="Next payroll" />
+      <CardHeader
+        id="next-title"
+        title={
+          <span className="inline-flex items-center gap-2">
+            Next payroll
+            {schedule?.overdue && drafted ? <Tag tone="warning">Overdue</Tag> : null}
+          </span>
+        }
+        actions={<IconChip icon={CalendarClock} href="/console/settings" label="Pay schedule settings" />}
+      />
       <div className="mt-3 flex items-center gap-4">
         <div className="grid w-14 shrink-0 overflow-hidden rounded-lg border text-center" aria-hidden="true">
           <span className="identity-vault bg-vault py-0.5 text-[0.8125rem] font-medium text-ink">
@@ -366,11 +407,7 @@ export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractor
         </div>
         <div className="min-w-0">
           <div className="text-[0.9375rem]">{title} payroll</div>
-          <div className="text-[0.8125rem] text-muted-foreground">
-            {open
-              ? `${runStateLabel(open)}, ${people}`
-              : `${ended ? "Period ended" : "Period ends"} ${formatShortDate(period.to)}, ${people}`}
-          </div>
+          <div className="text-[0.8125rem] text-muted-foreground">{sub}</div>
         </div>
       </div>
       <div className="mt-auto flex items-end justify-between gap-3 border-t border-hairline pt-3.5">
@@ -390,7 +427,7 @@ export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractor
         </div>
         <Button asChild size="sm" variant="secondary">
           <Link href={open ? `/console/runs/new?run=${open.id}` : "/console/runs/new"}>
-            {open ? "Continue" : "Start"}
+            {drafted ? "Review" : open ? "Continue" : "Start"}
             <span className="sr-only"> the {title} payroll</span>
           </Link>
         </Button>
@@ -406,14 +443,20 @@ interface Task {
   href: string;
 }
 
-/** Mercury's Tasks: what needs the payer, written as sentences, at most three. */
+/** Mercury's Tasks: what needs the payer, written as sentences, at most four. */
 export function TodoCard({
   runs,
   contractors,
+  schedule,
+  toReview = 0,
   className,
 }: {
   runs: Run[];
   contractors: Contractor[];
+  /** The pay schedule, for the draft waiting to be reviewed. */
+  schedule?: PaySchedule | null;
+  /** Payment requests waiting for a decision. */
+  toReview?: number;
   className?: string;
 }) {
   const [auditorSent, setAuditorSent] = useState(true);
@@ -428,7 +471,41 @@ export function TodoCard({
   const unshared = contractors.filter((c) => !c.fvk_shared_at);
   const hasPeople = contractors.length > 0;
   const tasks: Task[] = [];
-  if (open)
+  const drafted = scheduledDraft(schedule, runs);
+  if (drafted) {
+    const by = schedule?.drafted?.pay_day ? formatShortDate(schedule.drafted.pay_day) : null;
+    tasks.push({
+      key: "drafted",
+      icon: CalendarClock,
+      text: (
+        <>
+          <b className="font-medium">{runTitle(drafted)}</b> payroll is drafted
+          {by ? (
+            <>
+              , review by <b className="font-medium">{by}</b>
+            </>
+          ) : null}
+          {schedule?.overdue ? <span className="text-warning"> (overdue)</span> : null}
+        </>
+      ),
+      href: `/console/runs/new?run=${drafted.id}`,
+    });
+  }
+  if (toReview > 0)
+    tasks.push({
+      key: "requests",
+      icon: Inbox,
+      text: (
+        <>
+          <b className="font-medium">
+            {formatCount(toReview)} payment {toReview === 1 ? "request" : "requests"}
+          </b>{" "}
+          to review
+        </>
+      ),
+      href: "/console/requests",
+    });
+  if (open && open.id !== drafted?.id)
     tasks.push({
       key: "open",
       icon: ListChecks,
@@ -476,7 +553,7 @@ export function TodoCard({
       ),
       href: "/console/runs/new",
     });
-  const shown = tasks.slice(0, 3);
+  const shown = tasks.slice(0, 4);
   return (
     <Card className={cn("flex flex-col", className)} aria-labelledby="todo-title">
       <CardHeader

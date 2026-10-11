@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { FileText, Home, Receipt } from "lucide-react";
+import { FileText, HandCoins, Home, Receipt } from "lucide-react";
 import { LogoMark } from "@/components/app/logo";
 import { AppShell, SidebarBrand, type ShellConfig } from "@/components/shell/app-shell";
 
@@ -26,6 +26,7 @@ export function PortalShell({
       [
         { href: "/portal", label: "Home", icon: Home, exact: true },
         { href: "/portal/payslips", label: "Payslips", icon: FileText },
+        { href: "/portal/requests", label: "Request a payment", icon: HandCoins },
         { href: "/portal/tax", label: "Tax documents", icon: Receipt },
       ],
     ],

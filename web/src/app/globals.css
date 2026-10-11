@@ -15,12 +15,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Instrument Sans for all text; Bricolage Grotesque for titles, the company name and headline money; Plex Mono for chain data. */
-  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
-  --font-text: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Geist for display and text alike; Geist Mono for chain data (docs/DESIGN.md section 16). */
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -220,8 +220,14 @@
     @apply font-sans;
     -webkit-text-size-adjust: 100%;
   }
+  /* Body text: Geist 400 at 15 to 17px, line-height 1.55 (docs/DESIGN.md section 16). */
   body {
     @apply bg-background text-foreground antialiased;
+    line-height: 1.55;
+  }
+  /* Figures in tables line up digit for digit. */
+  table {
+    font-variant-numeric: tabular-nums;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -248,14 +254,13 @@
 
 @layer utilities {
   /*
-    Money, typeset: tabular digits in the text face, cents smaller and raised
-    (src/components/app/amount.tsx). A headline figure adds the display face
+    Money, typeset: tabular digits, cents smaller and raised (src/components/app/amount.tsx). The
+    tracking comes from the figure around it, so a headline figure keeps the display treatment
     (TYPE.hero in src/components/ds/type.ts).
   */
   .money {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
-    letter-spacing: -0.01em;
     white-space: nowrap;
   }
   .money-cents {

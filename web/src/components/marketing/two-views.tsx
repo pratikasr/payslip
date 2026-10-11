@@ -93,7 +93,7 @@ export function HeroTwoViews({ className }: { className?: string }) {
         <ChainFacts height={P.height} time={P.blockTime} timeLabel="Paid" />
         <ViewField label="Amount">
           <Reveal delay={960} className={t.figure44}>
-            <Usd cents={P.usdCents} className="tracking-[-0.02em]" />
+            <Usd cents={P.usdCents} />
           </Reveal>
           <Reveal delay={1080} className="mt-1.5 text-[13px] text-ash">
             <Coin zat={P.zat} unit={P.coin} />

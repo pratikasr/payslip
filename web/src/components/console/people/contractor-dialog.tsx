@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { checkPayoutAddress, checkUnifiedAddress, normaliseUnifiedAddress, PAYOUT_CHAINS } from "@/lib/addresses";
 import { TYPE } from "@/components/ds/type";
 import { cn } from "cn";
+import { parseUsdToCents, usdAmountProblem } from "@/lib/format";
 import {
   api,
   toDisplayError,
@@ -30,9 +31,12 @@ import {
   type SettlementChoice,
 } from "@/lib/api";
 
-type Errors = Partial<Record<"name" | "email" | "unified_address" | "payout_address" | "form", string>>;
+type Errors = Partial<
+  Record<"name" | "email" | "unified_address" | "payout_address" | "default_amount" | "form", string>
+>;
 
 const FIELD_FOR_CODE: Record<string, keyof Errors> = {
+  invalid_default_amount: "default_amount",
   invalid_address: "unified_address",
   address_without_shielded_receiver: "unified_address",
   duplicate_address: "unified_address",
@@ -65,6 +69,7 @@ export function ContractorDialog({
   const [settlement, setSettlement] = useState<SettlementChoice>("hold_zec");
   const [payoutChain, setPayoutChain] = useState<string>("base");
   const [payoutAddress, setPayoutAddress] = useState("");
+  const [defaultAmount, setDefaultAmount] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
 
@@ -76,6 +81,9 @@ export function ContractorDialog({
     setSettlement(contractor?.settlement_choice ?? "hold_zec");
     setPayoutChain(contractor?.payout_chain ?? "base");
     setPayoutAddress(contractor?.payout_address ?? "");
+    setDefaultAmount(
+      contractor?.default_amount_usd_cents ? (contractor.default_amount_usd_cents / 100).toFixed(2) : "",
+    );
     setErrors({});
   }, [open, contractor]);
 
@@ -90,6 +98,12 @@ export function ContractorDialog({
     if (settlement === "convert_usdc") {
       const payout = checkPayoutAddress(payoutAddress, payoutChain);
       if (payout) e.payout_address = payout;
+    }
+    const typed = defaultAmount.trim();
+    if (typed) {
+      const cents = parseUsdToCents(typed);
+      if (cents === null) e.default_amount = usdAmountProblem(typed) ?? "Check this amount.";
+      else if (cents <= 0) e.default_amount = "The default amount must be more than zero, or empty.";
     }
     return e;
   };
@@ -109,6 +123,12 @@ export function ContractorDialog({
       // Editing always sends the email: an empty one clears it (the service stores none).
       ...(email.trim() || contractor ? { email: email.trim() } : {}),
       ...(settlement === "convert_usdc" ? { payout_chain: payoutChain, payout_address: payoutAddress.trim() } : {}),
+      // Editing always sends it: empty clears a default amount that was set.
+      ...(defaultAmount.trim()
+        ? { default_amount_usd_cents: parseUsdToCents(defaultAmount.trim()) ?? 0 }
+        : contractor
+          ? { default_amount_usd_cents: null }
+          : {}),
     };
     setSubmitting(true);
     try {
@@ -261,6 +281,34 @@ export function ContractorDialog({
                 </Field>
               </div>
             ) : null}
+
+            <Field
+              id={id("default_amount")}
+              label="Default amount (USD)"
+              optional
+              error={errors.default_amount}
+              help="What a scheduled payroll pays them, unless they send a request for the period."
+            >
+              <div className="relative">
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[0.9375rem] text-muted-foreground"
+                >
+                  $
+                </span>
+                <Input
+                  id={id("default_amount")}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={defaultAmount}
+                  placeholder="0.00"
+                  onChange={(e) => setDefaultAmount(e.target.value)}
+                  className="money h-10 pl-6 text-right tracking-normal"
+                  aria-invalid={!!errors.default_amount}
+                  aria-describedby={describedBy(id("default_amount"), errors.default_amount, true)}
+                />
+              </div>
+            </Field>
 
             {errors.form ? (
               <p role="alert" className="rounded-lg bg-danger-bg p-3 text-[0.8125rem] text-danger">

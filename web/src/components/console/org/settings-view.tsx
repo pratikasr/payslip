@@ -8,17 +8,18 @@ import { Field } from "@/components/app/field";
 import { LogoMark } from "@/components/app/logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Card, CardHeader } from "@/components/ds/card";
-import { PageTitle } from "@/components/ds/page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useResource } from "@/hooks/use-resource";
 import { api, toDisplayError, type Organisation } from "@/lib/api";
 import { IconChip } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
-import { OnlyAdmins } from "./only-admins";
 
-/** Organisation settings: the name and logo the console shows (admins). */
-export function SettingsView({ initial }: { initial?: Organisation }) {
+/**
+ * Organisation settings: the name and logo the console shows. A section of the Settings page,
+ * shown to admins when sign-in is on (ADR-026).
+ */
+export function OrgSettings({ initial }: { initial?: Organisation }) {
   const auth = useAuth();
   const router = useRouter();
   const org = useResource((s) => api.org(s), "org-settings", initial);
@@ -33,7 +34,7 @@ export function SettingsView({ initial }: { initial?: Organisation }) {
     setLogo(org.data.logo_url ?? "");
   }, [org.data]);
 
-  if (!auth.can("manage_org")) return <OnlyAdmins what="change the organisation's name and logo" />;
+  if (!auth.required || !auth.can("manage_org")) return null;
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -53,11 +54,7 @@ export function SettingsView({ initial }: { initial?: Organisation }) {
   };
 
   return (
-    <>
-      <PageTitle
-        title="Settings"
-        description="The organisation's name and mark, shown at the top of the console for every member."
-      />
+    <section aria-label="Organisation" className="mb-5">
       {org.error && !org.data ? (
         <Problem error={org.error} title="Could not load the organisation" onRetry={org.reload} />
       ) : (
@@ -107,7 +104,7 @@ export function SettingsView({ initial }: { initial?: Organisation }) {
               ) : (
                 <LogoMark className="size-[22px]" />
               )}
-              <span className="min-w-0 truncate font-display text-[0.9375rem] font-[600]">
+              <span className="min-w-0 truncate font-display text-[0.9375rem] font-semibold">
                 {name.trim() || "Payslip"}
               </span>
             </div>
@@ -118,6 +115,6 @@ export function SettingsView({ initial }: { initial?: Organisation }) {
           </Card>
         </form>
       )}
-    </>
+    </section>
   );
 }

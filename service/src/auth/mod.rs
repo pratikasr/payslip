@@ -265,7 +265,7 @@ impl Role {
     pub fn describe(self) -> &'static str {
         match self {
             Role::Admin => "everything: people, payroll, keys, members and settings",
-            Role::Approver => "run payroll (create, fund, execute and cancel runs) and read everything else",
+            Role::Approver => "run payroll (create, fund, execute and cancel runs), set the pay schedule, decide payment requests, and read everything else",
             Role::Accountant => "read everything, export viewing keys and the books, and read the audit log",
             Role::Viewer => "read people, runs and the treasury",
         }
@@ -319,6 +319,11 @@ pub fn rule(method: &Method, template: &str) -> Rule {
         ("POST", "/api/runs/{id}/funding/deposit-tx") => write(ManageRuns, "run.deposit_tx"),
         ("POST", "/api/runs/{id}/execute") => write(ManageRuns, "run.execute"),
         ("POST", "/api/runs/{id}/cancel") => write(ManageRuns, "run.cancel"),
+        // The pay schedule and the request queue (ADR-028): read by any member; set, approve and
+        // reject by those who run payroll.
+        ("PUT", "/api/schedule") => write(ManageRuns, "schedule.update"),
+        ("POST", "/api/requests/{id}/approve") => write(ManageRuns, "request.approve"),
+        ("POST", "/api/requests/{id}/reject") => write(ManageRuns, "request.reject"),
         ("PATCH", "/api/org") => write(ManageOrg, "org.update"),
         ("POST", "/api/org/members") => write(ManageOrg, "member.role"),
         ("DELETE", "/api/org/members/{user_id}") => write(ManageOrg, "member.remove"),

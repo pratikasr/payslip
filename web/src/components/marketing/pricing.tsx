@@ -10,7 +10,7 @@ export function Pricing() {
       <div className="mt-10 grid grid-cols-2 border-t border-ink pt-8 md:mt-14">
         <div className="pr-4 md:pr-10">
           <h3 className="text-[15px] font-medium">Payslip, hosted</h3>
-          <p className="mt-4 font-display text-[30px] leading-none font-[580] tracking-[-0.02em] md:text-[44px] xl:text-[64px]">
+          <p className="mt-4 font-display text-[30px] leading-none font-semibold tracking-[-0.02em] md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]">
             ${PRICING.hostedUsd}
           </p>
           <p className={cn(t.body, "mt-4 max-w-[26rem]")}>
@@ -19,7 +19,7 @@ export function Pricing() {
         </div>
         <div className="border-l border-mist pl-4 md:pl-10">
           <h3 className="text-[15px] font-medium">{PRICING.competitors}</h3>
-          <p className="mt-4 font-display text-[30px] leading-none font-[580] tracking-[-0.02em] text-ash md:text-[44px] xl:text-[64px]">
+          <p className="mt-4 font-display text-[30px] leading-none font-semibold tracking-[-0.02em] text-ash md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]">
             ${PRICING.competitorUsd}
           </p>
           <p className={cn(t.body, "mt-4 max-w-[26rem] text-ash")}>

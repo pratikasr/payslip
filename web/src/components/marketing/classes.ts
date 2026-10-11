@@ -1,17 +1,20 @@
 /*
   The landing page's type scale and shared class names (docs/DESIGN.md section 16): 13, 15, 17,
   22, 30, 44 and 64px at 1440, the two largest steps one step smaller from 768px and two below it.
-  Display is Bricolage Grotesque (font-display), text is Instrument Sans (font-text), chain data
-  is IBM Plex Mono (font-mono). Colours are the identity tokens in globals.css.
+  Display and text are Geist (font-display, font-text), chain data is Geist Mono (font-mono).
+  Headlines are Geist 600 at line-height 1.05, tracked -0.02em from 22 to 30px and -0.035em from
+  44px up; body is 400 at 15 to 17px, line-height 1.55. Colours are the identity tokens in
+  globals.css.
 */
 export const t = {
-  h1: "font-display text-[30px] leading-[1.06] font-[620] tracking-[-0.018em] text-balance md:text-[44px] md:leading-[1.02] xl:text-[64px] xl:leading-[0.98]",
-  h2: "font-display text-[22px] leading-[1.12] font-[580] tracking-[-0.012em] text-balance md:text-[30px] xl:text-[44px] xl:leading-[1.04]",
+  h1: "font-display text-[30px] leading-[1.05] font-semibold tracking-[-0.02em] text-balance md:text-[44px] md:tracking-[-0.035em] xl:text-[64px]",
+  h2: "font-display text-[22px] leading-[1.05] font-semibold tracking-[-0.02em] text-balance md:text-[30px] xl:text-[44px] xl:tracking-[-0.035em]",
   /** A large figure on its own: the hero amount, a person's figure, a price. */
-  figure44: "font-display text-[30px] leading-none font-[560] tracking-[-0.02em] xl:text-[44px]",
-  h3: "font-display text-[22px] leading-[1.18] font-[560] tracking-[-0.008em]",
+  figure44:
+    "font-display text-[30px] leading-[1.05] font-semibold tracking-[-0.02em] xl:text-[44px] xl:tracking-[-0.035em]",
+  h3: "font-display text-[22px] leading-[1.05] font-semibold tracking-[-0.02em]",
   lead: "text-[17px] leading-[1.55] text-ash",
-  body: "text-[15px] leading-[1.6]",
+  body: "text-[15px] leading-[1.55]",
   small: "text-[13px] leading-[1.5]",
   data: "font-mono text-[13px] leading-[1.5] tracking-normal",
 } as const;

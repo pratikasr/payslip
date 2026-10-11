@@ -88,7 +88,7 @@ function CompanyLine() {
   return (
     <span className="inline-flex items-center gap-1.5 text-foreground" data-testid="books-company">
       <Mark className="size-4 shrink-0" />
-      <span className="truncate font-display font-[600]">{companyName()}</span>
+      <span className="truncate font-display font-semibold">{companyName()}</span>
     </span>
   );
 }

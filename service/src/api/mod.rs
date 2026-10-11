@@ -3,7 +3,9 @@
 mod contractors;
 mod org;
 mod proofs;
+pub mod requests;
 mod runs;
+pub mod schedule;
 mod statements;
 
 use std::{sync::Arc, time::Duration};
@@ -51,6 +53,9 @@ pub struct AppState {
     pub scan_slots: tokio::sync::Semaphore,
     /// Open run progress streams (SSE); each holds a connection until the client leaves.
     pub sse_slots: Arc<tokio::sync::Semaphore>,
+    /// Held by every pay schedule pass (the hourly task, `PUT /api/schedule`), so one period is
+    /// never drafted twice.
+    pub schedule_lock: tokio::sync::Mutex<()>,
     /// Checks sign-in tokens (ADR-026); None when PAYSLIP_AUTH=off.
     pub auth: Option<Arc<crate::auth::Verifier>>,
 }
@@ -151,6 +156,7 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         venue,
         executor,
         contractor_lock: tokio::sync::Mutex::new(()),
+        schedule_lock: tokio::sync::Mutex::new(()),
         lwd: tokio::sync::Mutex::new(crate::wallet::lwd::connect(&lightwalletd_url)?),
         last_wallet: std::sync::Mutex::new(None),
     }))
@@ -165,7 +171,7 @@ pub fn router(state: AppStateRef) -> Router {
         .collect();
     let cors = CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
         .allow_headers([axum::http::header::CONTENT_TYPE])
         // Lets the web app name downloaded files the way the service does (per export format).
         .expose_headers([axum::http::header::CONTENT_DISPOSITION]);
@@ -178,9 +184,12 @@ pub fn router(state: AppStateRef) -> Router {
             .route("/api/wallet", get(wallet))
             .route("/api/wallet/sync", post(wallet_sync))
             .merge(contractors::routes())
-            .merge(runs::routes());
-        // With sign-in required, every payer route and the organisation routes sit behind the
-        // guard: token, membership, role, audit row. Statements and proofs stay key-based.
+            .merge(runs::routes())
+            .merge(requests::routes())
+            .merge(schedule::routes());
+        // With sign-in required, every payer route (the request queue and the schedule included)
+        // and the organisation routes sit behind the guard: token, membership, role, audit row.
+        // Statements, proofs and the portal's request endpoints stay key-based.
         if state.auth.is_some() {
             payer = payer
                 .merge(org::routes())
@@ -188,7 +197,9 @@ pub fn router(state: AppStateRef) -> Router {
         }
         app = app.merge(payer);
     }
+    // A contractor can send a payment request to any Payslip that knows their key.
     app.merge(statements::routes())
+        .merge(requests::portal_routes())
         .merge(proofs::routes())
         .fallback(move |req: Request| async move { not_found(statements_only, req.uri().path()) })
         .layer(middleware::from_fn(json_errors))
@@ -341,9 +352,16 @@ async fn json_errors(req: Request, next: Next) -> Response {
 }
 
 fn not_found(statements_only: bool, path: &str) -> Response {
-    let payer_route = ["/api/wallet", "/api/contractors", "/api/runs", "/api/viewing-keys"]
-        .iter()
-        .any(|p| path.starts_with(p));
+    let payer_route = [
+        "/api/wallet",
+        "/api/contractors",
+        "/api/runs",
+        "/api/viewing-keys",
+        "/api/requests",
+        "/api/schedule",
+    ]
+    .iter()
+    .any(|p| path.starts_with(p));
     if statements_only && payer_route {
         return statements_only_error().into_response();
     }
@@ -403,6 +421,9 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
                 Err(e) => tracing::warn!("could not record pay line block times: {e:#}"),
             }
         });
+        // The pay schedule drafts the next payroll: once now, then hourly. Never in statements
+        // mode, which has no payer routes.
+        schedule::spawn_hourly(state.clone());
     }
     let listener = tokio::net::TcpListener::bind(bind)
         .await

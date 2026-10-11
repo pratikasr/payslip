@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Contractor, NewRun, Run } from "@/lib/api";
+import type { Contractor, NewRun, PaymentRequest, Run } from "@/lib/api";
 import { parseUsdToCents, usdAmountProblem } from "@/lib/format";
 import { isValidRange } from "@/lib/period";
 import { latestPeriodFirst, nextPayPeriod, overlappingRuns, type PayPeriod } from "@/lib/payroll";
+import { joinedInvoiceRef, requestsByContractor } from "@/components/requests/request-meta";
 import { monthRange, periodTitle } from "../run-meta";
 
 /*
@@ -45,6 +46,8 @@ export interface Draft {
    * overlapping runs change, so does the key, and the payer confirms again.
    */
   overlapAck?: string;
+  /** Approved payment requests already prefilled into lines (ADR-028), so each is applied once. */
+  requests?: string[];
 }
 
 /** crypto.randomUUID needs a secure context; fall back to getRandomValues elsewhere. */
@@ -158,6 +161,28 @@ export function useDraft(contractors: Contractor[] | undefined, runs: Run[] | un
   const clearStored = useCallback(() => writeStored(null), []);
 
   return { draft, setDraft, clearStored };
+}
+
+/**
+ * Prefills a line for each approved request of the draft's period that has not been offered yet:
+ * the request's amount and invoice reference, included. A contractor with several requests gets
+ * one line for their total. Requests already applied are left alone, so the payer's edits stay.
+ */
+export function applyRequests(d: Draft, offered: PaymentRequest[]): Draft {
+  const applied = new Set(d.requests ?? []);
+  const fresh = offered.filter((r) => !applied.has(r.id));
+  if (fresh.length === 0) return d;
+  const lines = { ...d.lines };
+  for (const [contractorId, rs] of requestsByContractor(offered)) {
+    if (!rs.some((r) => !applied.has(r.id))) continue;
+    const cents = rs.reduce((sum, r) => sum + r.amount_usd_cents, 0);
+    lines[contractorId] = {
+      include: true,
+      amount: tidyAmount((cents / 100).toFixed(2)),
+      invoice: joinedInvoiceRef(rs.map((r) => r.invoice_ref)),
+    };
+  }
+  return { ...d, lines, requests: [...applied, ...fresh.map((r) => r.id)] };
 }
 
 export function setMonth(d: Draft, key: string): Draft {

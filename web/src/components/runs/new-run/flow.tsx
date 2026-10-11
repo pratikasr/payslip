@@ -13,6 +13,7 @@ import { useRunEvents } from "@/hooks/use-run-events";
 import { api, toDisplayError, type ApiError, type Health, type Run, type RunLogEvent } from "@/lib/api";
 import { rateE6FromDecimal } from "@/lib/format";
 import { overlappingRuns } from "@/lib/payroll";
+import { requestsByContractor, requestsForPeriod } from "@/components/requests/request-meta";
 import { Problem } from "../problem";
 import { CancelRun } from "../cancel-run";
 import {
@@ -28,6 +29,7 @@ import {
 import { useRunPoll } from "../use-run-poll";
 import { AmountsFooter, AmountsStep } from "./amounts-step";
 import {
+  applyRequests,
   idempotencyKey,
   newIdempotencyKey,
   runMatches,
@@ -113,6 +115,20 @@ function DraftFlow({
   const { draft, setDraft, clearStored } = useDraft(people, runs.data, repeatId);
   const check = useDraftCheck(draft, people ?? [], runs.data);
   const source = useMemo(() => sourceRun(runs.data, repeatId), [runs.data, repeatId]);
+  // Approved payment requests for the draft's period (ADR-028): prefilled as lines, marked
+  // "From a request", and named to the service when the run is created. An older service
+  // without the queue answers 404, and nothing is offered.
+  const approved = useResource((s) => api.requests("approved", s).then((r) => r.requests), "flow-requests");
+  const from = draft?.from;
+  const to = draft?.to;
+  const offered = useMemo(
+    () => (from && to ? requestsForPeriod(approved.data, { from, to }) : []),
+    [approved.data, from, to],
+  );
+  useEffect(() => {
+    if (offered.length > 0) setDraft((d) => applyRequests(d, offered));
+  }, [offered, setDraft]);
+  const requestsByPerson = useMemo(() => requestsByContractor(offered), [offered]);
   const [submitted, setSubmitted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -156,11 +172,14 @@ function DraftFlow({
     // may the service create a run whose period another run covers. The key is computed from the
     // body without the flag, as the service compares it.
     const allowOverlap = check.overlaps.length > 0;
+    // The requests whose lines the payer kept: the service pays them with those lines.
+    const requestIds = offered.filter((r) => check.included.some((c) => c.id === r.contractor_id)).map((r) => r.id);
     try {
       const run = await api.createRun({
         ...body,
         idempotency_key: idempotencyKey(d.key, body),
         ...(allowOverlap ? { allow_overlap: true } : {}),
+        ...(requestIds.length > 0 ? { request_ids: requestIds } : {}),
       });
       if (!runMatches(run, body)) {
         setMismatch({ id: run.id, run });
@@ -235,6 +254,7 @@ function DraftFlow({
         mismatch={mismatch}
         setDraft={setDraft}
         submitted={submitted}
+        fromRequests={requestsByPerson}
         onBack={() => router.replace(BASE)}
         onApprove={onApprove}
         onApproveAsNew={onApproveAsNew}
@@ -249,6 +269,7 @@ function DraftFlow({
         check={check}
         submitted={submitted}
         source={source}
+        requests={requestsByPerson}
       />
     );
   }

@@ -207,7 +207,7 @@ export function SidebarBrand({
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 pb-1">
       {mark}
-      <span className="col-start-2 line-clamp-2 min-w-0 font-display text-[0.9375rem] leading-tight font-[600] break-words">
+      <span className="col-start-2 line-clamp-2 min-w-0 font-display text-[0.9375rem] leading-tight font-semibold break-words">
         {name}
       </span>
       {chip ? (

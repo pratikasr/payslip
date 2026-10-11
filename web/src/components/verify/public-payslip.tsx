@@ -296,7 +296,7 @@ export function PublicPayslip() {
           <Mark className="mt-px size-5 shrink-0 text-foreground" />
           <span className="text-pretty">
             Payment proof issued through <span className="text-foreground">Payslip</span> for{" "}
-            <span className="font-display font-[600] text-foreground">{companyName()}</span>
+            <span className="font-display font-semibold text-foreground">{companyName()}</span>
           </span>
         </p>
         {body}

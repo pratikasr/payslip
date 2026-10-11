@@ -305,7 +305,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
               <div className="flex min-w-0 items-center gap-2.5">
                 <Mark className="size-7 shrink-0" />
                 <div className="min-w-0">
-                  <p className="font-display text-[1.0625rem] leading-snug font-[600]" data-testid="payslip-paid-by">
+                  <p className="font-display text-[1.0625rem] leading-snug font-semibold" data-testid="payslip-paid-by">
                     Paid by {companyName()}
                   </p>
                   <p className="text-[0.8125rem] text-ash">

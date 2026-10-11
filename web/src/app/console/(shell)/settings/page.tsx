@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
-import { SettingsView } from "@/components/console/org/settings-view";
-import type { Organisation } from "@/lib/api";
+import { SettingsView } from "@/components/console/settings/settings-view";
+import type { Contractor, Organisation, PaySchedule } from "@/lib/api";
+import { authRequired } from "@/lib/auth-config";
 import { serverGet } from "@/lib/server-api";
 
 export const metadata: Metadata = { title: "Settings" };
 
-/** The organisation's name and logo (admins), rendered on the server for the first paint. */
+/**
+ * The organisation's name and logo (with sign-in on, for admins) and the pay schedule with each
+ * person's default amount, rendered on the server for the first paint; the client refreshes them.
+ */
 export default async function SettingsPage() {
-  const org = await serverGet<Organisation>("/api/org");
-  return <SettingsView initial={org} />;
+  const [org, schedule, contractors] = await Promise.all([
+    authRequired() ? serverGet<Organisation>("/api/org") : Promise.resolve(undefined),
+    serverGet<{ schedule: PaySchedule | null }>("/api/schedule").then((r) => r?.schedule),
+    serverGet<{ contractors: Contractor[] }>("/api/contractors").then((r) => r?.contractors),
+  ]);
+  return <SettingsView initial={{ org, schedule, contractors }} />;
 }

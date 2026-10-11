@@ -47,7 +47,7 @@ export function SiteFooter() {
         <div className="max-w-[26rem]">
           <span className="inline-flex items-center gap-2.5 text-ink">
             <LogoMark className="size-[22px]" />
-            <span className="font-display text-[17px] leading-none font-[600]">Payslip</span>
+            <span className="font-display text-[17px] leading-none font-semibold">Payslip</span>
           </span>
           <p className={cn(t.small, "mt-4 text-ash")}>
             Payslip is open-source software, not a bank. Payments settle on Zcash; USDC funding swaps run through NEAR

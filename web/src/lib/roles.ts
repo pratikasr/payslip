@@ -35,7 +35,8 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** One sentence per role, shown where a role is chosen. */
 export const ROLE_HELP: Record<Role, string> = {
   admin: "Everything: people, payroll, viewing keys, members and settings.",
-  approver: "Runs payroll (create, fund, execute and cancel runs) and reads everything else.",
+  approver:
+    "Runs payroll (create, fund, execute and cancel runs), sets the pay schedule, decides payment requests, and reads everything else.",
   accountant: "Reads everything, exports viewing keys and the books, and reads the audit log.",
   viewer: "Reads people, runs and the treasury.",
 };

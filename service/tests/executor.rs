@@ -371,6 +371,7 @@ async fn seed_run(pool: &Pool) -> String {
                 settlement_choice: "hold_zec".into(),
                 payout_chain: None,
                 payout_address: None,
+                default_amount_usd_cents: None,
             },
             i as u32 + 1,
             1000,
@@ -950,6 +951,7 @@ async fn converting_line_pays_the_venue_deposit_and_carries_the_memo_on_change()
             settlement_choice: "convert_usdc".into(),
             payout_chain: Some("base".into()),
             payout_address: Some("0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into()),
+            default_amount_usd_cents: None,
         },
     )
     .await
@@ -1109,6 +1111,7 @@ async fn seed(pool: &Pool, first: u32, n: u32, convert: u32, key: &str) -> Strin
                 settlement_choice: if conv { "convert_usdc" } else { "hold_zec" }.into(),
                 payout_chain: conv.then(|| "base".into()),
                 payout_address: conv.then(|| "0x2527D02599Ba641c19FEa793cD0F167589a0f10D".into()),
+                default_amount_usd_cents: None,
             },
             first + i,
             1000,
@@ -1499,6 +1502,7 @@ async fn a_settlement_change_after_funding_does_not_change_the_run() {
             settlement_choice: "convert_usdc".into(),
             payout_chain: Some("base".into()),
             payout_address: Some("0x000000000000000000000000000000000000dEaD".into()),
+            default_amount_usd_cents: None,
         },
     )
     .await
@@ -1983,4 +1987,97 @@ async fn two_runs_awaiting_zec_claim_the_balance_in_order() {
             assert_eq!(chain.external(&l.unified_address), l.amount_zec.unwrap() as u64);
         }
     }
+}
+
+/// A recurring request approved into a run is paid when its line confirms, carries the txid,
+/// and leaves its successor for the next period (ADR-028).
+#[tokio::test]
+async fn a_paid_request_carries_its_txid_and_a_recurring_one_repeats() {
+    use payslip::{requests, schedule::Cadence};
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    let lines = db::lines(&pool, &run_id).await.unwrap();
+    let amara = lines.iter().find(|l| l.contractor_name == "Amara Okafor").unwrap();
+    let r = requests::insert(
+        &pool,
+        &requests::NewRequest {
+            contractor_id: amara.contractor_id.clone(),
+            amount_usd_cents: 480_000,
+            period_start: "2026-09-01".into(),
+            period_end: "2026-09-30".into(),
+            invoice_ref: "INV-2026-014".into(),
+            due_date: Some("2026-10-05".into()),
+            note: Some("Monthly retainer".into()),
+            recurring: Some(Cadence::Monthly),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(requests::decide(&pool, &r.id, &["submitted"], "approved", None, None)
+        .await
+        .unwrap());
+    // The run already has Amara's line: the request rides on it.
+    let draft = requests::merge_lines(
+        lines
+            .iter()
+            .map(|l| db::NewLine {
+                contractor_id: l.contractor_id.clone(),
+                amount_usd_cents: l.amount_usd_basis as u64,
+                invoice_ref: l.invoice_ref.clone(),
+            })
+            .collect(),
+        std::slice::from_ref(&r),
+    );
+    requests::link(&pool, &run_id, &draft).await.unwrap();
+    let linked = requests::get(&pool, &r.id).await.unwrap().unwrap();
+    assert_eq!(linked.run_id.as_deref(), Some(run_id.as_str()));
+    assert_eq!(linked.line_id.as_deref(), Some(amara.id.as_str()));
+
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    let paid = requests::get(&pool, &r.id).await.unwrap().unwrap();
+    assert_eq!(paid.status, "paid");
+    let line = db::lines(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|l| l.id == amara.id)
+        .unwrap();
+    assert_eq!(paid.txid, line.txid, "the request carries the line's txid");
+    assert!(paid.confirmed_at.is_some());
+    // The successor: next calendar month, invoice number up by one, due date shifted with it.
+    let all = requests::list_for_contractor(&pool, &amara.contractor_id)
+        .await
+        .unwrap();
+    assert_eq!(all.len(), 2, "{all:?}");
+    let next = all.iter().find(|x| x.id != r.id).unwrap();
+    assert_eq!(next.status, "submitted");
+    assert_eq!(
+        (next.period_start.as_str(), next.period_end.as_str()),
+        ("2026-10-01", "2026-10-31")
+    );
+    assert_eq!(next.invoice_ref, "INV-2026-015");
+    assert_eq!(next.due_date.as_deref(), Some("2026-11-05"));
+    assert_eq!(next.recurring.as_deref(), Some("monthly"));
+    assert_eq!(next.note.as_deref(), Some("Monthly retainer"));
+    assert_eq!(next.amount_usd_cents, 480_000);
+    // Marking again (a re-confirmation after a reorg) neither pays twice nor repeats again.
+    let (again, successors) = requests::mark_paid_for_line(&pool, &amara.id).await.unwrap();
+    assert_eq!((again, successors.len()), (0, 0));
+    let events: Vec<String> = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.message)
+        .collect();
+    assert!(
+        events.iter().any(|m| m.contains("payment request paid with this line")),
+        "{events:?}"
+    );
+    assert!(
+        events.iter().any(|m| m.contains("Next request from Amara Okafor")),
+        "{events:?}"
+    );
 }

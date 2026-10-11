@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, IBM_Plex_Mono, Instrument_Sans } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { LucideProvider } from "lucide-react";
 import { PresenterMode } from "@/components/app/presenter-mode";
 import { ThemeProvider } from "@/components/app/theme-provider";
@@ -8,28 +8,12 @@ import { authRequired } from "@/lib/auth-config";
 import { presenterBootScript } from "@/lib/presenter";
 import "./globals.css";
 
-// The identity faces (docs/DESIGN.md section 16), three and no more, each loaded as the app uses it:
-// - Instrument Sans for all text, at 400 and 500: one variable file (wght only), smaller than the
-//   two static weights. Every route renders it, so it is preloaded.
-// - Bricolage Grotesque for page titles, the company name and headline money, with its optical
-//   size axis (font-optical-sizing picks the display cut at large sizes). Every route opens on a
-//   display title, so it is preloaded.
-// - IBM Plex Mono at 400 for chain data (txids, keys, heights, addresses, memos). Not every route
-//   shows chain data above the fold, so it is not preloaded; it loads when a page first uses it.
-const instrument = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument", display: "swap" });
-const bricolage = Bricolage_Grotesque({
-  subsets: ["latin"],
-  axes: ["opsz"],
-  variable: "--font-bricolage",
-  display: "swap",
-});
-const plexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: "400",
-  variable: "--font-plex-mono",
-  display: "swap",
-  preload: false,
-});
+// One family for the whole app (docs/DESIGN.md section 16): Geist for display and text (one variable
+// file, weights 400 to 700), Geist Mono for transaction ids, keys, addresses and block heights.
+// Every route renders Geist, so it is preloaded; not every route shows chain data above the fold,
+// so Geist Mono is not preloaded and loads when a page first uses it.
+const geist = Geist({ subsets: ["latin"], variable: "--font-geist", display: "swap" });
+const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono", display: "swap", preload: false });
 
 export const metadata: Metadata = {
   title: {
@@ -49,11 +33,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      className={`${bricolage.variable} ${instrument.variable} ${plexMono.variable}`}
-    >
+    <html lang="en" suppressHydrationWarning className={`${geist.variable} ${geistMono.variable}`}>
       <head>
         {/* Presenter mode before first paint; see src/lib/presenter.ts. */}
         <script dangerouslySetInnerHTML={{ __html: presenterBootScript }} />

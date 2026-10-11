@@ -8,9 +8,10 @@ import { useHealth } from "@/components/app/health-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card } from "@/components/ds/card";
 import { KeyValues } from "@/components/ds/kv";
+import { Tag } from "@/components/ds/tag";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
 import { Button } from "@/components/ui/button";
-import type { ApiError, Health, Run, Wallet } from "@/lib/api";
+import type { ApiError, Health, PaymentRequest, Run, Wallet } from "@/lib/api";
 import { formatDate, parseUsdToCents, venueLabel } from "@/lib/format";
 import { feeReserveZat } from "@/lib/payroll";
 import { TESTNET_FAUCET_URL } from "@/lib/public-url";
@@ -71,6 +72,7 @@ export function ReviewStep({
   mismatch,
   setDraft,
   submitted,
+  fromRequests,
   onBack,
   onApprove,
   onApproveAsNew,
@@ -87,6 +89,8 @@ export function ReviewStep({
   mismatch: Mismatch | null;
   setDraft: (update: (d: Draft) => Draft) => void;
   submitted: boolean;
+  /** Approved payment requests the lines came from, by contractor (ADR-028). */
+  fromRequests?: Map<string, PaymentRequest[]>;
   onBack: () => void;
   onApprove: () => void;
   onApproveAsNew: () => void;
@@ -229,8 +233,13 @@ export function ReviewStep({
                       <span className="block truncate" title={c.name}>
                         {c.name}
                       </span>
-                      <span className="block truncate text-[0.8125rem] text-muted-foreground">
-                        {l.invoice.trim() || "No invoice reference"}
+                      <span className="flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+                        <span className="truncate">{l.invoice.trim() || "No invoice reference"}</span>
+                        {fromRequests?.get(c.id)?.length ? (
+                          <Tag tone="info" className="h-5 shrink-0">
+                            From a request
+                          </Tag>
+                        ) : null}
                       </span>
                     </span>
                     <Usd cents={parseUsdToCents(l.amount) ?? 0} />

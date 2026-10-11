@@ -589,10 +589,10 @@ The owner judged the first build too basic: default Next.js and shadcn styling, 
 | Product | Route | Shell | Pages |
 | --- | --- | --- | --- |
 | Landing | `/` | marketing header, dark hero and product section | hero with sealed payroll, product accordion, proof strip, how it works, who sees what, security, pricing, FAQ, footer |
-| Company console | `/console` | ConsoleShell (sidebar) | Home, Payroll runs, run page (Pay lines, Privacy view, Audit trail), People with drawer, Payslip access, Treasury; with sign-in on (ADR-026) also Members, Invitations, Audit log and Settings, the organisation's name and logo in the sidebar brand, who is signed in at its foot, and no demo bar |
+| Company console | `/console` | ConsoleShell (sidebar) | Home (the Next payroll card and the To do list read the pay schedule and the request queue), Payroll runs, Requests (payment requests from contractors: approve or reject with a note, counts in the sidebar), run page (Pay lines, Privacy view, Audit trail), People with drawer (each person's default amount), Payslip access, Treasury, Settings (the pay schedule and who has a default amount; with sign-in on also the organisation's name and logo for admins); with sign-in on (ADR-026) also Members, Invitations and Audit log, the organisation's name and logo in the sidebar brand, who is signed in at its foot, and no demo bar |
 | Sign-in | `/sign-in`, `/invite/[token]` | none | one centred card: Continue with Google (and the test login for browser tests); the invitation link's welcome |
-| Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts, Review and approve, Fund, Pay |
-| Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Tax documents |
+| Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts (approved payment requests for the period prefilled and marked "From a request"), Review and approve, Fund, Pay |
+| Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Request a payment (the form: amount, period, invoice number, due date, note, repeat monthly; the requests sent with their status, the txid once paid, the payer's note when rejected), Tax documents |
 | Accountant books | `/books` | BooksShell (Books side of the switch) | Reconciliation, Ledger, Exceptions, Exports |
 | Public payslip | `/verify` | none | one document card on a soft grid |
 
@@ -675,24 +675,24 @@ Colour, five names, light theme first:
 
 Dark theme: Paper becomes #14181F and Vault panels become #0F1218 with Mist #262C38; Gold unchanged.
 
-Type, three roles:
+Type, three roles in two faces (11 Oct 2026: the owner rejected Bricolage Grotesque and Instrument Sans; Geist replaces both, Geist Mono replaces IBM Plex Mono):
 
 | Role | Face | Notes |
 | --- | --- | --- |
-| Display | Bricolage Grotesque (variable, optical size axis), weight 500 to 600, tight leading | headlines, the company name, the big money figure on a page. Use the optical size: large sizes get the display cut, small sizes the text cut. |
-| Text | Instrument Sans, 400 and 500, `font-feature-settings: "tnum"` wherever figures align | all UI and body text; replaces Inter |
-| Data | IBM Plex Mono, 400 | txids, keys, block heights, addresses, memos; never for prose |
+| Display | Geist (variable, weights 400 to 700) at 600; line-height 1.05; letter-spacing -0.02em from 22 to 30px, -0.035em at 44px and above | headlines, the company name, the big money figure on a page |
+| Text | Geist, 400 and 500, at 15 to 17px with line-height 1.55; `font-variant-numeric: tabular-nums` for money and tables | all UI and body text |
+| Data | Geist Mono, 400 | txids, keys, block heights, addresses, memos; never for prose |
 
 Scale (px): 13, 15, 17, 22, 30, 44, 64 at 1440; the two largest steps drop one step at 768 and two at 375. Line length under 80 characters. Sentence case everywhere; no all-caps labels; no middle-dot joined strings (write a sentence or use a comma); no arrows appended to links.
 
 ### Layout principles
 
-1. The split is the brand. The two-view pair is a full-width panel: vault on the left, paper on the right, the txid repeated at the top of both in Plex Mono, a gold hairline joining them. On a phone the panels stack, vault first.
+1. The split is the brand. The two-view pair is a full-width panel: vault on the left, paper on the right, the txid repeated at the top of both in Geist Mono, a gold hairline joining them. On a phone the panels stack, vault first.
 2. Redaction bars only ever appear on the vault side, and only for what the chain hides: amount, sender, recipient, memo. They are Mist-on-Vault blocks the width of the hidden value, never a blur.
 3. One orchestrated motion per page: the paper side resolves from redaction bars into values once, on load (landing) or when a key opens a statement (portal). Everything else moves only in answer to a click. Reduced motion shows the final state.
 4. No card kit. Sections flow on Paper with space; a border appears only where it encodes a boundary (the vault panel, a payslip's edge, a table). One radius (12px) for panels, 999px for pills.
 5. Gold is scarce: the thread, the primary action, the shielded mark, the active tab. Never a gold wash or gradient.
-6. Numbers are typeset: display face for the headline figure with raised cents, tabular text face in tables, Plex Mono for chain data.
+6. Numbers are typeset: display face for the headline figure with raised cents, tabular text face in tables, Geist Mono for chain data.
 
 ### Landing page
 
@@ -705,7 +705,7 @@ Tokens and type apply everywhere. The run page's explorer strip becomes a two-vi
 ### Applied across the app (11 Oct 2026)
 
 - **Tokens.** The five names are the root tokens of the whole app (`web/src/app/globals.css`, `:root` and `.dark`), and the app's roles (background, foreground, muted, border, chip, link, ring) are set from them; the Mercury palette of section 15 is gone. `.identity-vault` marks a vault surface: Ink, Ash and Mist take their vault values there and the app's own roles follow, so shared pieces read right on it. Gold is not a wash anywhere: the soft gold step is Mist, progress bars and chart bars are ink on a Mist track, a shielded tag is a gold dot on Mist, and avatars are ink initials on Mist.
-- **Type.** Instrument Sans is the text face everywhere (Inter is removed), Bricolage Grotesque the display face for page titles, the company name (sidebar, console home, Books, payslip, proof) and headline money, IBM Plex Mono for chain data only. The app keeps five sizes (`web/src/components/ds/type.ts`): caption 13, body 15, heading 17 (text face, 500), title 30 (22 on phones) and hero 44 (30 below 1024px), in rem so presenter mode scales them. Text weights are 400 and 500. Fonts load as the app uses them: Instrument Sans as one variable file, Bricolage Grotesque with its optical size axis, both preloaded because every route opens on them; Plex Mono at 400 only and not preloaded.
+- **Type.** Geist everywhere, for text and for the display role (page titles, the company name in the sidebar, console home, Books, payslip and proof, and headline money); Geist Mono for chain data only. The app keeps five sizes (`web/src/components/ds/type.ts`): caption 13, body 15, heading 17 (500), title 30 (22 on phones) and hero 44 (30 below 1024px), in rem so presenter mode scales them; title and hero carry the display treatment above, the hero tracked -0.035em from 1024px where it is 44px. Body text is 400 at line-height 1.55; money and every table use tabular figures. Fonts: Geist is one variable file, preloaded because every route renders it; Geist Mono is not preloaded, because not every route shows chain data, and loads when a page first uses it.
 - **Two views.** One implementation, `web/src/components/ds/two-views.tsx` (TwoViews, VaultView, PaperView, ViewTitle, Thread, TxidLines, ChainFacts, ViewField, Redacted, Reveal), with the reveal motion in `globals.css` (`tv-*`). The landing hero, the run page, the payslip document and the public proof all compose it. The run page shows the allocation and one row per person (up to six, the rest summed), each transaction id level with the same id on the paper side and joined by a thin gold thread; side by side from 1280px. The payslip and the proof use the `aside` columns (a 21rem vault beside the paper) with eight rows a side, so each redaction bar sits level with the value the key or the proof reads; side by side from 1280px in the portal and 1024px on the proof page; both print, the explorer's view first.
 - **Action counts.** The explorer's view names the action count where the figure is known: the landing hero's payment, checked on the explorer (Verified facts, 11 Oct 2026). The service does not report action counts for a run's transactions or for a proof, so the run page, payslip and proof show the txid, block and redaction bars without one. Showing it there needs the service to count the Orchard and Ironwood actions of each transaction it built (its wallet database holds the raw transactions) and return the count with the run's lines and with a verified proof. Fetching it from a public explorer is not an option: it would tell the explorer which transactions the company or contractor is looking at.
 - **Copy.** No middle-dot joined strings in the console, portal or Books (sentences and commas instead), no arrows appended to link text (a chevron stays only where it shows a disclosure opening), no all-caps labels.
