@@ -1,6 +1,6 @@
 # Demo
 
-The 90-second demo script from `docs/SPEC.md`, the exact click path that performs it in the redesigned app (docs/DESIGN.md section 15), the timed testnet rehearsals from clean databases, and the runbook for the recorded mainnet run.
+The 90-second demo script from `docs/SPEC.md`, the exact click path that performs it in the redesigned app (docs/DESIGN.md section 15), the timed testnet rehearsals from clean databases, the runbook for the recorded mainnet run, and the demo video script (clicks, narration and shot list) at the end. The owner's run-day order is in [RUN-DAY.md](RUN-DAY.md).
 
 ## Click path
 
@@ -13,11 +13,11 @@ Start: the service running (`payslip-service serve`), the web app running (`pnpm
 | 3 | `/console/access` | QR code and link on one contractor | An invite link that carries that person's viewing key in the URL fragment, as text and QR |
 | 4 | `/console/runs/new` (Run payroll) | Amounts: the month and each person's USD and invoice reference, Continue | Review and approve: the total for six contractors, funding source and rate, what contractors get, fees and every pay line |
 | 5 | Review step | Approve | Nothing moved before this. The run is created and the flow moves to Fund |
-| 6 | Fund step | Testnet: Fund from treasury, then confirm. Mainnet: choose the USDC chain, get the quote (rate locked, "You send exactly", "Contractors get", fees), Connect Wallet and send; the deposit address and amount are pre-filled | Funding moves to funded; the fill rate becomes the run's USD basis |
+| 6 | Fund step | Testnet: Fund from treasury, then confirm. Mainnet, first option: Fund with ZEC, which shows the treasury's unified address as text and QR, the exact ZEC amount and a progress line; send that amount from your own wallet. Second option: Fund with USDC, choose the chain, get the quote (rate locked, "You send exactly", "Contractors get", fees), Connect Wallet and send; the deposit address and amount are pre-filled | Funding moves to funded. With ZEC, the market price at the funding block becomes the run's USD basis; with USDC, the fill rate does |
 | 7 | Pay step | Pay 6 contractors, then confirm in the dialog that restates people, total, ZEC and fees | Live progress: "N of 6 confirmed", each row turning Confirmed with its txid and block, then "Paid to 6 contractors" and View run |
 | 8 | Run page, Privacy view tab | Open any txid's explorer link | Left: what a public chain would show (illustration). Right and in the explorer: shielded transactions, no amount, no parties |
 | 9 | Contractor portal from the invite link (step 3) | Payslips, then a payslip, Share proof | That person's payslips only; the payslip document; a proof link that opens one payment at `/verify` |
-| 10 | `/books` (Viewing as Accountant) | Load this company's keys (or Import key file) | Reconciliation: Every run reconciled, funded, paid, variance, explained and unexplained, with any cent of rounding shown under Difference |
+| 10 | `/books` (Viewing as Accountant) | Load the judge kit on testnet; on a full Payslip, Load this company's keys; on a statements-only Payslip without a published kit, Import key file with `docs/judge/judge-kit-<network>.json` | Reconciliation: Every run reconciled, funded, paid, variance, explained and unexplained, with any cent of rounding shown under Difference |
 | 11 | Books, Exports | Payslip CSV, Xero or QuickBooks | The reconciliation and every line as CSV in the chosen layout |
 
 The same path is automated in `web/e2e/demo.spec.ts`, which is how the rehearsals below were run and timed.
@@ -77,14 +77,15 @@ Earlier testnet runs of the same flow: the driver script `scripts/mainnet-demo.s
 
 ## Mainnet run
 
-Mainnet differs from the rehearsals in three ways: funding is a real USDC deposit swapped by NEAR Intents 1Click; blocks are 75 seconds and the service waits for three confirmations before spending (`PAYSLIP_MIN_CONFIRMATIONS=3`), so execution takes roughly ten minutes instead of two; and a converting contractor's USDC is delivered by the venue about eight minutes after their payment confirms.
+Mainnet differs from the rehearsals in three ways: funding is real money, either ZEC sent from the owner's own Zashi wallet to the treasury (Fund with ZEC, the first option since the 11 Oct launch plan, docs/superpowers/specs/2026-10-11-launch-plan-design.md) or a USDC deposit swapped by NEAR Intents 1Click (Fund with USDC); blocks are 75 seconds and the service waits for three confirmations before spending (`PAYSLIP_MIN_CONFIRMATIONS=3`), so funding confirms in about four minutes and execution takes roughly ten minutes instead of two; and a converting contractor's USDC is delivered by the venue about eight minutes after their payment confirms. The recorded run pays three real people with Zashi addresses, small amounts, on the hosted app with sign-in on; their viewing keys are published in the mainnet judge kit and each person is told.
 
 ### Prerequisites
 
 - A throwaway seed. The mainnet judge kit publishes every viewing key of the demo seed, which makes all of that seed's payments readable for good. The demo uses its own data directory (`service/data/mainnet`) for that reason; real payroll, such as the first real users in [LAUNCH.md](LAUNCH.md), runs on a separate seed and data directory whose keys are never published.
-- An EVM wallet in the browser (for example MetaMask) holding the USDC deposit on Base (or Arbitrum or Ethereum) plus a little ETH for gas on that chain.
+- For Fund with ZEC: the owner's own Zashi holding about 0.05 ZEC in its shielded balance (how to get it: RUN-DAY.md). Funding from a shielded balance keeps the payroll total off every public chain; an exchange withdrawal sent straight to the treasury would be public.
+- For Fund with USDC only: an EVM wallet in the browser (for example MetaMask) holding the USDC deposit on Base (or Arbitrum or Ethereum) plus a little ETH for gas on that chain.
 - `scripts/demo/mainnet.env`, copied from `scripts/demo/mainnet.env.example`. It holds the mainnet passphrase (`PAYSLIP_SEED_PASSPHRASE`, a new one) and is ignored by git. The passphrase must be in this file: on mainnet the script refuses to fall back to the testnet passphrase in `service/.env`.
-- `scripts/demo/contractors.mainnet.json`, copied from `scripts/demo/contractors.mainnet.example.json`: the six names, unified addresses, USD amounts and invoice references. With `DEMO_GENERATED_WALLETS=yes` the empty addresses are filled from generated demo wallets whose payouts can be swept back to the treasury afterwards; otherwise every contractor needs a real unified address. The example converts Priya's pay to USDC delivered to `DEMO_REFUND_ADDRESS`, so that leg returns to the payer.
+- `scripts/demo/contractors.mainnet.json`, copied from `scripts/demo/contractors.mainnet.example.json`: the names, unified addresses, USD amounts and invoice references (three real people for the recorded run; the example lists six, and the script takes however many the file holds). With `DEMO_GENERATED_WALLETS=yes` the empty addresses are filled from generated demo wallets whose payouts can be swept back to the treasury afterwards; otherwise every contractor needs a real unified address. The example converts Priya's pay to USDC delivered to `DEMO_REFUND_ADDRESS`, so that leg returns to the payer.
 - Nothing else on 127.0.0.1:8080. The web app's Fund step talks to the service there, and the script stops if that port holds a service for another network or another wallet.
 - **Back up before funding.** The first run of the script (below, without `--yes`) creates the encrypted seed `service/data/mainnet/payer.seed.age`, and `dev-contractors.seed.age` beside it when `DEMO_GENERATED_WALLETS=yes`. Copy both off this machine and keep the passphrase separately, for example in a password manager. `init` shows no recovery phrase: the encrypted file and its passphrase together are the only way back to the treasury and to the generated contractor wallets.
 
@@ -101,10 +102,49 @@ scripts/mainnet-demo.sh scripts/demo/mainnet.env          # creates the seed and
 scripts/mainnet-demo.sh scripts/demo/mainnet.env --yes    # requests the deposit address and waits
 ```
 
-Then in the browser open the run (`http://127.0.0.1:3000/console/runs/new?run=<run id>`, the id is printed). The deposit request already exists, so the Fund step shows the deposit address: Connect Wallet, then Send <amount> USDC. The script follows the venue and the payments and writes `scripts/demo/out/proof-mainnet-<run>.md` with the six txids and heights, plus the statement and reconciliation CSVs. Copy the proof table into the README.
+Then in the browser open the run (`http://127.0.0.1:3000/console/runs/new?run=<run id>`, the id is printed). The deposit request already exists, so the Fund step shows the deposit address: Connect Wallet, then Send <amount> USDC. The script follows the venue and the payments and writes `scripts/demo/out/proof-mainnet-<run>.md` with every txid and height, plus the statement and reconciliation CSVs and `scripts/demo/out/judge-kit-mainnet.json`. Copy the proof table into the README and the kit to `docs/judge/`.
+
+The script funds through USDC only (its fund call sends `origin_chain`; VERIFY: `grep -n '"zec"' scripts/mainnet-demo.sh` prints nothing until the ZEC method is added). A run funded with ZEC therefore goes through the console on the hosted app: People, Run payroll, Approve, Fund with ZEC, send from Zashi, Pay. Its run id is the last path segment of the run page URL (`https://<app hostname>/console/runs/<run id>`, the hostname from `deploy/aws/provision.sh`), and that page lists every txid and block for the README. The kit for a console run comes from the same script's kit step against the hosted service: VERIFY: `sed -n 255,290p scripts/mainnet-demo.sh` shows the statements and kit calls to reuse.
 
 After recording, generated contractor wallets can be swept back: `cd service && ./target/release/payslip-service dev-sweep --allow-mainnet`.
 
-### Recording (product demo, three minutes at most)
+## Demo video (3 minutes at most, English)
 
-The word-for-word narration, timed against this click path, is in [LAUNCH.md](LAUNCH.md), along with the presentation video script. It adds two steps after the contractor statement: Share proof, opening the `/verify` link, and the Koinly and Xero exports. Skip step 3 (Payslip access) on camera, or blur it: that screen shows each contractor's invite link with their viewing key in plain text.
+The submission form's rule: at most 3 minutes, in English, the live product, not slides or code. It is recorded during the mainnet run, on the hosted app, browser only, in one continuous take; the waits for confirmations are cut in the edit. The pitch video script is in [LAUNCH.md](LAUNCH.md).
+
+Hostnames: the app (landing page, console, portal) and Books are the two CloudFront hostnames that `deploy/aws/provision.sh` prints (VERIFY: run it, or read `deploy/README.md`). The mainnet run id and txids: VERIFY: `ls scripts/demo/out/proof-mainnet-*.md` when the script drove the run, otherwise the run page `https://<app hostname>/console/runs/<run id>`, whose last path segment is the run id and whose pay lines list every txid and block.
+
+Budget: 180 seconds in seven blocks, 10, 10, 40, 30, 40, 30 and 20. Spoken sentences at 140 words per minute; each row's sentence fits inside its slot.
+
+### Script
+
+| Time | Where | Clicks | Say |
+| --- | --- | --- | --- |
+| 0:00 | Landing page: `https://<app hostname>/` | None. Let the hero sit: one mainnet payment shown twice, what the explorer sees on the left, what the viewing key sees on the right | "This is one payroll payment on Zcash mainnet, seen twice: what the explorer sees, and what the contractor's viewing key sees." |
+| 0:10 | Sign-in | Sign in (header), then Sign in with Google, pick the Payslip Labs account. The console home opens with the company name | "The company signs in with Google. This is Payslip Labs, with roles for who can approve and who can only read." |
+| 0:20 | `/console/people` | People in the sidebar. Three people, each with an account number | "Three people, each with their own Zcash account, so each key shows one person's pay and nobody else's." |
+| 0:28 | Run payroll, Amounts step | Run payroll. The month, then each person's USD amount and invoice reference, then Continue | "Run payroll: the month, each person's amount in dollars and their invoice reference." |
+| 0:40 | Review and approve | Scroll the review once: total, funding source, what contractors get, fees, every pay line | "Review before anything moves: the total, what each person gets, and the network fees." |
+| 0:52 | Review and approve | Approve. The flow moves to Fund | "Approve. Nothing has moved yet." |
+| 1:00 | Fund step | Fund with ZEC. The card shows the treasury's unified address as text and QR, the exact ZEC amount and Copy | "Fund with ZEC: the treasury's shielded address and the exact amount. I send it from my own Zashi wallet, off camera." |
+| 1:12 | Fund step | Send the amount from Zashi now. The card's progress line changes as the deposit is seen; cut the wait for three confirmations; resume when it reads funded | "Nothing on any public chain shows the payroll total, because the treasury is shielded too." |
+| 1:22 | Fund step, funded | None. The card reads funded with the rate | "Funded after three confirmations; the price at that block becomes the dollar basis for the books." |
+| 1:30 | Pay step | Pay 3 contractors, then confirm in the dialog that restates people, total, ZEC and fees | "One click pays everyone: one shielded transaction per person, each with an encrypted memo carrying the period, the invoice and the dollar amount." |
+| 1:42 | Pay step | Cut the wait. Resume as rows turn Confirmed with txid and block, then "Paid to 3 contractors", then View run | "Each line confirms with its transaction id and block." |
+| 1:50 | Run page | The two-view panel at the top of the run page: what the world sees beside what the key sees | "The run page shows the same payment two ways. The left is all the world gets." |
+| 1:58 | Run page, then zecblock.com | Click the first pay line, then Open in explorer. The explorer tab shows a shielded transaction | "Here is that transaction in a public explorer: shielded, no amount, no sender, no recipient." |
+| 2:10 | `/portal` | Try it with a demo key, or paste one person's invite link (from Payslip access, opened off camera). The portal home opens with their payslips | "The contractor opens their payslips with their own viewing key: their pay, read from the chain, and nobody else's." |
+| 2:20 | Portal, one payslip | Payslips, then the latest payslip. The document shows the amount, the dollar basis, the memo fields and What the world sees | "Each payslip carries the dollar value when the payment arrived, ready for tax." |
+| 2:28 | Payslip, Share proof | Share proof, copy the link, open it in a new tab: the public proof page at `/verify#...` | "Share proof makes a link that opens this one payment, checked against the chain, for a landlord or a bank, and nothing else." |
+| 2:40 | Books: `https://<books hostname>/books` | Load the judge kit (on a Books without the mainnet kit: Import key file with `docs/judge/judge-kit-mainnet.json`). The reconciliation loads: Every run reconciled, funded, paid, difference | "The accountant loads every key and gets every run reconciled: funded against paid, with the difference explained." |
+| 2:52 | Books, Exports | Exports, then Xero. The file downloads | "Export it to Xero. Private to the world, transparent to your accountant." |
+
+### Shot list (screen recording, 1440 by 900, browser only)
+
+1. Browser: a fresh profile with no extensions and no bookmarks bar, one window sized 1440 by 900, zoom 100 percent, the address bar visible so every hostname is on screen. On macOS, QuickTime Player, File, New Screen Recording, drag the region to the window; or Cmd-Shift-5 with the same region. No camera, no desktop, no terminal.
+2. Tabs, opened as the script reaches them so the viewer sees each URL: the app hostname (landing, console, portal), zecblock.com for the explorer shot, the proof link, the Books hostname.
+3. One continuous take from the landing page to Exports. Two cuts only, both on a still screen: the funding wait (after the ZEC is sent, before the card reads funded) and the payment wait (after the Pay dialog, before the rows read Confirmed). Never cut inside a click or a page load.
+4. Off camera: the Zashi send on the phone (said aloud at 1:00), and opening Payslip access if an invite link is used instead of the demo key (the keys are published in the kit, so nothing needs blurring, but the access page is not part of the story).
+5. Narration: the Say column, recorded over the cut video, or live during the take if the room is quiet. One sentence per row, no ad-libs.
+6. Before the take: the three people are already onboarded (People shows three), the treasury holds nothing from an earlier run, Zashi holds the amount the Fund card will ask for plus a little, and the Books host already serves the mainnet judge kit or the kit file is on the recording machine.
+7. After the take: export at 1440 by 900, H.264, the three minutes at most; check the explorer tab shows the txid that the run page lists; upload per RUN-DAY.md.
