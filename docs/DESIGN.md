@@ -308,6 +308,10 @@ One word per state, defined once in `web/src/components/runs/run-meta.tsx` and d
 | `incomplete` | Deposit too small (amber) |
 | `success` | Received; on testnet Set aside (nothing arrives: coins already in the treasury are set aside) |
 | `refunded`, `failed`, `expired` | Refunded (amber), Swap failed (red), Quote expired |
+| `awaiting_deposit`, venue `treasury` (Fund with ZEC) | Awaiting ZEC |
+| `deposit_seen`, venue `treasury` | ZEC arriving (confirming, or short: the shortfall is shown) |
+| `success`, venue `treasury` | Funded |
+| `expired`, venue `treasury` | Request expired (with "Request again"; ZEC already in the treasury counts) |
 
 | Payslip access | Tag |
 | --- | --- |

@@ -19,9 +19,10 @@ use payslip::{
     config::{VenueKind, ZcashNetwork},
     db::{self, NewContractor, NewLine, Pool},
     memo,
+    prices::{self, MarketRate, RateAt},
     runs::{ChainOps, Executor, Pay, LINE_FEE_ZAT},
     statements::{self, KeyInfo},
-    venue::{Funding, QuoteRequest, SwapVenue, TestnetVenue, VenueError},
+    venue::{Funding, QuoteRequest, SwapVenue, TestnetVenue, TreasuryVenue, VenueError},
     viewer::ScanOutput,
     wallet::SpendError,
 };
@@ -52,6 +53,9 @@ struct FakeTx {
 struct State {
     tip: u32,
     spendable: HashMap<u32, u64>,
+    /// Received but not yet confirmed to the executor's depth (counted in `total`, not in
+    /// `spendable`): a deposit on its way in.
+    pending: HashMap<u32, u64>,
     external: HashMap<String, u64>,
     txs: HashMap<String, FakeTx>,
     order: Vec<String>,
@@ -159,6 +163,25 @@ impl FakeChain {
         self.s.lock().unwrap().external.get(addr).copied().unwrap_or(0)
     }
 
+    /// A deposit from outside that is already confirmed (spendable).
+    fn receive(&self, account: u32, zat: u64) {
+        *self.s.lock().unwrap().spendable.entry(account).or_default() += zat;
+    }
+
+    /// A deposit from outside that is seen but not yet confirmed.
+    fn receive_pending(&self, account: u32, zat: u64) {
+        *self.s.lock().unwrap().pending.entry(account).or_default() += zat;
+    }
+
+    /// Every pending deposit reaches the confirmation depth.
+    fn confirm_pending(&self) {
+        let mut s = self.s.lock().unwrap();
+        let pending: Vec<(u32, u64)> = s.pending.drain().collect();
+        for (account, zat) in pending {
+            *s.spendable.entry(account).or_default() += zat;
+        }
+    }
+
     fn txs_from(&self, account: u32) -> Vec<FakeTx> {
         let s = self.s.lock().unwrap();
         s.order
@@ -181,7 +204,8 @@ impl ChainOps for FakeChain {
         Ok(self.s.lock().unwrap().spendable.get(&account).copied().unwrap_or(0))
     }
     async fn total(&self, account: u32) -> anyhow::Result<u64> {
-        self.spendable(account).await
+        let s = self.s.lock().unwrap();
+        Ok(s.spendable.get(&account).copied().unwrap_or(0) + s.pending.get(&account).copied().unwrap_or(0))
     }
     async fn account_address(&self, account: u32) -> anyhow::Result<String> {
         Ok(format!("acct:{account}"))
@@ -370,14 +394,64 @@ fn executor(pool: &Pool, chain: &FakeChain, venue: Arc<dyn SwapVenue>) -> Execut
 }
 
 fn executor_depth(pool: &Pool, chain: &FakeChain, venue: Arc<dyn SwapVenue>, depth: u32) -> Executor {
+    executor_with(
+        pool,
+        chain,
+        venue,
+        Arc::new(TreasuryVenue::new(Arc::new(SeriesRates))),
+        depth,
+    )
+}
+
+fn executor_with(
+    pool: &Pool,
+    chain: &FakeChain,
+    venue: Arc<dyn SwapVenue>,
+    treasury: Arc<TreasuryVenue>,
+    depth: u32,
+) -> Executor {
     Executor::with_chain(
         ZcashNetwork::Testnet,
         pool.clone(),
         Arc::new(chain.clone()),
         venue,
+        treasury,
         Duration::from_millis(5),
         depth,
     )
+}
+
+/// The ZEC market price at a five-minute mark: it moves with time, so the rate a run records
+/// depends on which block funded it, and no two marks within an hour share a price.
+fn price_at_mark(mark: i64) -> f64 {
+    1_300.0 + ((mark / 300) % 7) as f64 * 3.25
+}
+
+/// The five-minute price points around `t`, as CoinGecko answers a short range: what the
+/// statement engine would see when valuing a payment mined at `t`.
+fn series_around(t: i64) -> Vec<(i64, f64)> {
+    let first = t.div_euclid(300) * 300 - 900;
+    (0..7)
+        .map(|i| (first + 300 * i, price_at_mark(first + 300 * i)))
+        .collect()
+}
+
+/// The executor's rate source in these tests: the price point nearest a block time, read the
+/// way the statement engine values a payment at receipt.
+struct SeriesRates;
+
+#[async_trait]
+impl MarketRate for SeriesRates {
+    async fn usd_rate_at(&self, unix: i64) -> anyhow::Result<Option<RateAt>> {
+        Ok(prices::rate_at(&series_around(unix), unix, prices::DAY_MAX_GAP))
+    }
+}
+
+/// The rate the executor records for a run funded at `height`, computed the way the tests
+/// expect it: from the block's time through the same series and lookup.
+fn rate_at_height(height: u32) -> RateAt {
+    let t = BLOCK_T0 + 75 * i64::from(height);
+    prices::rate_at(&series_around(t), t, prices::DAY_MAX_GAP).unwrap()
 }
 
 fn testnet_venue() -> Arc<dyn SwapVenue> {
@@ -1641,4 +1715,272 @@ async fn a_second_run_on_a_short_treasury_fails_with_a_hint() {
     }
     let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
     assert!(rb.status == "failed" || rb.status == "paid", "{rb:?}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fund with ZEC (ADR-025)
+
+use payslip::{
+    money,
+    runs::{fee_estimate_zat, FundMethod, FundRequest},
+};
+
+fn zec() -> FundRequest {
+    FundRequest {
+        method: FundMethod::Zec,
+        ..Default::default()
+    }
+}
+
+/// What the treasury must hold for `run_id` at the rate of `height`: each line at that rate
+/// plus the fee reserve, as `watch_treasury` and `record_fill` count it.
+async fn need_at(pool: &Pool, run_id: &str, height: u32) -> u64 {
+    let rate = rate_at_height(height).rate_e6;
+    let lines = db::lines(pool, run_id).await.unwrap();
+    lines
+        .iter()
+        .map(|l| money::usd_cents_to_zat(l.amount_usd_basis as u64, rate).unwrap())
+        .sum::<u64>()
+        + fee_estimate_zat(lines.len(), 0)
+}
+
+/// The payer sends the ZEC asked for; while it is unconfirmed the run shows it as pending and
+/// is not funded; once it confirms the run is funded at the rate of that block, the rate is the
+/// USD basis of every line and of the funding record on chain, and the run pays as usual.
+#[tokio::test]
+async fn zec_funding_funds_the_run_when_the_treasury_balance_confirms() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund_with(&run_id, zec()).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "awaiting_funds");
+    let f = funding_of(&r);
+    assert_eq!(f.venue, "treasury");
+    assert_eq!(f.status, "awaiting_deposit");
+    assert_eq!(f.treasury_address.as_deref(), Some("acct:0"));
+    assert_eq!(f.deposit_address.as_deref(), Some("acct:0"));
+    assert!(f.deadline.is_some());
+    let asked = f.zec_required_zat.unwrap();
+    assert_eq!(asked, f.quoted_zat);
+    // The request covers the run at the current rate with the 2 percent buffer.
+    assert!(asked > need_at(&pool, &run_id, 1000).await, "{asked}");
+    assert_eq!(f.zec_received_zat, Some(0));
+    assert_eq!(f.zec_shortfall_zat, Some(need_at(&pool, &run_id, 1000).await));
+
+    // Seen but not confirmed: not funded, shown as pending.
+    chain.receive_pending(0, asked);
+    exec.refresh_funding(&run_id).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "awaiting_funds");
+    let f = funding_of(&r);
+    assert_eq!(f.status, "deposit_seen");
+    assert_eq!(f.zec_pending_zat, Some(asked));
+    assert_eq!(f.zec_received_zat, Some(0));
+    assert_eq!(f.venue_status.as_deref(), Some("CONFIRMING"));
+
+    // Confirmed at block 1000: funded at that block's rate.
+    chain.confirm_pending();
+    exec.refresh_funding(&run_id).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "funded");
+    let f = funding_of(&r);
+    let expected = rate_at_height(1000);
+    assert_eq!(f.status, "success");
+    assert_eq!(f.funded_at_height, Some(1000));
+    assert_eq!(f.rate_usd_per_zec_e6, Some(expected.rate_e6));
+    assert_eq!(f.priced_at, Some(expected.priced_at.clone()));
+    assert_eq!(f.zec_acquired_zat, Some(asked));
+    assert_eq!(f.zec_shortfall_zat, Some(0));
+    assert_eq!(
+        f.funded_usd_cents,
+        Some(money::zat_to_usd_cents(asked, expected.rate_e6))
+    );
+    // Funding alone never pays.
+    assert!(!exec.is_running(&run_id));
+
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.zec_usd_rate, Some(expected.rate_e6 as i64));
+    assert_eq!(r.zec_acquired, Some(asked as i64));
+    assert_eq!(r.funding_amount, f.funded_usd_cents.map(|c| c as i64));
+    // Every line's ZEC is its USD at the funding block's rate, and valuing that ZEC the way a
+    // statement values a payment received in that block gives the same USD, to the cent.
+    let t = BLOCK_T0 + 75 * 1000;
+    for l in db::lines(&pool, &run_id).await.unwrap() {
+        let zat = l.amount_zec.unwrap() as u64;
+        assert_eq!(
+            zat,
+            money::usd_cents_to_zat(l.amount_usd_basis as u64, expected.rate_e6).unwrap()
+        );
+        let market = prices::value_at(&series_around(t), t, zat, prices::DAY_MAX_GAP, "usd").unwrap();
+        assert_eq!(market.value_cents, money::zat_to_usd_cents(zat, expected.rate_e6));
+        assert_eq!(market.price_cents * 10_000, expected.rate_e6);
+    }
+    // The funding record on chain carries the same figures, so Books reconciles it as any run.
+    let allocation = chain.txs_from(0).into_iter().find(|t| t.mined_at.is_some()).unwrap();
+    match memo::decode_str(allocation.change_memo.as_deref().unwrap()) {
+        memo::Decoded::Payslip(memo::PayslipMemo::RunFunding(m)) => {
+            assert_eq!(m.funded_usd_cents, f.funded_usd_cents.unwrap());
+            assert_eq!(m.zec_acquired_zat, asked);
+            assert_eq!(m.rate_e6, expected.rate_e6);
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Part of the ZEC arrives: the run says what is still missing at the current rate and waits;
+/// the rest funds it.
+#[tokio::test]
+async fn zec_funding_shows_the_shortfall_until_the_rest_arrives() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund_with(&run_id, zec()).await.unwrap();
+    let need = need_at(&pool, &run_id, 1000).await;
+    let half = need / 2;
+    chain.receive(0, half);
+    exec.refresh_funding(&run_id).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "awaiting_funds");
+    let f = funding_of(&r);
+    assert_eq!(f.status, "deposit_seen");
+    assert_eq!(f.zec_received_zat, Some(half));
+    assert_eq!(f.zec_pending_zat, Some(0));
+    assert_eq!(f.zec_shortfall_zat, Some(need - half));
+    assert_eq!(f.venue_status.as_deref(), Some("PARTIAL"));
+    // The payer sends the rest (and a little more): funded with what is free, at least the
+    // need, at most what was asked for; the surplus stays in the treasury.
+    chain.receive(0, need - half + 1_000);
+    exec.refresh_funding(&run_id).await.unwrap();
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "funded");
+    let f = funding_of(&r);
+    assert_eq!(f.status, "success");
+    assert_eq!(f.zec_shortfall_zat, Some(0));
+    assert_eq!(f.zec_acquired_zat, Some(need + 1_000));
+    assert_eq!(run_to_end(&pool, &chain, &exec, &run_id).await, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
+}
+
+/// Past the deadline an unfunded request is expired: executing fails the run with
+/// `funding_expired`; the run can be funded again (ZEC already in the treasury counts) or
+/// cancelled through the existing endpoints.
+#[tokio::test]
+async fn an_expired_zec_request_can_be_funded_again_or_cancelled() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let lapsed = Arc::new(TreasuryVenue::new(Arc::new(SeriesRates)).with_deadline(time::Duration::minutes(-20)));
+    let exec = executor_with(&pool, &chain, testnet_venue(), lapsed, 1);
+    let a = seed(&pool, 1, 3, 0, "a").await;
+    let b = seed(&pool, 4, 3, 0, "b").await;
+    for run_id in [&a, &b] {
+        exec.fund_with(run_id, zec()).await.unwrap();
+        exec.refresh_funding(run_id).await.unwrap();
+        let r = db::get_run(&pool, run_id).await.unwrap().unwrap();
+        assert_eq!(r.status, "awaiting_funds");
+        assert_eq!(funding_of(&r).status, "expired");
+        exec.start(run_id).await.unwrap();
+        assert_eq!(drive_for(&pool, &chain, &exec, run_id, 50).await.status, "failed");
+        let r = db::get_run(&pool, run_id).await.unwrap().unwrap();
+        assert_eq!(r.error_code.as_deref(), Some("funding_expired"));
+        assert!(r.error_hint.as_deref().unwrap().contains("Fund the run again"));
+    }
+    // A: funded again, from a service whose deadline is the usual 24 hours; the ZEC that
+    // arrived meanwhile (20 ZEC, more than the $14,430 run needs) funds it at once.
+    chain.receive(0, 2_000_000_000);
+    let exec2 = executor(&pool, &chain, testnet_venue());
+    exec2.fund_with(&a, zec()).await.unwrap();
+    let r = db::get_run(&pool, &a).await.unwrap().unwrap();
+    assert_eq!(r.status, "funded", "{r:?}");
+    assert_eq!(run_to_end(&pool, &chain, &exec2, &a).await, "paid");
+    // B: cancelled instead.
+    exec2.cancel(&b).await.unwrap();
+    assert_eq!(db::get_run(&pool, &b).await.unwrap().unwrap().status, "cancelled");
+}
+
+/// PAYSLIP_MAX_RUN_USD_CENTS: a payroll over the cap is refused with `run_over_cap`, whichever
+/// method funds it; one under it goes through.
+#[tokio::test]
+async fn a_run_over_the_cap_is_refused() {
+    let (_d, pool) = fresh_db().await;
+    // 20 ZEC: covers the $16,450.00 run at the test rate.
+    let chain = FakeChain::new(2_000_000_000);
+    let run_id = seed_run(&pool).await;
+    let exec = executor(&pool, &chain, testnet_venue()).with_run_cap(Some(1_000_000));
+    for req in [zec(), FundRequest::default()] {
+        let err = exec.fund_with(&run_id, req).await.unwrap_err();
+        assert_eq!(err.status, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(err.body.code, "run_over_cap");
+        assert!(err.body.message.contains("16450.00") && err.body.message.contains("10000.00"));
+        assert!(err.body.hint.contains("PAYSLIP_MAX_RUN_USD_CENTS"));
+    }
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "draft");
+    let exec = executor(&pool, &chain, testnet_venue()).with_run_cap(Some(1_645_000));
+    exec.fund_with(&run_id, zec()).await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+}
+
+/// Two runs await ZEC and one deposit arrives: the earlier run takes it, the later one keeps
+/// waiting with the earlier run's claim held back from what it sees, and a second deposit funds
+/// it. Both then pay from the one treasury.
+#[tokio::test]
+async fn two_runs_awaiting_zec_claim_the_balance_in_order() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let a = seed(&pool, 1, 3, 0, "a").await;
+    let b = seed(&pool, 4, 3, 0, "b").await;
+    exec.fund_with(&a, zec()).await.unwrap();
+    exec.fund_with(&b, zec()).await.unwrap();
+    let asked_a = funding_of(&db::get_run(&pool, &a).await.unwrap().unwrap())
+        .zec_required_zat
+        .unwrap();
+    let asked_b = funding_of(&db::get_run(&pool, &b).await.unwrap().unwrap())
+        .zec_required_zat
+        .unwrap();
+    chain.receive(0, asked_a);
+    // B looks first and sees nothing free: A's request comes before it.
+    exec.refresh_funding(&b).await.unwrap();
+    let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
+    assert_eq!(rb.status, "awaiting_funds");
+    let fb = funding_of(&rb);
+    assert_eq!(fb.status, "awaiting_deposit");
+    assert_eq!(fb.zec_received_zat, Some(0));
+    assert_eq!(fb.zec_shortfall_zat, Some(need_at(&pool, &b, 1000).await));
+    exec.refresh_funding(&a).await.unwrap();
+    assert_eq!(db::get_run(&pool, &a).await.unwrap().unwrap().status, "funded");
+    // Still nothing free for B: A, funded but not yet allocated, holds its ZEC.
+    exec.refresh_funding(&b).await.unwrap();
+    assert_eq!(
+        funding_of(&db::get_run(&pool, &b).await.unwrap().unwrap()).zec_received_zat,
+        Some(0)
+    );
+    chain.receive(0, asked_b);
+    exec.refresh_funding(&b).await.unwrap();
+    let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
+    assert_eq!(rb.status, "funded");
+    assert_eq!(funding_of(&rb).zec_acquired_zat, Some(asked_b));
+    exec.start(&a).await.unwrap();
+    exec.start(&b).await.unwrap();
+    for _ in 0..4000 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let ra = db::get_run(&pool, &a).await.unwrap().unwrap();
+        let rb = db::get_run(&pool, &b).await.unwrap().unwrap();
+        if ra.status == "paid" && rb.status == "paid" && !exec.is_running(&a) && !exec.is_running(&b) {
+            break;
+        }
+    }
+    for run_id in [&a, &b] {
+        let r = db::get_run(&pool, run_id).await.unwrap().unwrap();
+        assert_eq!(r.status, "paid", "{r:?}");
+        for l in db::lines(&pool, run_id).await.unwrap() {
+            assert_eq!(l.status, "confirmed");
+            assert_eq!(chain.external(&l.unified_address), l.amount_zec.unwrap() as u64);
+        }
+    }
 }

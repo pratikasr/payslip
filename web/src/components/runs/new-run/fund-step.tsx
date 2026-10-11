@@ -27,9 +27,18 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { checkEvmAddress } from "@/lib/addresses";
-import { api, isEvmFunding, toDisplayError, type ApiError, type Funding, type Run, type Wallet } from "@/lib/api";
+import {
+  api,
+  isEvmFunding,
+  isZecFunding,
+  toDisplayError,
+  type ApiError,
+  type Funding,
+  type Run,
+  type Wallet,
+} from "@/lib/api";
 import { evmChainName, ORIGIN_CHAINS } from "@/lib/evm";
-import { formatDateTime, formatRate, venueLabel } from "@/lib/format";
+import { formatDateTime, formatRate, formatZec, venueLabel } from "@/lib/format";
 import { feeReserveZat } from "@/lib/payroll";
 import { TESTNET_FAUCET_URL } from "@/lib/public-url";
 import { Problem } from "../problem";
@@ -179,7 +188,12 @@ function QuoteRow({
   );
 }
 
-/** Step 3. Testnet draws from the treasury at the simulated rate; mainnet asks for a USDC deposit. */
+/**
+ * Step 3. Testnet draws from the treasury at the simulated rate. Elsewhere the payer chooses:
+ * ZEC sent to the treasury address (funded at the market rate when it confirms, ADR-025) or a
+ * USDC deposit swapped by the venue. A service that does not offer the ZEC method shows the USDC
+ * flow alone.
+ */
 export function FundStep({
   run,
   onRun,
@@ -228,8 +242,13 @@ export function FundStep({
         notes={notes}
       />
     );
-  if (!run.funding || run.status === "draft")
+  if (venue === "treasury" && run.status !== "draft")
+    return <ZecDeposit run={run} onRun={onRun} venueName={venueLabel(health?.venue)} notes={notes} />;
+  if (!run.funding || run.status === "draft") {
+    if (health?.fund_with_zec)
+      return <MethodChoice run={run} onRun={onRun} venueName={venueLabel(venue)} notes={notes} />;
     return <QuoteForm run={run} onRun={onRun} venueName={venueLabel(venue)} notes={notes} />;
+  }
   return <DepositQuote run={run} onRun={onRun} notes={notes} />;
 }
 
@@ -469,17 +488,8 @@ function FundingNote() {
   );
 }
 
-function QuoteForm({
-  run,
-  onRun,
-  venueName,
-  notes,
-}: {
-  run: Run;
-  onRun: (run: Run) => void;
-  venueName: string;
-  notes: React.ReactNode;
-}) {
+/** The USDC quote request: origin chain, refund address, and the call that asks for the quote. */
+function useUsdcQuote(run: Run, onRun: (run: Run) => void) {
   const [chain, setChain] = useState<string>("base");
   const [refund, setRefund] = useState("");
   const [refundError, setRefundError] = useState<string | null>(null);
@@ -494,7 +504,7 @@ function QuoteForm({
     setBusy(true);
     setError(null);
     try {
-      onRun(await api.fundRun(run.id, { origin_chain: chain, refund_address: refund.trim() }));
+      onRun(await api.fundRun(run.id, { method: "usdc", origin_chain: chain, refund_address: refund.trim() }));
     } catch (err) {
       setError(toDisplayError(err));
     } finally {
@@ -502,68 +512,495 @@ function QuoteForm({
     }
   };
 
+  return { chain, setChain, refund, setRefund, refundError, busy, error, submit };
+}
+
+type UsdcQuote = ReturnType<typeof useUsdcQuote>;
+
+/** The origin chain and refund address fields of a USDC quote request. */
+function UsdcFields({ q }: { q: UsdcQuote }) {
   return (
-    <form onSubmit={submit} noValidate>
+    <div className="grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
+      <div className="space-y-1.5">
+        <label htmlFor="origin-chain" className="text-[0.8125rem] text-strong">
+          Pay USDC from
+        </label>
+        <NativeSelect
+          id="origin-chain"
+          value={q.chain}
+          onChange={(e) => q.setChain(e.target.value)}
+          className="h-10 rounded-[10px]"
+        >
+          {ORIGIN_CHAINS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor="refund-address" className="text-[0.8125rem] text-strong">
+          Refund address
+        </label>
+        <Input
+          id="refund-address"
+          value={q.refund}
+          onChange={(e) => q.setRefund(e.target.value)}
+          placeholder="0x"
+          spellCheck={false}
+          autoComplete="off"
+          className="h-10 rounded-[10px] font-mono text-[0.8125rem]"
+          aria-invalid={!!q.refundError}
+          aria-describedby={q.refundError ? "refund-address-error" : "refund-address-help"}
+        />
+        {q.refundError ? (
+          <p id="refund-address-error" className="text-[0.8125rem] text-destructive">
+            {q.refundError}
+          </p>
+        ) : (
+          <p id="refund-address-help" className="text-[0.8125rem] text-muted-foreground">
+            Yours, on the same chain. Used only if the swap cannot complete.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The USDC flow alone, for a service that does not offer Fund with ZEC. */
+function QuoteForm({
+  run,
+  onRun,
+  venueName,
+  notes,
+}: {
+  run: Run;
+  onRun: (run: Run) => void;
+  venueName: string;
+  notes: React.ReactNode;
+}) {
+  const q = useUsdcQuote(run, onRun);
+  return (
+    <form onSubmit={q.submit} noValidate>
       <Heading run={run}>Send USDC from any wallet. {venueName} swaps it to ZEC straight into the treasury.</Heading>
       <Card className="mt-6 space-y-5 px-6 py-6 sm:px-6">
         <div>
           <p className="text-[0.8125rem] text-strong">Payroll total</p>
           <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
         </div>
-        <div className="grid gap-4 border-t border-hairline pt-5 sm:grid-cols-[11rem_minmax(0,1fr)]">
-          <div className="space-y-1.5">
-            <label htmlFor="origin-chain" className="text-[0.8125rem] text-strong">
-              Pay USDC from
-            </label>
-            <NativeSelect
-              id="origin-chain"
-              value={chain}
-              onChange={(e) => setChain(e.target.value)}
-              className="h-10 rounded-[10px]"
-            >
-              {ORIGIN_CHAINS.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-          <div className="space-y-1.5">
-            <label htmlFor="refund-address" className="text-[0.8125rem] text-strong">
-              Refund address
-            </label>
-            <Input
-              id="refund-address"
-              value={refund}
-              onChange={(e) => setRefund(e.target.value)}
-              placeholder="0x"
-              spellCheck={false}
-              autoComplete="off"
-              className="h-10 rounded-[10px] font-mono text-[0.8125rem]"
-              aria-invalid={!!refundError}
-              aria-describedby={refundError ? "refund-address-error" : "refund-address-help"}
-            />
-            {refundError ? (
-              <p id="refund-address-error" className="text-[0.8125rem] text-destructive">
-                {refundError}
-              </p>
-            ) : (
-              <p id="refund-address-help" className="text-[0.8125rem] text-muted-foreground">
-                Yours, on the same chain. Used only if the swap cannot complete.
-              </p>
-            )}
-          </div>
+        <div className="border-t border-hairline pt-5">
+          <UsdcFields q={q} />
         </div>
       </Card>
       {notes}
-      {error ? <FundProblem className="mt-5" error={error} title="No quote yet" /> : null}
+      {q.error ? <FundProblem className="mt-5" error={q.error} title="No quote yet" /> : null}
       <div className="mt-6">
-        <Button type="submit" size="lg" disabled={busy}>
-          {busy ? "Getting a quote" : "Get quote"}
+        <Button type="submit" size="lg" disabled={q.busy}>
+          {q.busy ? "Getting a quote" : "Get quote"}
         </Button>
       </div>
       {run.status === "draft" ? <DiscardRun run={run} /> : null}
     </form>
+  );
+}
+
+/** The "Fund with USDC" card: the existing quote request, beside or under the ZEC card. */
+function UsdcCard({
+  q,
+  venueName,
+  secondary,
+  disabled,
+}: {
+  q: UsdcQuote;
+  venueName: string;
+  secondary?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <form onSubmit={q.submit} noValidate aria-labelledby="fund-usdc-title">
+      <Card className="px-6 py-6 sm:px-6">
+        <h2 id="fund-usdc-title" className="text-[0.9375rem] text-strong">
+          Fund with USDC
+        </h2>
+        <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
+          From any wallet holding USDC. {venueName} swaps it to ZEC straight into the treasury at a rate the quote
+          locks. The deposit is visible on that chain.
+        </p>
+        <div className="mt-5 border-t border-hairline pt-5">
+          <UsdcFields q={q} />
+        </div>
+        {q.error ? <FundProblem className="mt-4" error={q.error} title="No quote yet" /> : null}
+        <Button
+          type="submit"
+          size="lg"
+          variant={secondary ? "secondary" : "default"}
+          className="mt-5"
+          disabled={q.busy || disabled}
+        >
+          {q.busy ? "Getting a quote" : "Get a USDC quote"}
+        </Button>
+      </Card>
+    </form>
+  );
+}
+
+/**
+ * Two cards for a run that is not funded yet: Fund with ZEC (the treasury address and amount
+ * come back with the request) and Fund with USDC (the existing quote).
+ */
+function MethodChoice({
+  run,
+  onRun,
+  venueName,
+  notes,
+}: {
+  run: Run;
+  onRun: (run: Run) => void;
+  venueName: string;
+  notes: React.ReactNode;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ApiError | null>(null);
+  const q = useUsdcQuote(run, onRun);
+  const requestZec = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      onRun(await api.fundRun(run.id, { method: "zec" }));
+    } catch (err) {
+      setError(toDisplayError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div>
+      <Heading run={run}>
+        Send ZEC to the treasury, or USDC from any wallet. Either way the treasury holds the ZEC before anything is
+        paid.
+      </Heading>
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <Card aria-labelledby="fund-zec-title" className="px-6 py-6 sm:px-6">
+          <h2 id="fund-zec-title" className="text-[0.9375rem] text-strong">
+            Fund with ZEC
+          </h2>
+          <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
+          <p className="mt-2 text-[0.9375rem] text-muted-foreground">
+            From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another chain.
+          </p>
+          <div className="mt-4">
+            <QuoteRow label="You send" sub="The amount and address come next">
+              ZEC at the market rate, plus a fee reserve and 2% for price moves
+            </QuoteRow>
+            <QuoteRow label="Rate" sub="The USD basis of every payslip">
+              The market rate of the block in which your ZEC confirms
+            </QuoteRow>
+            <QuoteRow label="Time to send">24 hours</QuoteRow>
+          </div>
+          {error ? (
+            <FundProblem
+              className="mt-4"
+              error={error}
+              title="No treasury address yet"
+              onRetry={requestZec}
+              busy={busy}
+            />
+          ) : null}
+          <Button size="lg" className="mt-5" onClick={requestZec} disabled={busy || q.busy}>
+            {busy ? "Preparing" : "Fund with ZEC"}
+          </Button>
+        </Card>
+        <UsdcCard q={q} venueName={venueName} secondary disabled={busy} />
+      </div>
+      {notes}
+      {run.status === "draft" ? <DiscardRun run={run} /> : null}
+    </div>
+  );
+}
+
+/** Asks the service where the funding stands every 5 seconds while `waiting`. */
+function useFundingPoll(
+  runId: string,
+  waiting: boolean,
+  onRun: (run: Run) => void,
+  onError: (error: ApiError | null) => void,
+) {
+  const onRunRef = useRef(onRun);
+  const onErrorRef = useRef(onError);
+  useEffect(() => {
+    onRunRef.current = onRun;
+    onErrorRef.current = onError;
+  }, [onRun, onError]);
+  useEffect(() => {
+    if (!waiting) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const ctrl = new AbortController();
+    const tick = async () => {
+      try {
+        const next = await api.pollFunding(runId, ctrl.signal);
+        if (stopped) return;
+        onErrorRef.current(null);
+        onRunRef.current(next);
+      } catch (err) {
+        if (stopped || ctrl.signal.aborted) return;
+        onErrorRef.current(toDisplayError(err));
+      }
+      if (!stopped) timer = setTimeout(tick, POLL_MS);
+    };
+    timer = setTimeout(tick, POLL_MS);
+    return () => {
+      stopped = true;
+      ctrl.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [waiting, runId]);
+}
+
+/** "0.02275000": a coin amount a wallet accepts as typed, no grouping. */
+function plainZec(zat: number): string {
+  return `${Math.floor(zat / 100_000_000)}.${String(zat % 100_000_000).padStart(8, "0")}`;
+}
+
+/**
+ * Fund with ZEC, after the request: the treasury address with a QR code, the amount to send, the
+ * rate, and a live line fed by the run stream and the 5-second poll: what has arrived, what is
+ * still confirming, and the shortfall when the ZEC falls short at the current rate. An expired
+ * request offers a new one; USDC stays one step away.
+ */
+function ZecDeposit({
+  run,
+  onRun,
+  venueName,
+  notes,
+}: {
+  run: Run;
+  onRun: (run: Run) => void;
+  venueName: string;
+  notes: React.ReactNode;
+}) {
+  const funding: Funding = run.funding!;
+  const zec = isZecFunding(funding) ? funding : null;
+  const [pollError, setPollError] = useState<ApiError | null>(null);
+  const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState<ApiError | null>(null);
+  const [showUsdc, setShowUsdc] = useState(false);
+  const q = useUsdcQuote(run, onRun);
+  const closed = FAILED_FUNDING.has(funding.status);
+  const waiting = run.status === "awaiting_funds" && !closed;
+  useFundingPoll(run.id, waiting, onRun, setPollError);
+
+  // The deadline is checked against the clock, so the page stops asking for ZEC before the
+  // service reports the request expired.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+  const pastDeadline = waiting && !!funding.deadline && Date.parse(funding.deadline) < now;
+
+  const requestAgain = async () => {
+    setRequesting(true);
+    setRequestError(null);
+    try {
+      onRun(await api.fundRun(run.id, { method: "zec" }));
+    } catch (err) {
+      setRequestError(toDisplayError(err));
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  const funded = funding.status === "success";
+  const rate = funding.rate_usd_per_zec_e6 ?? funding.quote_rate_e6 ?? null;
+  const required = zec?.zec_required_zat ?? (funding.quoted_zat || null);
+  const payroll = estimateZat(
+    run.lines.map((l) => l.amount_usd_cents),
+    rate,
+  );
+  const extra = required !== null && payroll !== null ? Math.max(0, required - payroll) : null;
+  const received = funding.zec_received_zat ?? 0;
+  const pending = funding.zec_pending_zat ?? 0;
+  const shortfall = funding.zec_shortfall_zat ?? null;
+  const address = zec?.treasury_address ?? funding.deposit_address ?? null;
+
+  let progress: React.ReactNode;
+  if (funded) {
+    progress = (
+      <>
+        Funded at <span className="money">{formatRate(rate)}</span> per ZEC
+        {funding.funded_at_height ? ` (block ${funding.funded_at_height.toLocaleString("en-US")})` : ""}. Moving on to
+        the payments.
+      </>
+    );
+  } else if (pastDeadline) {
+    progress =
+      "The 24 hours have passed. This page asks the service and offers a new request once it confirms the request expired; ZEC already in the treasury still counts.";
+  } else if (funding.venue_status === "PRICE_UNAVAILABLE") {
+    progress =
+      "ZEC seen in the treasury. Waiting for the market price to value it; this page checks again every 5 seconds.";
+  } else if (pending > 0) {
+    progress = (
+      <>
+        <Zec zat={pending} short /> seen, waiting to confirm. <Zec zat={received} short /> confirmed so far
+        {shortfall ? (
+          <>
+            ; <Zec zat={shortfall} short /> still needed
+          </>
+        ) : null}
+        .
+      </>
+    );
+  } else if (received > 0 && shortfall) {
+    progress = (
+      <>
+        <Zec zat={received} short /> confirmed; <Zec zat={shortfall} short /> still needed at the current rate. Send the
+        rest to the same address.
+      </>
+    );
+  } else {
+    progress =
+      "Waiting for your ZEC. This page checks the treasury every 5 seconds; the run is funded once the ZEC has the confirmations the service waits for.";
+  }
+
+  return (
+    <div>
+      <Heading run={run}>
+        {closed
+          ? "Not enough ZEC confirmed before the request expired. ZEC already in the treasury still counts: request again below."
+          : "Send the amount below to the treasury address from any Zcash wallet. The run is funded when it confirms, at the market rate of that block."}
+      </Heading>
+
+      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[0.8125rem] text-strong">You send</p>
+          {rate ? (
+            <span
+              className="inline-flex items-center rounded-full bg-raised px-2.5 py-1 text-[0.8125rem] text-foreground"
+              title={
+                funded
+                  ? "The market rate of the block in which the ZEC confirmed: this run's USD basis."
+                  : "The market rate when the request was made. The run is funded at the rate of the block in which your ZEC confirms."
+              }
+            >
+              1 ZEC {funded ? "=" : "≈"} <span className="money ml-1">{formatRate(rate)}</span>
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
+          <span className="money text-[2.125rem] leading-none font-[380]">
+            {required !== null ? formatZec(required) : "ZEC"}
+          </span>
+          {required !== null ? <span className="text-[0.9375rem] text-strong">ZEC</span> : null}
+        </p>
+        {funding.deadline && !closed ? (
+          <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
+            Send before {formatDateTime(funding.deadline)}
+          </p>
+        ) : null}
+        <div className="mt-4">
+          <QuoteRow
+            label="Contractors get"
+            sub={
+              <>
+                Worth <Usd cents={run.total_usd_cents} /> at {funded ? "the funding rate" : "the current rate"}
+              </>
+            }
+          >
+            {payroll !== null ? <Zec zat={payroll} short /> : "ZEC"}
+          </QuoteRow>
+          <QuoteRow
+            label="Reserve and buffer"
+            sub="Network fees and 2% for price moves; what is unspent stays in the treasury"
+          >
+            {extra !== null ? <Zec zat={extra} short /> : "Included"}
+          </QuoteRow>
+          <QuoteRow label="Status">
+            <StatusTag status={fundingTag(funding)} />
+          </QuoteRow>
+        </div>
+      </Card>
+
+      {notes}
+
+      {closed ? (
+        <div className="mt-5 space-y-3">
+          <Problem
+            error={{
+              message: "The request expired before enough ZEC confirmed in the treasury.",
+              hint: "Request again: ZEC already in the treasury counts toward the new request, at the rate when it is funded.",
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="lg" onClick={requestAgain} disabled={requesting}>
+              {requesting ? "Requesting" : "Request again"}
+            </Button>
+            <button
+              type="button"
+              className="rounded-sm text-[0.9375rem] text-link hover:underline"
+              onClick={() => setShowUsdc((v) => !v)}
+            >
+              {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
+            </button>
+          </div>
+          {requestError ? <FundProblem error={requestError} title="No new request yet" /> : null}
+        </div>
+      ) : !address ? (
+        <p className="mt-5 text-[0.9375rem] text-muted-foreground" aria-live="polite">
+          The service did not return the treasury address. Open the Treasury page for it, or request again.
+        </p>
+      ) : (
+        <div className="mt-6 space-y-5">
+          <div className="grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+            <Sensitive block>
+              <QrCode value={address} label="QR code of the treasury address" size={160} />
+            </Sensitive>
+            <dl className="grid min-w-0 gap-3 text-[0.9375rem]">
+              <div>
+                <dt className="text-[0.8125rem] text-muted-foreground">Treasury address</dt>
+                <dd>
+                  <Hash value={address} label="treasury address" head={12} tail={8} />
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[0.8125rem] text-muted-foreground">Amount</dt>
+                <dd className="flex flex-wrap items-center gap-2">
+                  {required !== null ? (
+                    <>
+                      <span className="money">{formatZec(required)} ZEC</span>
+                      <CopyButton value={plainZec(required)} label="amount in ZEC" size="sm">
+                        Copy amount
+                      </CopyButton>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Not set</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+          </div>
+          <p className="text-[0.9375rem] text-muted-foreground" aria-live="polite">
+            {progress}
+          </p>
+          {pollError ? <Problem error={pollError} title="Could not check the treasury" /> : null}
+          {waiting ? (
+            <button
+              type="button"
+              className="rounded-sm text-[0.9375rem] text-link hover:underline"
+              onClick={() => setShowUsdc((v) => !v)}
+            >
+              {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
+            </button>
+          ) : null}
+        </div>
+      )}
+      {showUsdc && (waiting || closed) ? (
+        <div className="mt-5">
+          <UsdcCard q={q} venueName={venueName} secondary />
+        </div>
+      ) : null}
+      {canCancel(run) ? <CancelRun run={run} onCancelled={onRun} /> : null}
+    </div>
   );
 }
 
@@ -591,10 +1028,6 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
   const [requoting, setRequoting] = useState(false);
   const [requoteError, setRequoteError] = useState<ApiError | null>(null);
   const [refund, setRefund] = useState("");
-  const onRunRef = useRef(onRun);
-  useEffect(() => {
-    onRunRef.current = onRun;
-  }, [onRun]);
 
   // A quote whose deadline passed takes no deposit, even before the venue reports it expired.
   const [now, setNow] = useState(() => Date.now());
@@ -607,30 +1040,7 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
   const waiting = run.status === "awaiting_funds" && !FAILED_FUNDING.has(funding.status);
 
   // Ask the venue every 5 seconds until it reports the run funded.
-  useEffect(() => {
-    if (!waiting) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const ctrl = new AbortController();
-    const tick = async () => {
-      try {
-        const next = await api.pollFunding(run.id, ctrl.signal);
-        if (stopped) return;
-        setPollError(null);
-        onRunRef.current(next);
-      } catch (err) {
-        if (stopped || ctrl.signal.aborted) return;
-        setPollError(toDisplayError(err));
-      }
-      if (!stopped) timer = setTimeout(tick, POLL_MS);
-    };
-    timer = setTimeout(tick, POLL_MS);
-    return () => {
-      stopped = true;
-      ctrl.abort();
-      if (timer) clearTimeout(timer);
-    };
-  }, [waiting, run.id]);
+  useFundingPoll(run.id, waiting, onRun, setPollError);
 
   const requote = async () => {
     const check = checkEvmAddress(refund);

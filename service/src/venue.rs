@@ -5,6 +5,10 @@
 //! - [`Maya`]: fallback quote source (Sapling delivery only).
 //! - [`TestnetVenue`]: testnet only. Records a fixed rate and draws ZEC from the treasury's
 //!   existing testnet balance. The config refuses it on mainnet.
+//! - [`TreasuryVenue`]: Fund with ZEC (ADR-025), on any network. The payer sends ZEC to the
+//!   treasury address; the run is funded at the market rate of the block in which the
+//!   treasury's confirmed balance covers it. Chosen per run with `method: "zec"`, not by
+//!   `PAYSLIP_SWAP_VENUE`.
 
 use std::{sync::Arc, time::Duration};
 
@@ -16,6 +20,7 @@ use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 use crate::{
     config::{Config, VenueKind},
     money,
+    prices::{MarketRate, RateAt},
 };
 
 /// Funding instructions and venue state for one run. Stored as JSON in `runs.venue_state`
@@ -51,6 +56,33 @@ pub struct Funding {
     /// Maya only: the memo the deposit must carry, or the swap is not made.
     #[serde(default)]
     pub deposit_memo: Option<String>,
+    /// Fund with ZEC only (ADR-025): the treasury unified address the payer sends ZEC to (the
+    /// same value as `deposit_address`).
+    #[serde(default)]
+    pub treasury_address: Option<String>,
+    /// Fund with ZEC only: the ZEC asked for at request time (the payroll at the rate then, the
+    /// fee reserve and a 2 percent buffer, rounded up). Fixed for the request; the shortfall
+    /// says what is still missing at the current rate.
+    #[serde(default)]
+    pub zec_required_zat: Option<u64>,
+    /// Fund with ZEC only: the treasury's confirmed balance available to this run at the last
+    /// check (net of what other runs hold a claim on).
+    #[serde(default)]
+    pub zec_received_zat: Option<u64>,
+    /// Fund with ZEC only: ZEC seen in the treasury but not yet confirmed to
+    /// `PAYSLIP_MIN_CONFIRMATIONS`.
+    #[serde(default)]
+    pub zec_pending_zat: Option<u64>,
+    /// Fund with ZEC only: what the run still needs at the current rate, 0 once it is funded.
+    /// None when the market price could not be read at the last check.
+    #[serde(default)]
+    pub zec_shortfall_zat: Option<u64>,
+    /// Fund with ZEC only: the block at whose rate the run was funded.
+    #[serde(default)]
+    pub funded_at_height: Option<u32>,
+    /// Fund with ZEC only: when the price point behind `rate_usd_per_zec_e6` was taken.
+    #[serde(default)]
+    pub priced_at: Option<String>,
 }
 
 /// A contractor-side conversion of one pay line from ZEC to USDC (ADR-018). Stored as JSON in
@@ -100,10 +132,16 @@ pub fn near_usdc_asset(chain: &str) -> Option<&'static str> {
 
 #[derive(Clone, Debug)]
 pub struct QuoteRequest {
+    /// For a swap venue: the USD to deposit, payroll and fee headroom included. For the
+    /// treasury venue: the payroll alone; the reserve comes separately in `reserve_zat`.
     pub usd_cents: u64,
     pub origin_chain: String,
     pub refund_address: Option<String>,
     pub recipient: String,
+    /// ZEC the run needs on top of its payroll (payment fees, carried change and the allocation
+    /// fee), for the venue that draws from the treasury. Swap venues ignore it: their headroom
+    /// is already in `usd_cents`.
+    pub reserve_zat: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -169,6 +207,11 @@ pub fn build(cfg: &Config) -> anyhow::Result<Arc<dyn SwapVenue>> {
             Arc::new(TestnetVenue {
                 rate_e6: cfg.testnet_rate_e6,
             })
+        }
+        // Not a configured venue: the executor holds it beside the configured one for
+        // `method: "zec"` (ADR-025), and `Config::from_env` never produces it.
+        VenueKind::Treasury => {
+            anyhow::bail!("PAYSLIP_SWAP_VENUE cannot be treasury: Fund with ZEC is a per-run method")
         }
     })
 }
@@ -258,6 +301,119 @@ impl SwapVenue for TestnetVenue {
             c.delivered_out = Some(c.quoted_out.clone());
         }
         Ok(c)
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Fund with ZEC (ADR-025)
+
+/// Headroom over the payroll and the fee reserve, in basis points, so a small price move between
+/// the request and the confirmation does not leave the run short.
+pub const ZEC_BUFFER_BPS: u64 = 200;
+/// How long the payer has to send the ZEC before the request expires.
+pub const ZEC_DEADLINE_HOURS: i64 = 24;
+
+/// The venue behind `method: "zec"`: no swap. The payer sends ZEC to the treasury address and
+/// the executor (`runs::zec_funding`) funds the run when the treasury's confirmed balance, net of
+/// other runs' claims, covers it at the market rate of that block. This venue prices the request
+/// and says what to send; it moves nothing. Available on every network.
+pub struct TreasuryVenue {
+    rates: Arc<dyn MarketRate>,
+    deadline: time::Duration,
+}
+
+impl TreasuryVenue {
+    pub fn new(rates: Arc<dyn MarketRate>) -> Self {
+        TreasuryVenue {
+            rates,
+            deadline: time::Duration::hours(ZEC_DEADLINE_HOURS),
+        }
+    }
+
+    /// Another deadline than 24 hours (tests use a deadline already in the past).
+    pub fn with_deadline(mut self, deadline: time::Duration) -> Self {
+        self.deadline = deadline;
+        self
+    }
+
+    /// ZEC to ask the payer for: the payroll at the rate, the fee reserve, plus the buffer,
+    /// rounded up to the zatoshi.
+    pub fn required_zat(payroll_zat: u64, reserve_zat: u64) -> u64 {
+        let base = payroll_zat as u128 + reserve_zat as u128;
+        let with_buffer = base * (10_000 + ZEC_BUFFER_BPS as u128);
+        u64::try_from(with_buffer.div_ceil(10_000)).unwrap_or(u64::MAX)
+    }
+
+    /// The market rate at `unix`: the price point nearest it, as statements value a payment
+    /// received then. Unavailable when the source cannot be reached or has no point near enough.
+    pub async fn rate_at(&self, unix: i64) -> Result<RateAt, VenueError> {
+        match self.rates.usd_rate_at(unix).await {
+            Ok(Some(r)) => Ok(r),
+            Ok(None) => Err(VenueError::Unavailable(format!(
+                "no ZEC market price within {} minutes of {}",
+                crate::prices::DAY_MAX_GAP / 60,
+                OffsetDateTime::from_unix_timestamp(unix)
+                    .map(rfc3339)
+                    .unwrap_or_default()
+            ))),
+            Err(e) => Err(VenueError::Unavailable(format!("{e:#}"))),
+        }
+    }
+}
+
+#[async_trait]
+impl SwapVenue for TreasuryVenue {
+    fn kind(&self) -> VenueKind {
+        VenueKind::Treasury
+    }
+
+    async fn indicative_rate_e6(&self) -> Result<u64, VenueError> {
+        Ok(self.rate_at(OffsetDateTime::now_utc().unix_timestamp()).await?.rate_e6)
+    }
+
+    /// Prices the request at the current market rate and states the ZEC to send, where to, and
+    /// by when. Nothing is reserved yet: the executor's watch does that when the ZEC confirms.
+    async fn quote(&self, req: &QuoteRequest) -> Result<Funding, VenueError> {
+        let now = OffsetDateTime::now_utc();
+        let rate = self.rate_at(now.unix_timestamp()).await?;
+        let payroll_zat = money::usd_cents_to_zat(req.usd_cents, rate.rate_e6)
+            .filter(|z| *z > 0)
+            .ok_or_else(|| VenueError::rejected("invalid_amount", "Amount out of range", "Use a smaller amount."))?;
+        let required = Self::required_zat(payroll_zat, req.reserve_zat);
+        Ok(Funding {
+            venue: VenueKind::Treasury.as_str().into(),
+            status: "awaiting_deposit".into(),
+            origin_asset: "ZEC".into(),
+            amount_in: money::format_zec(required),
+            amount_in_base_units: required.to_string(),
+            deposit_address: Some(req.recipient.clone()),
+            treasury_address: Some(req.recipient.clone()),
+            deadline: Some(rfc3339(now + self.deadline)),
+            requested_usd_cents: req.usd_cents,
+            quoted_zat: required,
+            quote_rate_e6: rate.rate_e6,
+            rate_usd_per_zec_e6: Some(rate.rate_e6),
+            zec_required_zat: Some(required),
+            zec_received_zat: Some(0),
+            zec_pending_zat: Some(0),
+            zec_shortfall_zat: Some(required),
+            priced_at: Some(rate.priced_at),
+            venue_status: Some("AWAITING_ZEC".into()),
+            ..Default::default()
+        })
+    }
+
+    /// The treasury's balance is the status; the executor reads it (`runs::zec_funding`).
+    async fn status(&self, funding: &Funding) -> Result<Funding, VenueError> {
+        Ok(funding.clone())
+    }
+
+    async fn submit_deposit(&self, _funding: &Funding, _tx_hash: &str) -> Result<Funding, VenueError> {
+        Err(VenueError::rejected(
+            "deposit_tx_not_needed",
+            "This run is funded with ZEC sent straight to the treasury; there is no venue to report a transaction to.",
+            "Wait for the ZEC to confirm; the run page follows the treasury balance.",
+        ))
     }
 }
 
@@ -883,11 +1039,65 @@ mod tests {
                 origin_chain: "testnet".into(),
                 refund_address: None,
                 recipient: "utest1".into(),
+                reserve_zat: 0,
             })
             .await
             .unwrap();
         // $1,350.00 at $1,350,000 per TAZ is 0.001 TAZ.
         assert_eq!(f.zec_acquired_zat, Some(100_000));
         assert_eq!(f.status, "success");
+    }
+
+    struct FixedRate(u64);
+
+    #[async_trait]
+    impl MarketRate for FixedRate {
+        async fn usd_rate_at(&self, _unix: i64) -> anyhow::Result<Option<RateAt>> {
+            Ok(Some(RateAt {
+                rate_e6: self.0,
+                priced_at: "2026-10-11T10:10:00Z".into(),
+            }))
+        }
+    }
+
+    /// ADR-025: the ZEC asked for is the payroll at the market rate plus the reserve plus 2
+    /// percent, rounded up; the request names the treasury address and a 24-hour deadline.
+    #[tokio::test]
+    async fn treasury_venue_prices_the_request_with_the_buffer() {
+        assert_eq!(TreasuryVenue::required_zat(1_000_000, 50_000), 1_071_000);
+        assert_eq!(TreasuryVenue::required_zat(1, 0), 2);
+        let v = TreasuryVenue::new(Arc::new(FixedRate(1_234_420_000)));
+        let f = v
+            .quote(&QuoteRequest {
+                usd_cents: 3_038,
+                origin_chain: "zcash".into(),
+                refund_address: None,
+                recipient: "u1treasury".into(),
+                reserve_zat: 112_500,
+            })
+            .await
+            .unwrap();
+        // $30.38 at $1,234.42 is 2,461,075 zat; plus the reserve, plus 2 percent, rounded up.
+        let payroll = money::usd_cents_to_zat(3_038, 1_234_420_000).unwrap();
+        assert_eq!(payroll, 2_461_075);
+        let required = (payroll + 112_500) * 102 / 100 + 1;
+        assert_eq!(f.zec_required_zat, Some(required));
+        assert_eq!(f.quoted_zat, required);
+        assert_eq!(f.zec_shortfall_zat, Some(required));
+        assert_eq!(f.amount_in, money::format_zec(required));
+        assert_eq!(f.treasury_address.as_deref(), Some("u1treasury"));
+        assert_eq!(f.deposit_address.as_deref(), Some("u1treasury"));
+        assert_eq!(f.rate_usd_per_zec_e6, Some(1_234_420_000));
+        assert_eq!(f.status, "awaiting_deposit");
+        let deadline = OffsetDateTime::parse(f.deadline.as_deref().unwrap(), &Rfc3339).unwrap();
+        let hours = (deadline - OffsetDateTime::now_utc()).whole_minutes();
+        assert!((23 * 60..=24 * 60).contains(&hours), "{hours} minutes");
+        assert!(matches!(
+            v.submit_deposit(&f, "abc").await,
+            Err(VenueError::Rejected {
+                code: "deposit_tx_not_needed",
+                ..
+            })
+        ));
     }
 }

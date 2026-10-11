@@ -330,7 +330,7 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
               Get free testnet coins<span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : (
-            "Funded with USDC per run"
+            "Funded per run, with ZEC or USDC"
           )}
         </div>
         <Button asChild size="sm" variant="secondary">

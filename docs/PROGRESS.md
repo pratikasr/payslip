@@ -2,6 +2,16 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 11 Oct 2026, Fund with ZEC (ADR-025)
+
+- Built in a worktree for the owner's review; not committed by the agent. Launch plan item 2 (docs/superpowers/specs/2026-10-11-launch-plan-design.md, "Fund with ZEC").
+- Service: `TreasuryVenue` (any network) prices a run at the CoinGecko rate and answers the treasury address, the ZEC to send (payroll plus fee reserve plus 2 percent) and a 24-hour deadline; `POST /api/runs/{id}/fund` takes `method: "zec" | "usdc"` (default usdc, testnet fixed-rate flow unchanged); the executor and `GET /api/runs/{id}/funding` watch the treasury's confirmed balance net of other runs' claims (creation order) and fund the run at the rate of the tip block, recorded in `PS1R` as for any venue; partial deposits show the shortfall; expiry, re-fund and cancel through the existing endpoints; `PAYSLIP_MAX_RUN_USD_CENTS` refuses a run over the cap with `run_over_cap`; health reports `fund_with_zec` and `max_run_usd_cents`.
+- Web: the Fund step shows two cards off testnet (Fund with ZEC: address with QR, amount with copy, rate line, live progress and shortfall; Fund with USDC: the existing quote), ZEC words on tags, the audit trail and Books sources; `web/e2e/zec-fund.spec.ts` exercises the ZEC card against a service fixture (as the USDC wallet test does), because a real deposit moves money and the testnet service shows the single fixed-rate flow.
+- Script: `DEMO_FUNDING=zec` in `scripts/mainnet-demo.sh` prints the address and amount and polls until funded; USDC stays the default.
+- Checks: service fmt, clippy, 68 unit, 13 API, 33 executor and 1 prices test; web typecheck, lint, prettier, build; the new browser spec. Verified facts: CoinGecko five-minute points near now; SQLite rowid order.
+- Next: the owner reviews and merges; then the mainnet run with `DEMO_FUNDING=zec`.
+- Operator notes for the mainnet run: the wallet must be synced before funding (the balance comes from the background sync, every 30 seconds); send the full amount shown, shielded, from a wallet whose change does not come back to the treasury; fund one run at a time, since deposits are not tied to a run and the earliest request takes the balance; the run is funded at the rate of the block in which the ZEC reaches `PAYSLIP_MIN_CONFIRMATIONS`, not the request-time rate; prices must be on (`PAYSLIP_PRICE_API_URL` not `off`).
+
 ## 5 Oct 2026, a fuller, calmer company dashboard
 
 - The owner found the internal dashboard still not premium. Compared with Mercury's dashboard, it had an empty hero card (one payroll, nothing to chart), counter cards of zeros, coin amounts under every figure, a block height in the top bar, and a gold tag on every row.
