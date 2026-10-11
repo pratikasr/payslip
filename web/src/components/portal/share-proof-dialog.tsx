@@ -1,18 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, Eye, EyeOff, LoaderCircle, SquareArrowOutUpRight } from "lucide-react";
+import { Check, Copy, LoaderCircle, SquareArrowOutUpRight } from "lucide-react";
 import { toast } from "sonner";
 import { Usd } from "@/components/app/amount";
 import { ErrorState } from "@/components/app/states";
-import { createProof, monthDay, payslipTitle, proofLink } from "@/components/portal/portal-data";
+import { FormRow, FormRows } from "@/components/ds/paper";
+import { TypedBox } from "@/components/portal/paper-parts";
+import { createProof, monthDay, proofLink } from "@/components/portal/portal-data";
 import { usePortalKey } from "@/components/portal/portal-provider";
-import { DocIcon } from "@/components/portal/portal-states";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toDisplayError, type ApiError, type CreatedProof, type StatementLine } from "@/lib/api";
 import { copyText } from "@/lib/download";
-import { TYPE } from "@/components/ds/type";
+import { formatPeriodLabel } from "@/lib/format";
 
 /**
  * Share proof: makes a link that opens this one payment, checked against the chain, for someone
@@ -45,7 +48,7 @@ export function ShareProofDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle className={TYPE.heading}>Share proof of this payment</DialogTitle>
+          <DialogTitle>Share proof of this payment</DialogTitle>
           <DialogDescription className="text-[0.9375rem]">
             Anyone with the link can check this one payment against the Zcash chain. They need no key and no account.
           </DialogDescription>
@@ -102,39 +105,40 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
 
   return (
     <div className="min-w-0 space-y-5">
-      <div className="flex items-center gap-3 rounded-[10px] border px-3.5 py-3">
-        <DocIcon className="h-9 w-8" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[0.9375rem]">{payslipTitle(line)}</p>
-          <p className="truncate text-[0.8125rem] text-muted-foreground">
-            Paid {monthDay(line.block_time ?? line.date)}, invoice {line.invoice_ref}
-          </p>
-        </div>
-        <Usd cents={line.usd_basis_cents} className="text-[0.9375rem]" />
+      {/* The payment the proof opens, as the slip it is cut from. */}
+      <div className="border border-bar-line">
+        <FormRows>
+          <FormRow label="Payslip">
+            <span className="uppercase">{formatPeriodLabel(line.period)}</span>
+          </FormRow>
+          <FormRow label="Paid">{monthDay(line.block_time ?? line.date)}</FormRow>
+          <FormRow label="Invoice">{line.invoice_ref}</FormRow>
+          <FormRow label="Amount">
+            <Usd cents={line.usd_basis_cents} />
+          </FormRow>
+        </FormRows>
       </div>
 
       {error ? <ErrorState error={error} onRetry={() => setAttempt((n) => n + 1)} compact /> : null}
 
       {!error && !proof ? (
-        <p role="status" className="flex items-center gap-2.5 text-[0.8125rem] text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-foreground" aria-hidden="true" />
+        <p role="status" className="flex items-center gap-2.5 font-type text-[0.8125rem] text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-foreground motion-reduce:animate-none" aria-hidden="true" />
           Creating the proof from the Zcash chain
         </p>
       ) : null}
 
       {proof ? (
         <div className="space-y-2">
-          <label htmlFor="proof-link" className="text-[0.8125rem] text-muted-foreground">
-            Proof link
-          </label>
-          <input
+          <Label htmlFor="proof-link">Proof link</Label>
+          <Input
             id="proof-link"
             readOnly
             value={link}
             onFocus={(e) => e.currentTarget.select()}
-            className="h-10 w-full min-w-0 rounded-lg border border-input bg-raised px-3 font-mono text-[0.8125rem] text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="text-[0.8125rem] md:text-[0.8125rem]"
           />
-          <div className="flex flex-wrap gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-2">
             <Button type="button" onClick={copy}>
               {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
               {copied ? "Copied" : "Copy link"}
@@ -151,16 +155,15 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
 
       {proof ? (
         <div className="space-y-1.5">
-          <label htmlFor="proof-note" className="text-[0.8125rem] text-muted-foreground">
-            Note for the reader (optional)
-          </label>
-          <input
+          <Label htmlFor="proof-note" className="block leading-snug">
+            Note for the reader <span className="font-normal tracking-normal normal-case">(optional)</span>
+          </Label>
+          <Input
             id="proof-note"
             value={note}
             maxLength={120}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Paid by Acme Labs for design work"
-            className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-[0.8125rem] text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
           />
           <p className="text-[0.8125rem] text-muted-foreground">
             Rides in the link and is shown as your note, marked as not checked. Payslip never stores it.
@@ -168,23 +171,23 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
         </div>
       ) : null}
 
-      {/* Each term and its description are direct children of one group, the icon inside the term. */}
-      <dl className="grid gap-3 border-t border-hairline pt-4 text-[0.8125rem] sm:grid-cols-2">
+      {/* What the reader gets and what they do not: two boxes of the form, one ticked. */}
+      <dl className="grid gap-4 border-t border-dotted border-tear pt-4 text-[0.8125rem] sm:grid-cols-2">
         <div>
-          <dt className="flex items-start gap-2.5 text-foreground">
-            <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <dt className="form-label flex items-center gap-2 text-[0.75rem] font-bold">
+            <TypedBox checked />
             What it shows
           </dt>
-          <dd className="pl-[26px] text-muted-foreground">
+          <dd className="mt-1.5 pl-[26px] text-muted-foreground">
             This payment: amount, date, the address it was paid to, period and invoice.
           </dd>
         </div>
         <div>
-          <dt className="flex items-start gap-2.5 text-foreground">
-            <EyeOff className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <dt className="form-label flex items-center gap-2 text-[0.75rem] font-bold">
+            <TypedBox />
             What stays private
           </dt>
-          <dd className="pl-[26px] text-muted-foreground">
+          <dd className="mt-1.5 pl-[26px] text-muted-foreground">
             Your viewing key, your other payments and who paid you, unless your note says so.
           </dd>
         </div>

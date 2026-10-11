@@ -40,25 +40,36 @@ export function ExportsPage() {
   );
 }
 
-/** Mercury's centred "Choose where your books live" heading, with the period under it. */
+/** "Choose where your books live", with the period's contents and the period controls under it. */
 function ExportsHeader({ controls, meta }: { controls: React.ReactNode; meta: React.ReactNode }) {
   const { scan, period } = useBooks();
   const r = scan.status === "ready" ? scan.result : null;
   const ex = r ? exceptionsOf(r) : null;
   return (
-    <div
-      className="mx-auto mb-8 grid max-w-[640px] justify-items-center gap-3 pt-4 text-center sm:pt-8"
-      data-print="hide"
-    >
-      <h1 className={cn(TYPE.title, "text-balance")}>Choose where your books live</h1>
-      <p className="text-[0.9375rem] text-muted-foreground">
-        {r && ex
-          ? `Your books for ${shortRange(r.period)} are ready: ${formatCount(r.runs.length)} ${r.runs.length === 1 ? "run" : "runs"}, ${formatCount(r.totals.count)} ${r.totals.count === 1 ? "payment" : "payments"} and ${formatCount(ex.unlabelled.length)} unlabelled ${ex.unlabelled.length === 1 ? "transaction" : "transactions"}.`
-          : period
-            ? `Preparing your books for ${shortRange(period)}.`
-            : "Preparing your books."}
+    <div className="mb-7 grid gap-3" data-print="hide">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <h1 className={cn(TYPE.title, "text-balance")}>Choose where your books live</h1>
+        {controls}
+      </div>
+      <p className="max-w-2xl text-[0.9375rem] text-muted-foreground">
+        {r && ex ? (
+          <>
+            Your books for <span className="font-type text-foreground">{shortRange(r.period)}</span> are ready:{" "}
+            <span className="font-type text-foreground">{formatCount(r.runs.length)}</span>{" "}
+            {r.runs.length === 1 ? "run" : "runs"},{" "}
+            <span className="font-type text-foreground">{formatCount(r.totals.count)}</span>{" "}
+            {r.totals.count === 1 ? "payment" : "payments"} and{" "}
+            <span className="font-type text-foreground">{formatCount(ex.unlabelled.length)}</span> unlabelled{" "}
+            {ex.unlabelled.length === 1 ? "transaction" : "transactions"}.
+          </>
+        ) : period ? (
+          <>
+            Preparing your books for <span className="font-type">{shortRange(period)}</span>.
+          </>
+        ) : (
+          "Preparing your books."
+        )}
       </p>
-      {controls}
       <p className="text-[0.8125rem] text-muted-foreground">{meta}</p>
     </div>
   );

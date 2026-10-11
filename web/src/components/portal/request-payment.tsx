@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
-import { ExternalLink, HandCoins, Repeat } from "lucide-react";
+import { ExternalLink, Repeat } from "lucide-react";
 import { toast } from "sonner";
 import { Usd } from "@/components/app/amount";
 import { describedBy, Field } from "@/components/app/field";
 import { ErrorState } from "@/components/app/states";
-import { Card, CardHeader } from "@/components/ds/card";
 import { PageTitle, SectionHeader } from "@/components/ds/page";
-import { StatusTag } from "@/components/ds/status";
+import { FormBox, StatusStamp, TypedOption, type StampTone } from "@/components/portal/paper-parts";
 import { usePersonName, usePortalKey } from "@/components/portal/portal-provider";
 import { payslipHref } from "@/components/portal/portal-data";
 import { requestTag } from "@/components/requests/request-meta";
@@ -23,6 +22,7 @@ import { api, toDisplayError, type ApiError, type NewPaymentRequest, type Paymen
 import { companyName } from "@/lib/company";
 import { formatDate, formatShortDate, parseUsdToCents, usdAmountProblem } from "@/lib/format";
 import { isValidRange } from "@/lib/period";
+import { cn } from "cn";
 
 const INVOICE_MAX = 64;
 const NOTE_MAX = 1000;
@@ -100,21 +100,32 @@ export function RequestPayment() {
       {!list.requests && list.loading ? (
         <div role="status" aria-label="Loading your requests" className="space-y-3">
           {Array.from({ length: 2 }).map((_, i) => (
-            <Skeleton key={i} className="h-14 w-full" />
+            <Skeleton key={i} className="h-14 w-full rounded-none" />
           ))}
         </div>
       ) : !list.requests || list.requests.length === 0 ? (
-        <p className="border-y border-hairline py-6 text-[0.9375rem] text-muted-foreground">
+        <p className="border-y-2 border-foreground py-6 text-[0.9375rem] text-muted-foreground">
           {unknown
             ? "Nothing to show from this Payslip."
             : `No requests yet${name ? `, ${name.split(/\s+/)[0]}` : ""}. The first one you send appears here with its status.`}
         </p>
       ) : (
-        <ul aria-label="Your requests" className="border-t border-hairline">
-          {list.requests.map((r) => (
-            <RequestItem key={r.id} request={r} />
-          ))}
-        </ul>
+        <div className="border-b-2 border-foreground">
+          {/* The ledger's column heads; each line below says the same in words. */}
+          <div
+            aria-hidden="true"
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 border-y-2 border-foreground px-2.5 py-2 font-type text-[0.75rem] font-bold tracking-[0.08em] uppercase sm:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem]"
+          >
+            <span>Period and invoice</span>
+            <span className="text-right">Amount</span>
+            <span className="hidden text-right sm:block">Status</span>
+          </div>
+          <ul aria-label="Your requests" className="green-bar">
+            {list.requests.map((r) => (
+              <RequestItem key={r.id} request={r} />
+            ))}
+          </ul>
+        </div>
       )}
     </>
   );
@@ -202,22 +213,14 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
 
   const id = (f: string) => `${uid}-${f}`;
   return (
-    <Card as="div" className="mb-2">
-      <CardHeader
-        title={
-          <span className="inline-flex items-center gap-2">
-            <HandCoins className="size-4 text-muted-foreground" aria-hidden="true" />
-            New request
-          </span>
-        }
-      />
-      <form onSubmit={submit} noValidate className="mt-4 grid gap-5">
+    <FormBox title="New request" titleId="request-form-title" label={`To ${companyName()}`} className="mb-2">
+      <form onSubmit={submit} noValidate aria-labelledby="request-form-title" className="grid gap-6">
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id={id("amount")} label="Amount (USD)" error={errors.amount}>
             <div className="relative">
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[0.9375rem] text-muted-foreground"
+                className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 font-type text-[1.0625rem] text-muted-foreground md:text-[0.9375rem]"
               >
                 $
               </span>
@@ -228,7 +231,7 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
                 value={amount}
                 placeholder="0.00"
                 onChange={(e) => setAmount(e.target.value)}
-                className="money h-10 pl-6 text-right tracking-normal"
+                className="money h-10 pl-5 text-right tracking-normal"
                 aria-invalid={!!errors.amount}
                 aria-describedby={describedBy(id("amount"), errors.amount)}
               />
@@ -278,7 +281,7 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
                   onChange={(e) => setFrom(e.target.value)}
                   className="h-10 w-[10.5rem]"
                 />
-                <span className="text-[0.8125rem] text-muted-foreground">to</span>
+                <span className="font-type text-[0.8125rem] text-muted-foreground">to</span>
                 <label className="sr-only" htmlFor={id("to")}>
                   Period ends
                 </label>
@@ -305,23 +308,15 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
               aria-describedby={describedBy(id("due"), errors.due)}
             />
           </Field>
-          <label className="flex cursor-pointer items-start gap-2.5 pt-1 text-[0.9375rem] sm:pt-7">
-            <input
-              type="checkbox"
-              checked={repeat}
-              onChange={(e) => setRepeat(e.target.checked)}
-              className="mt-1 size-4 rounded accent-[var(--primary-edge)]"
-            />
-            <span>
-              <span className="inline-flex items-center gap-1.5">
-                <Repeat className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                Repeat monthly
-              </span>
-              <span className="block text-[0.8125rem] text-muted-foreground">
-                When this one is paid, the same request is sent for the next month.
-              </span>
-            </span>
-          </label>
+          <TypedOption
+            type="checkbox"
+            checked={repeat}
+            onChange={setRepeat}
+            className="pt-1 sm:pt-6"
+            hint="When this one is paid, the same request is sent for the next month."
+          >
+            Repeat monthly
+          </TypedOption>
         </div>
         <Field id={id("note")} label="Note to your payer" optional error={errors.note}>
           <Textarea
@@ -335,11 +330,11 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
           />
         </Field>
         {errors.form ? (
-          <p role="alert" className="rounded-lg bg-danger-bg p-3 text-[0.8125rem] text-danger">
+          <p role="alert" className="border-2 border-destructive p-3 text-[0.8125rem] text-danger">
             {errors.form}
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-4">
+        <div className="-mx-4 flex flex-wrap items-center gap-3 border-t border-dotted border-tear px-4 pt-4 sm:-mx-5 sm:px-5">
           <Button type="submit" disabled={sending}>
             {sending ? "Sending" : "Send request"}
           </Button>
@@ -348,43 +343,53 @@ function RequestForm({ ufvk, onSent }: { ufvk: string; onSent: (r: PaymentReques
           </span>
         </div>
       </form>
-    </Card>
+    </FormBox>
   );
 }
+
+/** Ink for a settled request, the stamp's red for a rejected one, soft ink while it waits. */
+const STAMP_TONE: Record<PaymentRequest["status"], StampTone> = {
+  submitted: "soft",
+  approved: "ink",
+  paid: "ink",
+  rejected: "red",
+};
 
 function RequestItem({ request: r }: { request: PaymentRequest }) {
   const tag = requestTag(r);
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border-b border-hairline py-3.5">
+    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-2 border-b border-bar-line px-2.5 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_7.5rem]">
       <span className="min-w-0">
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-[0.9375rem]">{periodTitle(r.period_start, r.period_end)}</span>
-          <StatusTag status={tag} />
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="font-type text-[0.9375rem] font-bold uppercase">
+            {periodTitle(r.period_start, r.period_end)}
+          </span>
           {r.recurring ? (
-            <span className="inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 font-type text-[0.8125rem] text-muted-foreground">
               <Repeat className="size-3" aria-hidden="true" />
               Repeats
             </span>
           ) : null}
         </span>
-        <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
-          {r.invoice_ref}, sent {formatShortDate(r.created_at)}
+        <span className="mt-0.5 block font-type text-[0.8125rem] text-muted-foreground">
+          <span className="text-foreground">{r.invoice_ref}</span>, sent {formatShortDate(r.created_at)}
           {r.due_date ? `, due ${formatShortDate(r.due_date)}` : ""}
         </span>
-        {r.status === "rejected" && r.decision_note ? (
-          <span className="mt-1 block text-[0.8125rem] text-strong [overflow-wrap:anywhere]">
-            Your payer wrote: {r.decision_note}
-          </span>
-        ) : r.decision_note ? (
-          <span className="mt-1 block text-[0.8125rem] text-muted-foreground [overflow-wrap:anywhere]">
+        {r.decision_note ? (
+          <span
+            className={cn(
+              "mt-1 block text-[0.8125rem] [overflow-wrap:anywhere]",
+              r.status === "rejected" ? "text-strong" : "text-muted-foreground",
+            )}
+          >
             Your payer wrote: {r.decision_note}
           </span>
         ) : null}
         {r.status === "paid" && r.txid ? (
-          <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem]">
+          <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-type text-[0.8125rem]">
             <Link
               href={payslipHref({ txid: r.txid })}
-              className="inline-flex items-center rounded-sm text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+              className="inline-flex items-center font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
             >
               Payslip
             </Link>
@@ -393,7 +398,7 @@ function RequestItem({ request: r }: { request: PaymentRequest }) {
                 href={r.explorer_url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-sm text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
               >
                 <code className="font-mono">
                   {r.txid.slice(0, 8)}…{r.txid.slice(-6)}
@@ -406,7 +411,14 @@ function RequestItem({ request: r }: { request: PaymentRequest }) {
           </span>
         ) : null}
       </span>
-      <Usd cents={r.amount_usd_cents} className="text-right text-[0.9375rem]" />
+      <span className="flex flex-col items-end gap-2 sm:contents">
+        <Usd cents={r.amount_usd_cents} className="font-type text-[0.9375rem] sm:text-right" />
+        <span className="sm:text-right">
+          <StatusStamp tone={STAMP_TONE[r.status] ?? "ink"} title={tag.help}>
+            {tag.label}
+          </StatusStamp>
+        </span>
+      </span>
     </li>
   );
 }

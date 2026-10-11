@@ -6,8 +6,8 @@ import { BookOpenCheck, Download, KeyRound } from "lucide-react";
 import { Fiat, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { ErrorState } from "@/components/app/states";
-import { Card, CardFoot, CardHeader } from "@/components/ds/card";
 import { PageTitle, SectionHeader } from "@/components/ds/page";
+import { DOT, FormBox } from "@/components/portal/paper-parts";
 import { PayslipRows } from "@/components/portal/payslip-rows";
 import { firstName, monthDay, newestFirst, payslipHref } from "@/components/portal/portal-data";
 import { usePersonName, usePortal } from "@/components/portal/portal-provider";
@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Statement, StatementLine } from "@/lib/api";
 import { SAMPLE_COMPANY_LINE, companyMark, companyName } from "@/lib/company";
-import { formatPeriodLabel, formatUsd } from "@/lib/format";
+import { formatPeriodLabel } from "@/lib/format";
 import { cn } from "cn";
 import { TYPE } from "@/components/ds/type";
 
@@ -38,10 +38,7 @@ export function PortalHome() {
         ) : (
           <div className="space-y-5">
             <ScanProgress startedAt={recent.startedAt} />
-            <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-              <Skeleton className="h-[168px] rounded-xl" />
-              <Skeleton className="h-[168px] rounded-xl" />
-            </div>
+            <Skeleton className="h-[220px] rounded-none border-2 border-foreground bg-transparent" />
             <RowsSkeleton />
           </div>
         )}
@@ -78,8 +75,8 @@ function PaidBy({ treasury }: { treasury: boolean }) {
 
 function Scope() {
   return (
-    <p className="mb-6 flex items-start gap-2.5 rounded-[10px] bg-raised px-3.5 py-2.5 text-[0.8125rem] text-muted-foreground">
-      <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+    <p className="mb-6 flex items-start gap-2.5 border-l-2 border-foreground py-0.5 pl-3 text-[0.8125rem] text-muted-foreground">
+      <KeyRound className="mt-0.5 size-4 shrink-0 text-foreground" aria-hidden="true" />
       Your viewing key shows payments to you and nothing else. It cannot move money.
     </p>
   );
@@ -99,7 +96,7 @@ function TreasuryKeyNote() {
   return (
     <div
       role="note"
-      className="mb-6 flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3.5 text-[0.8125rem] sm:flex-row sm:items-center sm:justify-between"
+      className="carbon-paper mb-6 flex flex-col gap-3 border border-carbon-line px-4 py-3.5 text-[0.8125rem] sm:flex-row sm:items-center sm:justify-between"
     >
       <span className="text-strong">
         This is the company&apos;s Treasury key. It reads the payroll account, not one person&apos;s pay, so it has no
@@ -107,7 +104,7 @@ function TreasuryKeyNote() {
       </span>
       <Link
         href="/books"
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-sm text-link underline underline-offset-4"
+        className="inline-flex shrink-0 items-center gap-1.5 font-type font-bold text-link underline underline-offset-4"
       >
         <BookOpenCheck className="size-4" aria-hidden="true" />
         Open Books
@@ -122,7 +119,6 @@ function HomeBody({ statement: s }: { statement: Statement }) {
   const first = firstName(usePersonName());
   const lines = newestFirst(s.lines);
   const pending = newestFirst(s.pending);
-  const last = latestPaid(s.lines);
   return (
     <>
       <PageTitle
@@ -137,45 +133,9 @@ function HomeBody({ statement: s }: { statement: Statement }) {
         </div>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-        <PaidThisYear statement={s} />
-        <Card aria-labelledby="last-payment">
-          <CardHeader id="last-payment" title="Last payment" actions={last ? <SettlementTag line={last} /> : null} />
-          {last ? (
-            <>
-              <div className={cn(TYPE.heading, "mt-1")}>
-                <Usd cents={last.usd_basis_cents} />
-              </div>
-              <CardFoot
-                label="Paid"
-                value={
-                  <span className="text-pretty">
-                    {monthDay(last.block_time ?? last.date)}, for {formatPeriodLabel(last.period)}, invoice{" "}
-                    {last.invoice_ref}
-                  </span>
-                }
-                action={
-                  <Link
-                    href={payslipHref(last)}
-                    className="inline-flex shrink-0 items-center rounded-sm text-[0.9375rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
-                    aria-label={`Open the payslip for ${formatPeriodLabel(last.period)}`}
-                  >
-                    Payslip
-                  </Link>
-                }
-              />
-            </>
-          ) : (
-            <p className="mt-3 text-[0.9375rem] text-muted-foreground">
-              {pending.length > 0
-                ? "Your first payment is on its way and appears here once its block is mined."
-                : "No payments in the last 12 months."}
-            </p>
-          )}
-        </Card>
-      </div>
+      <StatementOfEarnings statement={s} pending={pending.length > 0} />
 
-      <SectionHeader title="Payslips" id="payslips-heading">
+      <SectionHeader title="Payslips" id="payslips-heading" className="mt-12">
         <Button asChild variant="secondary" size="sm">
           <Link href="/portal/tax">
             <Download aria-hidden="true" />
@@ -185,14 +145,14 @@ function HomeBody({ statement: s }: { statement: Statement }) {
         {lines.length > LATEST ? (
           <Link
             href="/portal/payslips"
-            className="ml-auto inline-flex items-center rounded-sm text-[0.9375rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+            className="ml-auto inline-flex items-center font-type text-[0.9375rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
           >
             View all
           </Link>
         ) : null}
       </SectionHeader>
       {lines.length + pending.length === 0 ? (
-        <p className="border-y border-hairline py-6 text-[0.9375rem] text-muted-foreground">
+        <p className="border-y-2 border-foreground py-6 text-[0.9375rem] text-muted-foreground">
           Payslips appear here when your payer runs payroll and the payment is mined on Zcash.
         </p>
       ) : (
@@ -203,8 +163,13 @@ function HomeBody({ statement: s }: { statement: Statement }) {
   );
 }
 
-/** "Paid to you in 2026": USD agreed, coins received, and on mainnet the value when each arrived. */
-function PaidThisYear({ statement: s }: { statement: Statement }) {
+/**
+ * The year's statement of earnings, as a typewritten form: what was paid this year in dot matrix,
+ * the last payment beside it, then a green-bar line for each pay period paid this year and the
+ * total under them. On mainnet the value when each payment arrived can be shown in the person's
+ * own currency.
+ */
+function StatementOfEarnings({ statement: s, pending }: { statement: Statement; pending: boolean }) {
   const { currency } = usePortal();
   const { health } = useHealth();
   const [unit, setUnit] = useState<"usd" | "local">("usd");
@@ -212,124 +177,190 @@ function PaidThisYear({ statement: s }: { statement: Statement }) {
   const ytd = s.lines.filter((l) => l.date.startsWith(`${year}-`));
   const usd = ytd.reduce((n, l) => n + l.usd_basis_cents, 0);
   const zat = ytd.reduce((n, l) => n + l.amount_zat, 0);
-  const priced = ytd.filter((l) => l.market && l.market.currency === currency.toUpperCase());
+  const cur = currency.toUpperCase();
+  const priced = ytd.filter((l) => l.market && l.market.currency === cur);
   const market = priced.reduce((n, l) => n + (l.market?.value_cents ?? 0), 0);
   const mainnet = s.network === "mainnet";
   const showMarket = mainnet && health?.market_prices !== false && !!s.market?.available && priced.length > 0;
-  const toggle = showMarket && currency.toUpperCase() !== "USD";
+  const toggle = showMarket && cur !== "USD";
   const local = toggle && unit === "local";
+  const last = latestPaid(s.lines);
 
   return (
-    <Card aria-labelledby="paid-this-year">
-      <CardHeader
-        id="paid-this-year"
-        title={`Paid to you in ${year}`}
-        actions={
-          toggle ? (
-            <div className="inline-flex overflow-hidden rounded-lg border" role="group" aria-label="Show amounts in">
-              {(["usd", "local"] as const).map((u) => (
-                <button
-                  key={u}
-                  type="button"
-                  aria-pressed={unit === u}
-                  onClick={() => setUnit(u)}
-                  className={cn(
-                    "h-[30px] min-w-10 px-2.5 text-[0.8125rem] text-muted-foreground transition-colors hover:text-foreground",
-                    unit === u && "bg-primary-soft text-foreground",
-                  )}
-                >
-                  {u === "usd" ? "USD" : currency.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          ) : null
-        }
-      />
-      <div className={cn(TYPE.hero, "mt-2")}>
-        {local ? <Fiat cents={market} currency={currency.toUpperCase()} /> : <Usd cents={usd} />}
-      </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.8125rem] text-strong">
-        <span>
-          <Zec zat={zat} short /> received
-        </span>
-        {showMarket ? (
-          local ? (
-            <span className="text-muted-foreground">
-              Agreed <Usd cents={usd} />
+    <FormBox
+      title="Statement of earnings"
+      titleId="earnings-title"
+      label={`Year to date, ${year}`}
+      bodyClassName="p-0 sm:p-0"
+    >
+      <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+        <section aria-labelledby="paid-this-year" className="min-w-0 px-4 py-5 sm:px-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="paid-this-year" className={TYPE.label}>
+              Paid to you in {year}
+            </h3>
+            {toggle ? (
+              <div className="inline-flex border-2 border-foreground" role="group" aria-label="Show amounts in">
+                {(["usd", "local"] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    aria-pressed={unit === u}
+                    onClick={() => setUnit(u)}
+                    className={cn(
+                      "h-7 min-w-11 px-2 font-type text-[0.8125rem] font-bold transition-colors hover:bg-muted",
+                      unit === u && "bg-foreground text-background hover:bg-foreground",
+                    )}
+                  >
+                    {u === "usd" ? "USD" : cur}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <div className={cn(TYPE.hero, "mt-4")}>
+            {local ? <Fiat cents={market} currency={cur} /> : <Usd cents={usd} />}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 font-type text-[0.8125rem]">
+            <span>
+              <Zec zat={zat} short /> received
             </span>
+            {showMarket ? (
+              local ? (
+                <span className="text-muted-foreground">
+                  agreed <Usd cents={usd} />
+                </span>
+              ) : (
+                <span className="text-success">
+                  worth <Fiat cents={market} currency={cur} /> on arrival
+                </span>
+              )
+            ) : mainnet ? null : (
+              <SimulatedRate />
+            )}
+          </div>
+        </section>
+
+        <section
+          aria-labelledby="last-payment"
+          className="min-w-0 border-t border-foreground px-4 py-5 sm:px-5 lg:border-t-0 lg:border-l"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h3 id="last-payment" className={TYPE.label}>
+              Last payment
+            </h3>
+            {last ? <SettlementTag line={last} /> : null}
+          </div>
+          {last ? (
+            <>
+              <div className={cn(DOT, "mt-4 text-[1.75rem] lg:text-[2.125rem]")}>
+                <Usd cents={last.usd_basis_cents} />
+              </div>
+              <p className="mt-3 font-type text-[0.8125rem] leading-[1.5] text-pretty text-muted-foreground">
+                Paid {monthDay(last.block_time ?? last.date)}, for {formatPeriodLabel(last.period)}, invoice{" "}
+                <span className="text-foreground">{last.invoice_ref}</span>
+              </p>
+              <Link
+                href={payslipHref(last)}
+                className="mt-2 inline-flex font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+                aria-label={`Open the payslip for ${formatPeriodLabel(last.period)}`}
+              >
+                Open the payslip
+              </Link>
+            </>
           ) : (
-            <span className="text-success">
-              Worth <Fiat cents={market} currency={currency.toUpperCase()} /> on arrival
-            </span>
-          )
-        ) : mainnet ? null : (
-          <SimulatedRate />
-        )}
+            <p className="mt-3 text-[0.9375rem] text-muted-foreground">
+              {pending
+                ? "Your first payment is on its way and appears here once its block is mined."
+                : "No payments in the last 12 months."}
+            </p>
+          )}
+        </section>
       </div>
+
       {ytd.length === 0 ? (
-        <p className="mt-3 text-[0.8125rem] text-muted-foreground">No payments yet this year.</p>
+        <p className="border-t border-foreground px-4 py-4 text-[0.8125rem] text-muted-foreground sm:px-5">
+          No payments yet this year.
+        </p>
       ) : (
-        <MonthStrip lines={s.lines} year={year} />
+        <ByPeriod lines={ytd} year={year} totalCents={usd} totalZat={zat} />
       )}
-    </Card>
+    </FormBox>
   );
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/**
- * Pay for each month of the year, by the pay period each payment was for: twelve thin bars, an
- * empty month as a faint stub. One series, so no legend; the table beside it is for screen readers.
- */
-function MonthStrip({ lines, year }: { lines: StatementLine[]; year: number }) {
-  const months = MONTHS.map((label, i) => {
-    const period = `${year}-${String(i + 1).padStart(2, "0")}`;
-    return {
-      label,
-      period,
-      cents: lines.filter((l) => l.period === period).reduce((n, l) => n + l.usd_basis_cents, 0),
-    };
-  });
-  const max = Math.max(1, ...months.map((m) => m.cents));
+/** One green-bar line per pay period paid this year, newest first, and the year's total in dot matrix. */
+function ByPeriod({
+  lines,
+  year,
+  totalCents,
+  totalZat,
+}: {
+  lines: StatementLine[];
+  year: number;
+  totalCents: number;
+  totalZat: number;
+}) {
+  const periods = new Map<string, { cents: number; zat: number; count: number }>();
+  for (const l of lines) {
+    const p = periods.get(l.period) ?? { cents: 0, zat: 0, count: 0 };
+    periods.set(l.period, { cents: p.cents + l.usd_basis_cents, zat: p.zat + l.amount_zat, count: p.count + 1 });
+  }
+  const rows = [...periods.entries()].sort((a, b) => b[0].localeCompare(a[0]));
   return (
-    <figure className="mt-4" aria-labelledby="month-strip-caption">
-      <figcaption id="month-strip-caption" className="mb-1.5 text-[0.8125rem] text-muted-foreground">
-        By pay period
-      </figcaption>
-      <div className="flex h-12 items-end gap-[2px]" aria-hidden="true">
-        {months.map((m) => (
-          <div
-            key={m.period}
-            title={`${formatPeriodLabel(m.period)}: ${m.cents ? formatUsd(m.cents) : "no pay"}`}
-            className="flex h-full flex-1 items-end"
+    <table className="w-full border-collapse border-t border-foreground text-[0.875rem] sm:text-[0.9375rem]">
+      <caption className="sr-only">Paid to you in {year}, by pay period</caption>
+      <thead>
+        <tr className="border-b border-foreground">
+          <th scope="col" className="py-2 pr-3 pl-4 text-left text-[0.75rem] font-bold sm:pl-5">
+            Pay period
+          </th>
+          <th scope="col" className="hidden py-2 pr-3 text-right text-[0.75rem] font-bold sm:table-cell">
+            Payments
+          </th>
+          <th scope="col" className="hidden py-2 pr-3 text-right text-[0.75rem] font-bold md:table-cell">
+            Received
+          </th>
+          <th scope="col" className="py-2 pr-4 text-right text-[0.75rem] font-bold sm:pr-5">
+            Amount
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(([period, p]) => (
+          <tr key={period} className="border-b border-bar-line">
+            <th scope="row" className="py-2 pr-3 pl-4 text-left font-normal uppercase sm:pl-5">
+              {formatPeriodLabel(period)}
+            </th>
+            <td className="hidden py-2 pr-3 text-right sm:table-cell">{p.count}</td>
+            <td className="hidden py-2 pr-3 text-right md:table-cell">
+              <Zec zat={p.zat} />
+            </td>
+            <td className="py-2 pr-4 text-right sm:pr-5">
+              <Usd cents={p.cents} />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr className="border-t-2 border-foreground">
+          <th
+            scope="row"
+            className="py-3 pr-3 pl-4 text-left text-[0.75rem] font-bold tracking-[0.08em] uppercase sm:pl-5"
           >
-            <div
-              className={cn("w-full rounded-t-[4px]", m.cents ? "bg-viz" : "h-[2px] rounded-none bg-hairline")}
-              style={m.cents ? { height: `${Math.max(8, (m.cents / max) * 100)}%` } : undefined}
-            />
-          </div>
-        ))}
-      </div>
-      <div className="mt-1 flex gap-[2px] text-center text-[0.8125rem] text-muted-foreground" aria-hidden="true">
-        {months.map((m) => (
-          <span key={m.period} className="flex-1">
-            {m.label.slice(0, 1)}
-          </span>
-        ))}
-      </div>
-      <table className="sr-only">
-        <caption>Pay by pay period, {year}</caption>
-        <tbody>
-          {months
-            .filter((m) => m.cents)
-            .map((m) => (
-              <tr key={m.period}>
-                <th scope="row">{formatPeriodLabel(m.period)}</th>
-                <td>{formatUsd(m.cents)}</td>
-              </tr>
-            ))}
-        </tbody>
-      </table>
-    </figure>
+            Total {year}
+          </th>
+          <td className="hidden py-3 pr-3 text-right sm:table-cell">{lines.length}</td>
+          <td className="hidden py-3 pr-3 text-right md:table-cell">
+            <Zec zat={totalZat} />
+          </td>
+          <td className="py-3 pr-4 text-right sm:pr-5">
+            <span className={cn(DOT, "text-[1.25rem]")}>
+              <Usd cents={totalCents} />
+            </span>
+          </td>
+        </tr>
+      </tfoot>
+    </table>
   );
 }

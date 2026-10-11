@@ -13,6 +13,7 @@ import { classifyKey, keyPreview, splitKeys } from "@/lib/keys";
 import { isPortalOrigin } from "@/lib/public-url";
 import { useBooks } from "@/components/books/books-provider";
 import { parseKeyFile, usableKeys, type StagedKey } from "@/components/books/books-data";
+import { TypedBox } from "@/components/portal/paper-parts";
 import { parseInvite } from "@/components/portal/portal-data";
 import { cn } from "cn";
 
@@ -200,7 +201,7 @@ export function KeyImport({
   return (
     <div className="grid gap-5">
       {offline ? (
-        <div role="alert" className="flex items-start gap-2.5 rounded-[10px] bg-danger-bg px-3.5 py-3 text-[0.8125rem]">
+        <div role="alert" className="flex items-start gap-2.5 border-2 border-destructive px-3.5 py-3 text-[0.8125rem]">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
           <span>
             Payslip cannot reach its service right now, so no keys can be read. {healthLoading ? "Checking again." : ""}
@@ -209,10 +210,10 @@ export function KeyImport({
       ) : null}
 
       {layout === "rows" ? (
-        <ul className="divide-y divide-hairline overflow-hidden rounded-xl border" aria-label="Ways to load keys">
+        <ul className="green-bar border-y-2 border-foreground" aria-label="Ways to load keys">
           {choices.map((c) => (
-            <li key={c.id}>
-              <ChoiceRow choice={c} testId={`${idPrefix}-choice-${c.id}`} />
+            <li key={c.id} className="border-b border-bar-line last:border-b-0">
+              <ChoiceRow choice={c} busy={busy === c.id} testId={`${idPrefix}-choice-${c.id}`} />
             </li>
           ))}
         </ul>
@@ -257,9 +258,7 @@ export function KeyImport({
       ) : null}
 
       <div className="grid gap-2">
-        <Label htmlFor={`${idPrefix}-paste`} className="font-normal text-strong">
-          Or paste viewing keys or invite links, one per line
-        </Label>
+        <Label htmlFor={`${idPrefix}-paste`}>Or paste viewing keys or invite links, one per line</Label>
         <Textarea
           id={`${idPrefix}-paste`}
           value={pasted}
@@ -269,7 +268,7 @@ export function KeyImport({
           autoComplete="off"
           autoCapitalize="off"
           placeholder={network === "mainnet" ? "uview1…" : "uviewtest1…"}
-          className="max-h-48 min-h-[84px] font-mono text-[0.8125rem] break-all"
+          className="max-h-48 min-h-[4.8em] border-x-0 border-t-0 border-b-2 border-foreground px-0.5 text-[0.8125rem] break-all md:text-[0.8125rem]"
           aria-describedby={problems.length ? `${idPrefix}-problems` : undefined}
         />
         {problems.length ? (
@@ -298,7 +297,10 @@ export function KeyImport({
             {ready.length > 0 ? `Add ${ready.length} ${ready.length === 1 ? "key" : "keys"}` : "Add keys"}
           </Button>
           <span className={cn("text-[0.8125rem] text-muted-foreground", staged.length === 0 && "sr-only")}>
-            {ready.length} of {staged.length} ready. Spending keys and seed phrases are refused here and never sent.
+            <span className="font-type text-foreground">
+              {ready.length} of {staged.length}
+            </span>{" "}
+            ready. Spending keys and seed phrases are refused here and never sent.
           </span>
         </div>
       </div>
@@ -343,27 +345,22 @@ interface Choice {
   primary: boolean;
 }
 
-/** One full-width choice: an icon, what it does, one line on what it reads. */
-function ChoiceRow({ choice: c, testId }: { choice: Choice; testId: string }): ReactNode {
+/** One choice of the form: its box (ticked while it works), what it does, one line on what it reads. */
+function ChoiceRow({ choice: c, busy, testId }: { choice: Choice; busy: boolean; testId: string }): ReactNode {
   return (
     <button
       type="button"
       onClick={c.onClick}
       disabled={c.disabled}
       data-testid={testId}
-      className="grid w-full grid-cols-[36px_minmax(0,1fr)_16px] items-center gap-3.5 px-4 py-3.5 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+      className="grid w-full grid-cols-[18px_minmax(0,1fr)] items-start gap-3 px-3 py-3.5 text-left transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
     >
-      <span
-        className={cn(
-          "grid size-9 place-items-center rounded-full",
-          c.primary ? "bg-primary text-primary-foreground" : "bg-chip text-strong",
-        )}
-      >
-        <c.icon className="size-[18px]" aria-hidden="true" />
-      </span>
+      <TypedBox checked={busy} className="mt-[1px]" />
       <span className="min-w-0">
-        <span className="block text-[0.9375rem] text-foreground">{c.title}</span>
-        <span className="block text-[0.8125rem] text-muted-foreground">{c.hint}</span>
+        <span className={cn("block font-type text-[0.9375rem] text-foreground", c.primary && "font-bold")}>
+          {c.title}
+        </span>
+        <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">{c.hint}</span>
       </span>
     </button>
   );

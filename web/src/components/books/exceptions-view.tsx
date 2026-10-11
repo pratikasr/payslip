@@ -19,7 +19,7 @@ import {
 } from "@/components/books/books-data";
 import { formatCount, formatDate, formatHeight, formatPeriodLabel } from "@/lib/format";
 import { cn } from "cn";
-import { TYPE } from "@/components/ds/type";
+import { LEDGER } from "@/components/portal/paper-parts";
 
 /** Everything that needs a person: runs that do not reconcile and transactions with no Payslip memo. */
 export function ExceptionsView({ r }: { r: BooksResult }) {
@@ -37,19 +37,26 @@ export function ExceptionsView({ r }: { r: BooksResult }) {
   ];
   return (
     <div className="grid min-w-0 gap-2 [&>*]:min-w-0">
-      <nav aria-label="Exception groups" className="flex flex-wrap gap-2" data-print="hide">
-        {groups.map((g) => (
-          <a
-            key={g.id}
-            href={`#${g.id}`}
-            className="inline-flex h-8 items-center gap-2 rounded-full bg-secondary px-3.5 text-[0.8125rem] hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_6%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            {g.label}
-            <span className="num text-muted-foreground" data-testid={`exceptions-count-${g.id}`}>
-              {formatCount(g.count)}
-            </span>
-          </a>
-        ))}
+      {/* The form's index: each group and how many lines it holds. */}
+      <nav aria-label="Exception groups" className="border-y-2 border-foreground py-3" data-print="hide">
+        <ul className="flex flex-wrap gap-2">
+          {groups.map((g) => (
+            <li key={g.id}>
+              <a
+                href={`#${g.id}`}
+                className="inline-flex h-8 items-center gap-2 border border-foreground px-2.5 font-type text-[0.8125rem] hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              >
+                {g.label}
+                <span
+                  className={cn("font-bold", g.count && g.tone === "danger" && "text-destructive")}
+                  data-testid={`exceptions-count-${g.id}`}
+                >
+                  {formatCount(g.count)}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
       </nav>
 
       {ex.missingKeys.length ? (
@@ -149,24 +156,32 @@ function Group({
   children: ReactNode;
 }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 scroll-mt-20 pt-8">
-      <div className="mb-3 grid gap-1">
+    <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 scroll-mt-20 pt-9">
+      <div className="mb-3 grid gap-1.5">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h2 id={`${id}-title`} className={TYPE.heading}>
+          <h2 id={`${id}-title`} className="inked font-display text-[1.25rem] leading-tight font-bold">
             {title}
           </h2>
           <Tag tone={count ? tone : "neutral"}>{formatCount(count)}</Tag>
         </div>
-        <p className="text-[0.8125rem] text-muted-foreground">{count ? todo : "None in this period."}</p>
+        <p className="max-w-[70ch] text-[0.8125rem] text-muted-foreground">
+          {count ? (
+            <>
+              <span className="form-label text-[0.75rem] font-bold text-foreground">To do: </span>
+              {todo}
+            </>
+          ) : (
+            "None in this period."
+          )}
+        </p>
       </div>
       {count ? children : null}
     </section>
   );
 }
 
-const TH =
-  "h-10 px-2.5 pb-2 text-left align-bottom text-[0.8125rem] font-normal whitespace-nowrap text-muted-foreground";
-const TD = "px-2.5 py-3 align-top";
+const TH = LEDGER.th;
+const TD = "px-2.5 py-2.5 align-top";
 
 function RunRows({
   r,
@@ -178,28 +193,30 @@ function RunRows({
   kind: "no-funding" | "unexplained" | "allocations";
 }) {
   return (
-    <ul className="divide-y divide-hairline border-y border-hairline">
+    <ul className="green-bar border-y-2 border-foreground">
       {runs.map((run) => {
         const paidOn = paidDateOf(r, run.run_id);
         const diff = differenceOf(run);
         return (
-          <li key={run.run_id} className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 py-3">
+          <li
+            key={run.run_id}
+            className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2 border-b border-bar-line px-2.5 py-3 font-type last:border-b-0"
+          >
             <div className="min-w-0">
-              <span className="block text-[0.9375rem]">
+              <span className="block text-[0.9375rem] font-bold">
                 {formatPeriodLabel(run.period)} payroll
                 {kind === "unexplained" && run.status !== "variance_unexplained" ? (
                   <span className="text-muted-foreground">, {statusView(run).label.toLowerCase()}</span>
                 ) : null}
               </span>
-              <span className="num block text-[0.8125rem] text-muted-foreground">
-                Run <code className="font-mono">{run.run_id.slice(0, 8)}</code>, {run.lines}{" "}
-                {run.lines === 1 ? "payment" : "payments"}
+              <span className="block text-[0.8125rem] text-muted-foreground">
+                Run {run.run_id.slice(0, 8)}, {run.lines} {run.lines === 1 ? "payment" : "payments"}
                 {paidOn ? `, paid ${formatDate(paidOn)}` : ""}
               </span>
             </div>
             <dl className="flex flex-wrap gap-x-6 gap-y-1 text-[0.8125rem]">
               <div className="text-right">
-                <dt className="text-[0.8125rem] text-muted-foreground">Paid</dt>
+                <dt className="form-label text-[0.6875rem] text-muted-foreground">Paid</dt>
                 <dd>
                   <Usd cents={run.paid_usd_cents} />
                 </dd>
@@ -207,14 +224,14 @@ function RunRows({
               {kind === "allocations" ? (
                 <>
                   <div className="text-right">
-                    <dt className="text-[0.8125rem] text-muted-foreground">Accounts paid</dt>
-                    <dd className="num">{run.allocations ?? "Unknown"}</dd>
+                    <dt className="form-label text-[0.6875rem] text-muted-foreground">Accounts paid</dt>
+                    <dd>{run.allocations ?? "Unknown"}</dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-[0.8125rem] text-muted-foreground">
+                    <dt className="form-label text-[0.6875rem] text-muted-foreground">
                       {run.status === "unpaid" ? "With no payment" : "Keys missing"}
                     </dt>
-                    <dd className="num text-destructive">
+                    <dd className="text-destructive">
                       {(run.status === "unpaid" ? unpaidAccountsOf(run) : missingAccountsOf(run)) ?? "Unknown"}
                     </dd>
                   </div>
@@ -222,19 +239,19 @@ function RunRows({
               ) : kind === "unexplained" ? (
                 <>
                   <div className="text-right">
-                    <dt className="text-[0.8125rem] text-muted-foreground">Variance</dt>
+                    <dt className="form-label text-[0.6875rem] text-muted-foreground">Variance</dt>
                     <dd>
                       <Usd cents={run.variance_usd_cents} />
                     </dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-[0.8125rem] text-muted-foreground">Explained</dt>
+                    <dt className="form-label text-[0.6875rem] text-muted-foreground">Explained</dt>
                     <dd>
                       <Usd cents={run.explained_usd_cents} />
                     </dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-[0.8125rem] text-muted-foreground">Difference</dt>
+                    <dt className="form-label text-[0.6875rem] text-muted-foreground">Difference</dt>
                     <dd className="text-destructive">
                       <Usd cents={diff} />
                     </dd>
@@ -242,7 +259,7 @@ function RunRows({
                 </>
               ) : (
                 <div className="text-right">
-                  <dt className="text-[0.8125rem] text-muted-foreground">Funded</dt>
+                  <dt className="form-label text-[0.6875rem] text-muted-foreground">Funded</dt>
                   <dd className="text-muted-foreground">Not recorded</dd>
                 </div>
               )}
@@ -265,7 +282,7 @@ function reasonOf(u: BooksUnlabelled) {
 
 function MemoText({ text }: { text: string | null }) {
   if (!text) return <span className="text-muted-foreground">No memo</span>;
-  return <code className="font-mono text-[0.8125rem] break-words whitespace-pre-wrap text-strong">{text}</code>;
+  return <code className="font-type text-[0.8125rem] break-words whitespace-pre-wrap text-strong">{text}</code>;
 }
 
 function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }) {
@@ -283,9 +300,9 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
           const why = UNLABELLED_REASON[reason] ?? { label: reason, detail: "" };
           return (
             <div key={reason}>
-              <dt className="flex items-baseline gap-2">
-                <span className="text-strong">{why.label}</span>
-                <span className="num text-muted-foreground" data-testid={`unlabelled-reason-${reason}`}>
+              <dt className="flex items-baseline gap-2 font-type">
+                <span className="font-bold text-strong">{why.label}</span>
+                <span className="text-muted-foreground" data-testid={`unlabelled-reason-${reason}`}>
                   {formatCount(n)}
                 </span>
               </dt>
@@ -297,12 +314,12 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
       <div
         className="hidden min-w-0 overflow-x-auto xl:block"
         role="region"
-        aria-label="Unlabelled transactions"
+        aria-label="Table of unlabelled transactions"
         tabIndex={0}
       >
-        <table className="w-full min-w-[860px] border-collapse text-[0.9375rem]" data-testid="unlabelled-table">
+        <table className={cn(LEDGER.table, "min-w-[860px]")} data-testid="unlabelled-table">
           <thead>
-            <tr className="border-b border-hairline">
+            <tr className={LEDGER.headRow}>
               <th scope="col" className={TH}>
                 Date
               </th>
@@ -327,11 +344,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
             {sorted.map((u, i) => {
               const why = reasonOf(u);
               return (
-                <tr
-                  key={`${u.txid}-${u.account ?? ""}-${i}`}
-                  className="border-b border-hairline"
-                  data-testid="unlabelled-row"
-                >
+                <tr key={`${u.txid}-${u.account ?? ""}-${i}`} className={LEDGER.row} data-testid="unlabelled-row">
                   <td className={cn(TD, "whitespace-nowrap")}>{formatDate(u.date)}</td>
                   <td className={cn(TD, "whitespace-nowrap")}>
                     <span className="block">{u.label ?? unlabelledAccount(u)}</span>
@@ -354,7 +367,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                       head={6}
                       tail={4}
                     />
-                    <span className="num block text-[0.8125rem] text-muted-foreground">
+                    <span className="block text-[0.8125rem] text-muted-foreground">
                       {u.height ? `Block ${formatHeight(u.height)}` : "Not mined"}
                     </span>
                   </td>
@@ -364,11 +377,14 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
           </tbody>
         </table>
       </div>
-      <ul className="divide-y divide-hairline border-y border-hairline xl:hidden" aria-label="Unlabelled transactions">
+      <ul className="green-bar border-y-2 border-foreground xl:hidden" aria-label="Unlabelled transactions">
         {sorted.map((u, i) => {
           const why = reasonOf(u);
           return (
-            <li key={`${u.txid}-${u.account ?? ""}-${i}`} className="grid gap-1.5 py-3">
+            <li
+              key={`${u.txid}-${u.account ?? ""}-${i}`}
+              className="grid gap-1.5 border-b border-bar-line px-2.5 py-3 font-type last:border-b-0"
+            >
               <div className="flex items-baseline justify-between gap-3">
                 <span className="text-[0.9375rem]">
                   {u.direction === "in" ? "Received by" : "Sent from"} {u.label ?? unlabelledAccount(u)}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { KeyRound, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useHealth } from "@/components/app/health-provider";
 import { Tag } from "@/components/ds/tag";
@@ -79,26 +79,32 @@ export function ManageKeysDialog({
         <DialogHeader>
           <DialogTitle>Viewing keys</DialogTitle>
           <DialogDescription>
-            {keys.length} {keys.length === 1 ? "key" : "keys"}: {keySetSummary(described)}. They read payments but
-            cannot spend.
+            <span className="font-type">{keys.length}</span> {keys.length === 1 ? "key" : "keys"}:{" "}
+            {keySetSummary(described)}. They read payments but cannot spend.
           </DialogDescription>
         </DialogHeader>
-        <ul className="divide-y divide-hairline rounded-xl border" aria-label="Loaded viewing keys">
+        <ul className="green-bar border-y-2 border-foreground" aria-label="Loaded viewing keys">
           {described.map((k, i) => {
             const tag = roleTag(k, walletless);
             return (
-              <li key={k.ufvk} className="flex items-center gap-3 px-3.5 py-2.5">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-chip text-muted-foreground">
-                  <KeyRound className="size-4" aria-hidden="true" />
+              <li
+                key={k.ufvk}
+                className="flex items-center gap-3 border-b border-bar-line px-2.5 py-2.5 last:border-b-0"
+              >
+                <span
+                  className="grid h-7 min-w-7 shrink-0 place-items-center border border-foreground px-1 font-type text-[0.8125rem] font-bold"
+                  aria-hidden="true"
+                >
+                  {i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate text-[0.9375rem]">{k.label ?? `Key ${i + 1}`}</span>
+                    <span className="truncate font-type text-[0.9375rem] font-bold">{k.label ?? `Key ${i + 1}`}</span>
                     {tag ? <Tag tone={tag.tone}>{tag.text}</Tag> : null}
                   </div>
-                  <span className="flex flex-wrap gap-x-2 text-[0.8125rem] text-muted-foreground">
+                  <span className="flex flex-wrap gap-x-2 font-type text-[0.8125rem] text-muted-foreground">
                     <code className="font-mono">{keyPreview(k.ufvk)}</code>
-                    {k.birthday ? <span className="num">from block {formatHeight(k.birthday)}</span> : null}
+                    {k.birthday ? <span>from block {formatHeight(k.birthday)}</span> : null}
                   </span>
                 </div>
                 <Button
@@ -115,11 +121,11 @@ export function ManageKeysDialog({
           })}
         </ul>
         <div className="grid gap-3 border-t border-hairline pt-4">
-          <h3 className="text-[0.9375rem] text-strong">Add keys</h3>
+          <h3 className="form-label text-[0.75rem] font-bold">Add keys</h3>
           <KeyImport idPrefix="books-manage" />
         </div>
         <div className="grid gap-2 border-t border-hairline pt-4">
-          <h3 className="text-[0.9375rem] text-strong">Forget</h3>
+          <h3 className="form-label text-[0.75rem] font-bold">Forget</h3>
           <p className="text-[0.8125rem] text-muted-foreground">
             The Payslip service keeps a read-only scan of these keys so the next visit is quick. Forget them here only,
             or ask the service to delete its scan too.

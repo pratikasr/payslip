@@ -58,7 +58,7 @@ function Back() {
   return (
     <Link
       href="/portal/payslips"
-      className="mb-3 inline-flex items-center gap-1 rounded-sm text-[0.8125rem] text-muted-foreground hover:text-foreground"
+      className="mb-3 inline-flex items-center gap-1 font-type text-[0.875rem] text-muted-foreground hover:text-foreground hover:underline"
       data-print="hide"
     >
       <ChevronLeft className="size-4" aria-hidden="true" />
@@ -120,9 +120,9 @@ export function PayslipDocument({ txid }: { txid: string }) {
           </>
         ) : (
           <div className="space-y-5">
-            <Skeleton className="h-9 w-72" />
+            <Skeleton className="h-9 w-72 rounded-none" />
             <ScanProgress startedAt={recent.startedAt} />
-            <Skeleton className="h-[480px] max-w-[760px] rounded-xl" />
+            <Skeleton className="h-[480px] max-w-[760px] rounded-none border border-bar-line bg-transparent" />
           </div>
         )}
       </>
@@ -137,8 +137,17 @@ export function PayslipDocument({ txid }: { txid: string }) {
         <p className="max-w-prose text-[0.9375rem] text-muted-foreground">
           Your key shows no payment in transaction{" "}
           <code className="font-mono text-[0.8125rem] text-foreground">{truncateMiddle(txid, 10, 8)}</code>{" "}
-          {wantOlder ? `from ${formatRange(from, to)}` : "in the last 12 months"}. Open{" "}
-          <Link href="/portal/tax" className="rounded-sm text-link underline underline-offset-4">
+          {wantOlder ? (
+            <>
+              from <span className="font-type">{formatRange(from, to)}</span>
+            </>
+          ) : (
+            <>
+              in the last <span className="font-type">12</span> months
+            </>
+          )}
+          . Open{" "}
+          <Link href="/portal/tax" className="text-link underline underline-offset-4">
             Tax documents
           </Link>{" "}
           to look in another period.
@@ -243,14 +252,16 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           rows={8}
           split={SPLIT}
           columns="aside"
-          caption={`${title} in two views: what the world sees on the Zcash chain, and what your viewing key shows.`}
+          className="print:[&_[data-tear]]:hidden"
+          caption={`${title} in two copies: the pay advice your viewing key reads, and the carbon copy the Zcash chain shows the world.`}
         >
-          <VaultView labelledBy="world-title" split={SPLIT}>
+          {/* On paper the carbon is the second sheet: the original prints alone on the first. */}
+          <VaultView labelledBy="world-title" split={SPLIT} className="print:break-before-page">
             <ViewTitle id="world-title" title="What the world sees">
               {mined ? (
                 <>
-                  A shielded transaction in block <span className="num">{formatHeight(line.height)}</span>: no amount,
-                  no names.
+                  The carbon copy: a shielded transaction in block{" "}
+                  <span className="font-type">{formatHeight(line.height)}</span>, no amount, no names.
                 </>
               ) : (
                 "Nothing yet: the transaction is waiting for a block."
@@ -277,7 +288,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
             <ViewField label="Memo">
               <Redacted className="w-[min(100%,12em)] text-[0.9375rem]" />
             </ViewField>
-            <p className="border-t border-mist pt-5 text-[0.9375rem]">
+            <p className="border-t border-mist pt-5 font-type text-[0.875rem]">
               {line.explorer_url ? (
                 <a
                   href={line.explorer_url}
@@ -285,7 +296,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
                   rel="noreferrer"
                   data-txid={line.txid}
                   data-print="hide"
-                  className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
+                  className="text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
                 >
                   {host ? `Open it on ${host}` : "Open it on a public block explorer"}
                   <span className="sr-only"> (opens in a new tab)</span>
@@ -294,26 +305,23 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
             </p>
           </VaultView>
 
-          <PaperView
-            as="article"
-            label={title}
-            split={SPLIT}
-            className="print:rounded-none print:border-0 print:px-0 print:pt-6 print:pb-0"
-          >
-            {/* The employer first, as on any payslip; the product and the network under it. */}
-            <header className="flex items-start justify-between gap-4 pb-5">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <Mark className="size-7 shrink-0" />
-                <div className="min-w-0">
-                  <p className="font-display text-[1.0625rem] leading-snug font-semibold" data-testid="payslip-paid-by">
-                    Paid by {companyName()}
-                  </p>
-                  <p className="text-[0.8125rem] text-ash">
-                    Payslip, private payroll on Zcash {networkLabel(s.network).toLowerCase()}
-                  </p>
-                </div>
+          <PaperView as="article" label={title} split={SPLIT} className="print:break-inside-avoid">
+            {/* The form's head: its title and copy, then the employer, as on any pay advice. */}
+            <header className="pb-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="inked font-display text-[1.375rem] leading-[1.1] font-bold">Pay advice</p>
+                <p className="form-label text-[0.75rem] text-ash">Original: for the payee</p>
               </div>
-              <SettlementTag line={line} />
+              <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                <Mark className="size-5 shrink-0" />
+                <p className="font-type text-[0.9375rem] leading-snug font-bold" data-testid="payslip-paid-by">
+                  Paid by {companyName()}
+                </p>
+                <SettlementTag line={line} />
+              </div>
+              <p className="mt-1 text-[0.8125rem] text-ash">
+                Payslip, private payroll on Zcash {networkLabel(s.network).toLowerCase()}
+              </p>
             </header>
 
             <div className="flex items-center pb-5">
@@ -333,7 +341,7 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
               <span className={cn(TYPE.hero, "block")}>
                 <Usd cents={line.usd_basis_cents} />
               </span>
-              <span className="mt-2 block text-[0.8125rem] text-ash">
+              <span className="mt-2 block font-type text-[0.8125rem] text-ash">
                 <Zec zat={line.amount_zat} />
               </span>
               {line.settlement === "converted" ? (
@@ -343,13 +351,13 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
               ) : null}
             </ViewField>
             <ViewField label="Sender">
-              <span className="text-[0.9375rem]">{companyName()}</span>
+              <span className="font-type text-[0.9375rem] uppercase">{companyName()}</span>
               <span className="block text-[0.8125rem] text-ash">From the payroll account it keeps for you</span>
             </ViewField>
             <ViewField label="Recipient">
-              <span className="flex min-w-0 items-center gap-2.5 text-[0.9375rem]">
+              <span className="flex min-w-0 items-center gap-2.5 font-type text-[0.9375rem]">
                 <Initials name={name} size="sm" />
-                <span className="truncate">{name ?? "The holder of this viewing key"}</span>
+                <span className={cn("truncate", name && "uppercase")}>{name ?? "The holder of this viewing key"}</span>
               </span>
               {line.to_address ? (
                 <>
@@ -367,34 +375,33 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
               ) : null}
             </ViewField>
             <ViewField label="Memo">
-              <span className="text-[0.9375rem]">
+              <span className="font-type text-[0.9375rem]">
                 {formatPeriodLabel(line.period)} pay, invoice{" "}
                 <span className="whitespace-nowrap">{line.invoice_ref}</span>
               </span>
               {run ? (
-                <span className="block text-[0.8125rem] text-ash">
+                <span className="block font-type text-[0.8125rem] text-ash">
                   For {formatRange(run.period_start, run.period_end)}
                 </span>
               ) : null}
             </ViewField>
 
-            <div className="border-t border-mist pt-5">
-              <dl className="grid gap-x-3 gap-y-1 text-[0.9375rem] sm:grid-cols-[5.5rem_minmax(0,1fr)] sm:gap-y-4 xl:grid-cols-[6.5rem_minmax(0,1fr)]">
+            <div>
+              {/* The same ruled rows as the form above them, so the columns run on. */}
+              <div>
                 {rows.map((r) => (
-                  <div key={r.label} className="contents">
-                    <dt className="text-[0.8125rem] text-ash sm:pt-0.5">{r.label}</dt>
-                    <dd className="mb-3 min-w-0 sm:mb-0">
-                      <div className="text-foreground">{r.value}</div>
-                      {r.hint ? <div className="mt-0.5 text-[0.8125rem] text-ash">{r.hint}</div> : null}
-                    </dd>
-                  </div>
+                  <ViewField key={r.label} label={r.label}>
+                    <span className="block font-type text-[0.9375rem]">{r.value}</span>
+                    {r.hint ? <span className="mt-0.5 block text-[0.8125rem] text-ash">{r.hint}</span> : null}
+                  </ViewField>
                 ))}
-              </dl>
+              </div>
 
               <footer className="mt-6 border-t border-mist pt-5 text-[0.8125rem] text-ash">
                 <p>
-                  Read from the Zcash chain with your viewing key on {formatDate(s.generated_at)}, scanned to block{" "}
-                  <span className="num">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are
+                  Read from the Zcash chain with your viewing key on{" "}
+                  <span className="font-type">{formatDate(s.generated_at)}</span>, scanned to block{" "}
+                  <span className="font-type">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are
                   hidden on the public chain.
                 </p>
                 {sample ? (

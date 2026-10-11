@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
-import { ChevronRight, CircleCheck, Info, TriangleAlert } from "lucide-react";
+import { ChevronRight, Info } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
-import { StatusTag as SharedStatusTag } from "@/components/ds/status";
 import { RunDetail } from "@/components/books/run-detail";
+import { DOT, FormHead, MarkStamp, StatusStamp } from "@/components/portal/paper-parts";
 import {
   differenceOf,
   exceptionsOf,
@@ -32,15 +32,15 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
   const testnet = r.network === "testnet";
   const from = r.scanned_from_height ?? scan.birthday;
   return (
-    <div className="grid gap-6">
-      <div className="grid gap-2.5">
+    <div className="grid gap-7">
+      <div className="grid gap-3">
         <StatusBanner r={r} runs={runs} t={totals} />
         {testnet && runs.length > 0 ? (
           <p
             className="flex items-start gap-2 px-1 text-[0.8125rem] text-muted-foreground"
             data-testid="books-testnet-note"
           >
-            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <Info className="mt-0.5 size-3.5 shrink-0 text-foreground" aria-hidden="true" />
             <span>
               Testnet: payroll dollars convert at a simulated rate so faucet coins can carry a demo payroll.
               {runs.every((run) => run.status === "reconciled")
@@ -51,10 +51,7 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
         ) : null}
       </div>
       {runs.length > 0 && !totals.fundingKnown ? (
-        <p
-          role="status"
-          className="rounded-xl border border-warning/30 bg-warning-bg px-4 py-3 text-[0.8125rem] text-strong"
-        >
+        <p role="status" className="carbon-paper border border-carbon-line px-4 py-3 text-[0.8125rem] text-strong">
           {hasTreasuryKey(r, keys)
             ? "No funding record was found for these runs in this period, so what was funded cannot be read. A run's record is written the day it starts paying; widen the period to include that day."
             : "No funding record was found, so what was funded cannot be read. Load the Treasury viewing key from Manage in the sidebar."}
@@ -62,25 +59,27 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
       ) : null}
       <KpiRow t={totals} runs={r.runs.length} testnet={testnet} />
       {runs.length === 0 ? (
-        <div className="border-y border-hairline py-10 text-center text-[0.9375rem] text-muted-foreground">
+        <div className="border-y-2 border-foreground py-8 text-[0.9375rem] text-muted-foreground">
           <p>No runs paid in this period. Choose another period above.</p>
           {from ? (
-            <p className="mx-auto mt-2 max-w-md text-[0.8125rem]">
-              These keys were read from block <span className="num">{formatHeight(from)}</span> on. If they were paid
-              earlier, import the company&apos;s key file: it names the block to start from.
+            <p className="mt-2 max-w-md text-[0.8125rem]">
+              These keys were read from block <span className="font-type">{formatHeight(from)}</span> on. If they were
+              paid earlier, import the company&apos;s key file: it names the block to start from.
             </p>
           ) : null}
         </div>
       ) : (
         <section aria-labelledby="runs-heading" className="min-w-0">
-          <h2 id="runs-heading" className={cn(TYPE.heading, "mb-2")}>
-            Runs
-          </h2>
+          <FormHead title="Runs" id="runs-heading" label="Funded against paid" className="mb-3" />
           <RunsTable r={r} runs={runs} t={totals} />
           <RunsList r={r} runs={runs} />
           {totals.unrecorded > 0 ? (
             <p className="mt-3 text-[0.8125rem] text-muted-foreground">
-              The total difference includes <Usd cents={-totals.unrecorded} /> paid by runs with no funding record.
+              The total difference includes{" "}
+              <span className="font-type">
+                <Usd cents={-totals.unrecorded} />
+              </span>{" "}
+              paid by runs with no funding record.
             </p>
           ) : null}
         </section>
@@ -125,7 +124,7 @@ function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: Boo
     ex.total > 0 ? (
       <Link
         href="/books/exceptions"
-        className="inline-flex shrink-0 items-center gap-1 self-start rounded-sm text-[0.8125rem] text-link underline underline-offset-4 sm:self-center"
+        className="inline-flex shrink-0 items-center gap-1 font-type text-[0.8125rem] font-bold text-link underline underline-offset-4"
       >
         {all
           ? ex.unlabelled.length === 1
@@ -134,30 +133,26 @@ function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: Boo
           : "Review exceptions"}
       </Link>
     ) : null;
+  // The stamp the accountant would put on the page: what the period comes to, in a word.
+  const stamp =
+    runs.length === 0
+      ? null
+      : all
+        ? { text: "Reconciled", tone: "ink" as const }
+        : ex.missingKeys.length
+          ? { text: "Keys missing", tone: "red" as const }
+          : severe
+            ? { text: "Not reconciled", tone: "red" as const }
+            : { text: "Open items", tone: "soft" as const };
   return (
     <div
       role="status"
       data-testid="books-headline"
-      className={cn(
-        "flex flex-col gap-3 rounded-xl border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5",
-        all || runs.length === 0
-          ? "bg-raised"
-          : severe
-            ? "border-destructive/25 bg-danger-bg"
-            : "border-warning/30 bg-warning-bg",
-      )}
+      className="flex flex-col gap-4 border-2 border-foreground px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5"
     >
-      <div className="flex items-start gap-3">
-        {all ? (
-          <CircleCheck className="mt-0.5 size-6 shrink-0 text-success" aria-hidden="true" />
-        ) : runs.length === 0 ? null : (
-          <TriangleAlert
-            className={cn("mt-0.5 size-6 shrink-0", severe ? "text-destructive" : "text-warning")}
-            aria-hidden="true"
-          />
-        )}
-        <div>
-          <p className={cn(TYPE.heading, "text-balance")}>{headline}</p>
+      <div className="flex min-w-0 flex-col-reverse gap-3 sm:flex-row sm:items-center sm:gap-5">
+        <div className="min-w-0">
+          <p className="font-type text-[1rem] leading-snug font-bold text-balance sm:text-[1.0625rem]">{headline}</p>
           <p className="mt-1 text-[0.8125rem] text-muted-foreground">
             {runs.length === 0
               ? "Payments are matched to runs by their memo; none were mined in this period."
@@ -167,26 +162,30 @@ function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: Boo
           </p>
         </div>
       </div>
-      {review}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 sm:flex-col sm:items-end">
+        {stamp ? <MarkStamp text={stamp.text} tone={stamp.tone} className="mr-1" /> : null}
+        {review}
+      </div>
     </div>
   );
 }
 
 /* ---------- KPIs ---------- */
 
+/** A total of the period: its label in spaced caps, the figure in dot matrix, how it is made up typed under it. */
 function Kpi({ label, value, sub, testId }: { label: ReactNode; value: ReactNode; sub: ReactNode; testId: string }) {
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5" data-testid={testId}>
-      <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
-      <dd className="mt-1">
-        <div className={cn(TYPE.heading, "figure")}>{value}</div>
-        <div className="mt-1 text-[0.8125rem] text-muted-foreground">{sub}</div>
+    <div className="min-w-0 px-3 py-4 sm:px-4" data-testid={testId}>
+      <dt className={TYPE.label}>{label}</dt>
+      <dd className="mt-2.5">
+        <div className={cn(DOT, "text-[1.375rem] sm:text-[1.5rem]")}>{value}</div>
+        <div className="mt-2 font-type text-[0.8125rem] leading-[1.45] text-muted-foreground">{sub}</div>
       </dd>
     </div>
   );
 }
 
-const NotRecorded = () => <span className="text-muted-foreground">Not recorded</span>;
+const NotRecorded = () => <span className="font-type text-[0.9375rem] text-muted-foreground">Not recorded</span>;
 
 function KpiRow({ t, runs, testnet }: { t: BooksTotals; runs: number; testnet: boolean }) {
   const unexplainedParts: ReactNode[] = [];
@@ -207,7 +206,7 @@ function KpiRow({ t, runs, testnet }: { t: BooksTotals; runs: number; testnet: b
   const material = Math.abs(t.unexplained - t.rounding) > 0;
   return (
     <dl
-      className="grid grid-cols-2 divide-hairline overflow-hidden rounded-xl border bg-card max-lg:[&>*:nth-child(n+3)]:border-t max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:last-child]:col-span-2 max-lg:[&>*:last-child]:border-l-0 lg:grid-cols-5 lg:divide-x"
+      className="grid grid-cols-2 divide-rule border-y-2 border-foreground max-lg:[&>*:last-child]:col-span-2 max-lg:[&>*:last-child]:border-l-0 max-lg:[&>*:nth-child(even)]:border-l max-lg:[&>*:nth-child(n+3)]:border-t lg:grid-cols-5 lg:divide-x"
       aria-label="Totals for the period"
     >
       <Kpi
@@ -278,9 +277,8 @@ function KpiRow({ t, runs, testnet }: { t: BooksTotals; runs: number; testnet: b
 
 /* ---------- Runs table (wide screens) ---------- */
 
-const TH =
-  "h-10 px-[7px] first:pl-1 last:pr-0 text-left align-bottom pb-2 text-[0.8125rem] font-normal whitespace-nowrap text-muted-foreground";
-const TD = "px-[7px] first:pl-1 last:pr-0 py-3 align-top whitespace-nowrap";
+const TH = "h-10 px-[7px] first:pl-2 last:pr-2 text-left align-bottom py-2 text-[0.75rem] font-bold whitespace-nowrap";
+const TD = "px-[7px] first:pl-2 last:pr-2 py-3 align-top whitespace-nowrap";
 
 function DiffValue({ run, note = true }: { run: BooksRun; note?: boolean }) {
   const diff = differenceOf(run);
@@ -294,15 +292,34 @@ function DiffValue({ run, note = true }: { run: BooksRun; note?: boolean }) {
           run.status === "variance_unexplained" ? "text-destructive" : diff === 0 ? "text-muted-foreground" : "",
         )}
       />
-      {rounding ? <span className="block text-[0.8125rem] text-muted-foreground">rounding</span> : null}
+      {rounding ? <span className="block font-type text-[0.8125rem] text-muted-foreground">rounding</span> : null}
     </>
   );
 }
 
-/** The run's status as a short tag (the app's one StatusTag); "within rounding" moves to the Difference column. */
+/**
+ * The run's status as a small stamp: ink for reconciled, the stamp's red where money or keys are
+ * missing, soft ink while a record or a block is still to come. "Within rounding" moves to the
+ * Difference column.
+ */
 function StatusTag({ run }: { run: BooksRun }) {
   const s = statusView(run);
-  return <SharedStatusTag status={{ ...s, label: run.status === "reconciled" ? "Reconciled" : s.label }} />;
+  const tone =
+    run.status === "reconciled" ? "ink" : s.tone === "danger" || run.status === "incomplete_keys" ? "red" : "soft";
+  return (
+    <StatusStamp tone={tone} title={s.help}>
+      {run.status === "reconciled" ? "Reconciled" : s.label}
+    </StatusStamp>
+  );
+}
+
+/** A total in the ledger's foot: dollars in dot matrix, inked. */
+function TotalUsd({ cents, className }: { cents: number; className?: string }) {
+  return (
+    <span className={cn(DOT, "text-[1rem] xl:text-[1.0625rem]", className)}>
+      <Usd cents={cents} />
+    </span>
+  );
 }
 
 function Stack({ top, bottom }: { top: ReactNode; bottom?: ReactNode }) {
@@ -325,9 +342,12 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
       aria-label="Runs, funded against paid"
       tabIndex={0}
     >
-      <table className="w-full min-w-[720px] border-collapse text-[0.9375rem]" data-testid="books-runs">
+      <table
+        className="w-full min-w-[720px] border-collapse border-b-2 border-foreground text-[0.875rem] xl:text-[0.9375rem]"
+        data-testid="books-runs"
+      >
         <thead>
-          <tr className="border-b border-hairline">
+          <tr className="border-y-2 border-foreground">
             <th scope="col" className={TH}>
               Run
             </th>
@@ -352,7 +372,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
           </tr>
         </thead>
         <tbody>
-          {runs.map((run) => {
+          {runs.map((run, i) => {
             const isOpen = open === run.run_id;
             const detailId = `run-detail-${run.run_id}`;
             const paidOn = paidDateOf(r, run.run_id);
@@ -360,10 +380,13 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
             const sub = `${run.lines + (run.pending_lines ?? 0)} paid${paidOn ? ` on ${formatDate(paidOn).replace(/ \d{4}$/, "")}` : ""}`;
             return (
               <Fragment key={run.run_id}>
+                {/* Green bar by run, so an opened ledger card never shifts the bars below it. */}
                 <tr
+                  data-plain=""
                   className={cn(
-                    "cursor-pointer border-b border-hairline transition-colors hover:bg-muted/60",
-                    isOpen && "bg-muted/60",
+                    "cursor-pointer border-b border-bar-line transition-colors hover:bg-muted",
+                    i % 2 === 0 && "bg-bar",
+                    isOpen && "border-b-0",
                   )}
                   onClick={toggle}
                   data-testid="books-run-row"
@@ -377,7 +400,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
                       }}
                       aria-expanded={isOpen}
                       aria-controls={detailId}
-                      className="-mx-1 flex items-start gap-1.5 rounded-md px-1 text-left focus-visible:outline-2 focus-visible:outline-ring"
+                      className="-mx-1 flex items-start gap-1.5 px-1 text-left focus-visible:outline-2 focus-visible:outline-ring"
                     >
                       <ChevronRight
                         className={cn(
@@ -387,8 +410,8 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
                         aria-hidden="true"
                       />
                       <span>
-                        <span className="block">{formatPeriodLabel(run.period)}</span>
-                        <span className="num block text-[0.8125rem] text-muted-foreground">
+                        <span className="block font-bold uppercase">{formatPeriodLabel(run.period)}</span>
+                        <span className="block text-[0.8125rem] text-muted-foreground">
                           {sub}
                           <span className="sr-only">, run {run.run_id.slice(0, 8)}</span>
                         </span>
@@ -432,8 +455,8 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
                   </td>
                 </tr>
                 {isOpen ? (
-                  <tr id={detailId} className="border-b border-hairline bg-raised/70">
-                    <td colSpan={columns} className="px-4 py-5 whitespace-normal sm:px-6">
+                  <tr id={detailId} data-plain="" className={cn("border-b border-bar-line", i % 2 === 0 && "bg-bar")}>
+                    <td colSpan={columns} className="px-3 pt-1 pb-5 whitespace-normal sm:px-5">
                       <RunDetail r={r} run={run} />
                     </td>
                   </tr>
@@ -443,32 +466,30 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
           })}
         </tbody>
         <tfoot>
-          <tr
-            className="sticky bottom-0 z-10 bg-background shadow-[0_-1px_0_var(--border)]"
-            data-testid="books-runs-total"
-          >
-            <th scope="row" className={cn(TD, "text-left font-medium")}>
+          {/* The totals line, printed in dot matrix as a ledger's foot is. */}
+          <tr className="border-t-2 border-foreground" data-testid="books-runs-total">
+            <th scope="row" className={cn(TD, "text-left text-[0.75rem] font-bold tracking-[0.08em] uppercase")}>
               Total
             </th>
-            <td className={cn(TD, "text-right font-medium")}>
+            <td className={cn(TD, "text-right")}>
               {t.fundingKnown ? (
-                <Stack top={<Usd cents={t.funded} />} bottom={<Zec zat={t.zecAcquired} />} />
+                <Stack top={<TotalUsd cents={t.funded} />} bottom={<Zec zat={t.zecAcquired} />} />
               ) : (
                 <NotRecorded />
               )}
             </td>
-            <td className={cn(TD, "text-right font-medium")}>
-              <Stack top={<Usd cents={t.paid} />} bottom={<Zec zat={t.paidZat} />} />
+            <td className={cn(TD, "text-right")}>
+              <Stack top={<TotalUsd cents={t.paid} />} bottom={<Zec zat={t.paidZat} />} />
             </td>
-            <td className={cn(TD, "text-right font-medium")}>
-              {t.fundingKnown ? <Usd cents={t.variance} /> : <NotRecorded />}
+            <td className={cn(TD, "text-right")}>
+              {t.fundingKnown ? <TotalUsd cents={t.variance} /> : <NotRecorded />}
             </td>
-            <td className={cn(TD, "text-right font-medium")}>
-              {t.fundingKnown ? <Usd cents={t.explained} /> : <NotRecorded />}
+            <td className={cn(TD, "text-right")}>
+              {t.fundingKnown ? <TotalUsd cents={t.explained} /> : <NotRecorded />}
             </td>
-            <td className={cn(TD, "text-right font-medium")}>
+            <td className={cn(TD, "text-right")}>
               {t.fundingKnown ? (
-                <Usd
+                <TotalUsd
                   cents={t.unexplained}
                   className={cn(Math.abs(t.unexplained - t.rounding) > 0 && "text-destructive")}
                 />
@@ -491,19 +512,19 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
 function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <ul className="divide-y divide-hairline border-y border-hairline lg:hidden" aria-label="Runs, funded against paid">
+    <ul className="green-bar border-y-2 border-foreground lg:hidden" aria-label="Runs, funded against paid">
       {runs.map((run) => {
         const isOpen = open === run.run_id;
         const detailId = `run-detail-m-${run.run_id}`;
         const paidOn = paidDateOf(r, run.run_id);
         return (
-          <li key={run.run_id}>
+          <li key={run.run_id} className="border-b border-bar-line px-2 last:border-b-0">
             <button
               type="button"
               onClick={() => setOpen(isOpen ? null : run.run_id)}
               aria-expanded={isOpen}
               aria-controls={detailId}
-              className="grid w-full gap-2.5 py-3.5 text-left focus-visible:outline-2 focus-visible:outline-ring"
+              className="grid w-full gap-2.5 py-3.5 text-left font-type focus-visible:outline-2 focus-visible:outline-ring"
               data-testid="books-run-item"
             >
               <span className="flex items-start justify-between gap-3">
@@ -516,8 +537,8 @@ function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
                     aria-hidden="true"
                   />
                   <span>
-                    <span className="block text-[0.9375rem]">{formatPeriodLabel(run.period)}</span>
-                    <span className="num block text-[0.8125rem] text-muted-foreground">
+                    <span className="block text-[0.9375rem] font-bold uppercase">{formatPeriodLabel(run.period)}</span>
+                    <span className="block text-[0.8125rem] text-muted-foreground">
                       {run.lines + (run.pending_lines ?? 0)} paid
                       {paidOn ? ` on ${formatDate(paidOn)}` : ""}
                     </span>
@@ -525,7 +546,7 @@ function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
                 </span>
                 <StatusTag run={run} />
               </span>
-              <span className="grid grid-cols-2 gap-x-4 gap-y-1.5 pl-5 text-[0.8125rem]">
+              <span className="grid grid-cols-1 gap-x-8 gap-y-1 pl-5 sm:grid-cols-2 text-[0.8125rem]">
                 <MiniStat
                   label="Funded"
                   value={run.funded_usd_cents === null ? null : <Usd cents={run.funded_usd_cents} />}
@@ -545,7 +566,7 @@ function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
               {formatUsd(run.paid_usd_cents)}, {statusView(run).label.toLowerCase()}
             </span>
             {isOpen ? (
-              <div id={detailId} className="mb-4 rounded-xl bg-raised px-4 py-4">
+              <div id={detailId} className="pb-4">
                 <RunDetail r={r} run={run} />
               </div>
             ) : null}

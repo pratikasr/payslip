@@ -1,11 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { Check, Download, Printer } from "lucide-react";
+import { Download, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { Coin, Usd, Zec } from "@/components/app/amount";
-import { Card } from "@/components/ds/card";
-import { Tag } from "@/components/ds/tag";
+import { StatusStamp } from "@/components/portal/paper-parts";
 import { accountantRequest, useBooks, withLwdRetry } from "@/components/books/books-provider";
 import {
   differenceOf,
@@ -201,35 +200,36 @@ export function ExportsView({ r }: { r: BooksResult }) {
 
   return (
     <>
-      <div className="mx-auto grid max-w-[780px] gap-4 sm:grid-cols-2" data-print="hide">
+      <div className="grid gap-5 md:grid-cols-2" data-print="hide">
         {OPTIONS.map((o) => (
-          <Card
+          <article
             key={o.id}
-            as="article"
-            className="grid content-start gap-4 p-4 sm:p-4"
+            className="paper flex min-w-0 flex-col border-2 border-foreground"
             aria-labelledby={`export-${o.id}`}
           >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-foreground px-4 py-3">
+              <h2 id={`export-${o.id}`} className="inked font-display text-[1.25rem] leading-tight font-bold">
+                {o.name}
+              </h2>
+              <p className="form-label text-[0.75rem] text-muted-foreground">{o.kind}</p>
+            </div>
             <Preview columns={o.columns} pdf={o.id === "pdf"} more={o.more} />
-            <div className="grid gap-2 px-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 id={`export-${o.id}`} className="text-[0.9375rem] text-foreground">
-                  {o.name}
-                </h2>
-                <Tag>{o.kind}</Tag>
-              </div>
-              <ul className="list-disc space-y-0.5 pl-4 text-[0.8125rem] text-muted-foreground">
+            <div className="grid gap-2 px-4 pt-3">
+              <ul className="list-disc space-y-0.5 pl-4 text-[0.8125rem] text-muted-foreground marker:text-foreground">
                 {o.points.map((p) => (
                   <li key={p}>{p}</li>
                 ))}
               </ul>
               {o.id !== "pdf" ? (
-                <p className="text-[0.8125rem] break-all text-muted-foreground" data-testid={`export-${o.id}-file`}>
-                  <code className="font-mono">{fileName(o.id, r)}</code>, {formatCount(rowCount(o.id, r))}{" "}
-                  {rowCount(o.id, r) === 1 ? "row" : "rows"}
+                <p className="font-type text-[0.8125rem] text-muted-foreground" data-testid={`export-${o.id}-file`}>
+                  <span className="block break-all text-foreground">{fileName(o.id, r)}</span>
+                  <span className="block">
+                    {formatCount(rowCount(o.id, r))} {rowCount(o.id, r) === 1 ? "row" : "rows"}
+                  </span>
                 </p>
               ) : null}
             </div>
-            <div className="flex flex-wrap items-center gap-3 px-1 pb-1">
+            <div className="mt-auto flex flex-wrap items-center gap-3 px-4 pt-4 pb-4">
               <Button
                 type="button"
                 variant={o.id === "xero" ? "default" : "secondary"}
@@ -242,13 +242,12 @@ export function ExportsView({ r }: { r: BooksResult }) {
                 {busy === o.id ? "Preparing" : o.action}
               </Button>
               {done[o.id] ? (
-                <span className="inline-flex min-w-0 items-center gap-1 text-[0.8125rem] text-success" role="status">
-                  <Check className="size-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">Downloaded</span>
+                <span role="status">
+                  <StatusStamp tone="ink">Downloaded</StatusStamp>
                 </span>
               ) : null}
             </div>
-          </Card>
+          </article>
         ))}
       </div>
       <PrintReport r={r} />
@@ -256,36 +255,31 @@ export function ExportsView({ r }: { r: BooksResult }) {
   );
 }
 
+/**
+ * What the file looks like: the header line it starts with, typed on the green bar, and two
+ * ruled lines under it; for the PDF, the parts it prints.
+ */
 function Preview({ columns, pdf, more }: { columns: string[]; pdf: boolean; more?: boolean }) {
+  if (pdf)
+    return (
+      <ul className="green-bar border-b border-bar-line font-type text-[0.8125rem]" aria-hidden="true">
+        {columns.map((c, i) => (
+          <li key={c} className="flex items-baseline gap-3 border-b border-bar-line px-4 py-1.5 last:border-b-0">
+            <span className="text-muted-foreground">Part {i + 1}</span>
+            <span>{c}</span>
+          </li>
+        ))}
+      </ul>
+    );
   return (
-    <div className="grid h-[124px] place-items-center overflow-hidden rounded-lg bg-raised px-4" aria-hidden="true">
-      {pdf ? (
-        <div className="grid w-[124px] gap-1.5 rounded-md border bg-card p-3 shadow-[0_1px_2px_rgba(112,115,147,0.12)]">
-          <span className="text-[9px] text-strong">Payslip reconciliation</span>
-          <span className="h-1 w-3/4 rounded bg-chip" />
-          {columns.map((c) => (
-            <span key={c} className="flex justify-between gap-2 text-[7px] text-muted-foreground">
-              {c}
-              <span className="h-1 w-6 self-center rounded bg-chip" />
-            </span>
-          ))}
-        </div>
-      ) : (
-        <div className="grid w-full max-w-[290px] gap-1.5 rounded-md border bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(112,115,147,0.12)]">
-          <code className="font-mono text-[0.8125rem] leading-snug break-all text-strong">
-            {columns.join(",")}
-            {more ? ",…" : ""}
-          </code>
-          {more ? <span className="text-[9px] text-muted-foreground">Main columns; the file has more</span> : null}
-          {[0, 1, 2].map((row) => (
-            <span key={row} className="flex gap-1.5">
-              {columns.map((c, i) => (
-                <span key={c} className={cn("h-1 flex-1 rounded bg-chip", (i + row) % 3 === 0 && "flex-[1.6]")} />
-              ))}
-            </span>
-          ))}
-        </div>
-      )}
+    <div className="border-b border-bar-line" aria-hidden="true">
+      <p className="bg-bar px-4 py-2 font-type text-[0.8125rem] leading-snug break-all">
+        {columns.join(",")}
+        {more ? ",…" : ""}
+      </p>
+      <p className="border-t border-bar-line px-4 py-1.5 text-[0.75rem] text-muted-foreground">
+        {more ? "The main columns; the file has more" : "One line per funding and per payment"}
+      </p>
     </div>
   );
 }

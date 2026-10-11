@@ -26,7 +26,11 @@ export function PayslipList() {
     <>
       <PageTitle
         title="Payslips"
-        description={`Payments to you from ${formatRange(range.from, range.to)}.`}
+        description={
+          <>
+            Payments to you from <span className="font-type">{formatRange(range.from, range.to)}</span>.
+          </>
+        }
         actions={
           <Button asChild variant="secondary">
             <Link href="/portal/tax">
@@ -45,15 +49,15 @@ export function PayslipList() {
           </div>
         )
       ) : lines.length + pending.length === 0 ? (
-        <p className="border-y border-hairline py-6 text-[0.9375rem] text-muted-foreground">
+        <p className="border-y-2 border-foreground py-6 text-[0.9375rem] text-muted-foreground">
           No payslips in the last 12 months. They appear here when your payer runs payroll and the payment is mined.
         </p>
       ) : (
         <>
           <PayslipRows lines={lines} pending={pending} onShare={setSharing} />
-          <p className="mt-4 text-[0.8125rem] text-muted-foreground">
+          <p className="mt-5 text-[0.8125rem] text-muted-foreground">
             Older payments are in{" "}
-            <Link href="/portal/tax" className="rounded-sm text-link underline underline-offset-4">
+            <Link href="/portal/tax" className="text-link underline underline-offset-4">
               Tax documents
             </Link>
             , for any period you choose.

@@ -44,9 +44,10 @@ function KeySetChip({ onManage }: { onManage: () => void }) {
   const count = `${keys.length} ${keys.length === 1 ? "key" : "keys"}`;
   return (
     <div className="grid gap-1">
-      <p className="px-2 pt-1 pb-1 text-[0.8125rem] text-muted-foreground">Key set</p>
-      <div className="mx-1 grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 rounded-lg bg-chip px-2.5 py-2">
-        <KeyRound className="mt-[3px] size-4 text-muted-foreground" aria-hidden="true" />
+      <p className="form-label px-2 pt-1 pb-1 text-[0.75rem] text-muted-foreground">Key set</p>
+      {/* A slip on the desk: the keys this tab reads with. */}
+      <div className="paper mx-1 grid grid-cols-[16px_minmax(0,1fr)] gap-x-2.5 border border-foreground px-2.5 py-2">
+        <KeyRound className="mt-[3px] size-4 text-foreground" aria-hidden="true" />
         <span className="text-[0.8125rem] text-strong" data-testid="books-key-chip">
           {count}
           {summary !== count ? <span className="text-muted-foreground">: {summary}</span> : null}
@@ -54,7 +55,7 @@ function KeySetChip({ onManage }: { onManage: () => void }) {
         <button
           type="button"
           onClick={onManage}
-          className="col-start-2 mt-1 justify-self-start rounded-sm text-[0.8125rem] text-link underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="col-start-2 mt-1 justify-self-start text-[0.8125rem] font-bold text-link underline underline-offset-4 hover:decoration-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Manage
         </button>

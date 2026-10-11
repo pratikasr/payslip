@@ -86,9 +86,12 @@ export function BooksPage({
 function CompanyLine() {
   const Mark = companyMark();
   return (
-    <span className="inline-flex items-center gap-1.5 text-foreground" data-testid="books-company">
+    <span
+      className="inline-flex items-center gap-1.5 font-type text-[0.875rem] font-bold text-foreground"
+      data-testid="books-company"
+    >
       <Mark className="size-4 shrink-0" />
-      <span className="truncate font-display font-semibold">{companyName()}</span>
+      <span className="truncate">{companyName()}</span>
     </span>
   );
 }
@@ -110,7 +113,8 @@ function ScanMeta() {
         </span>
       ) : null}
       <span className="block">
-        Read with {keys.length} viewing {keys.length === 1 ? "key" : "keys"}. The public explorer shows none of this.
+        Read with <span className="font-type">{keys.length}</span> viewing {keys.length === 1 ? "key" : "keys"}. The
+        public explorer shows none of this.
       </span>
     </>
   );
@@ -120,7 +124,7 @@ function ScanMeta() {
   return (
     <>
       {read}
-      <span className="num mt-0.5 block text-[0.8125rem]" data-testid="books-scan-meta">
+      <span className="mt-1 block font-type text-[0.8125rem]" data-testid="books-scan-meta">
         Zcash {networkLabel(r.network).toLowerCase()},{" "}
         {from
           ? `scanned from block ${formatHeight(from)} to ${formatHeight(r.scanned_to_height)} at ${at}`
@@ -177,7 +181,7 @@ export function PeriodMenu() {
             aria-label={`Period: ${period ? shortRange(period) : "choosing"}`}
           >
             <CalendarDays aria-hidden="true" />
-            <span className="num">{period ? shortRange(period) : "Finding the latest run"}</span>
+            <span>{period ? shortRange(period) : "Finding the latest run"}</span>
             <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
@@ -187,7 +191,7 @@ export function PeriodMenu() {
             <DropdownMenuItem onSelect={() => setPeriod(latestRun.period)}>
               <span className="grid flex-1">
                 <span>Latest run, {formatPeriodLabel(latestRun.label)} payroll</span>
-                <span className="num text-[0.8125rem] text-muted-foreground">{shortRange(latestRun.period)}</span>
+                <span className="font-type text-[0.8125rem] text-muted-foreground">{shortRange(latestRun.period)}</span>
               </span>
               {same(period, latestRun.period) ? <Check aria-hidden="true" /> : null}
             </DropdownMenuItem>
@@ -196,7 +200,7 @@ export function PeriodMenu() {
             <DropdownMenuItem key={p.id} onSelect={() => setPeriod(p.period)}>
               <span className="grid flex-1">
                 <span>{p.label}</span>
-                <span className="num text-[0.8125rem] text-muted-foreground">{shortRange(p.period)}</span>
+                <span className="font-type text-[0.8125rem] text-muted-foreground">{shortRange(p.period)}</span>
               </span>
               {same(period, p.period) ? <Check aria-hidden="true" /> : null}
             </DropdownMenuItem>
@@ -251,9 +255,7 @@ function CustomRangeDialog({
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">
-              <Label htmlFor="books-from" className="font-normal">
-                From
-              </Label>
+              <Label htmlFor="books-from">From</Label>
               <Input
                 id="books-from"
                 type="date"
@@ -263,9 +265,7 @@ function CustomRangeDialog({
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="books-to" className="font-normal">
-                To
-              </Label>
+              <Label htmlFor="books-to">To</Label>
               <Input
                 id="books-to"
                 type="date"
@@ -316,21 +316,21 @@ export function ScanProgress() {
     <div
       role="status"
       aria-live="polite"
-      className="mt-2 grid gap-4 rounded-xl border bg-card px-5 py-6 sm:px-6"
+      className="mt-2 grid gap-4 border-y-2 border-foreground px-1 py-5"
       data-testid="books-scanning"
     >
       <div className="flex items-start gap-3">
         <RefreshCw
-          className="mt-1 size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none"
+          className="mt-1 size-4 shrink-0 animate-spin text-foreground motion-reduce:animate-none"
           aria-hidden="true"
         />
         <div className="grid gap-1">
-          <p className="text-[1.0625rem] text-foreground">{title}</p>
+          <p className="font-type text-[1rem] font-bold text-foreground">{title}</p>
           <p className="text-[0.8125rem] text-muted-foreground">
             The first scan of a key set takes longest while the service builds a view-only wallet for it; after that
             only new blocks are read.
           </p>
-          <p className="num text-[0.8125rem] text-muted-foreground">
+          <p className="font-type text-[0.8125rem] text-muted-foreground">
             {period ? `${shortRange(period)}, ` : ""}
             {health
               ? `reading ${scan.birthday ? `from block ${formatHeight(scan.birthday)} ` : ""}up to block ${formatHeight(health.chain_tip)}, `
@@ -339,10 +339,11 @@ export function ScanProgress() {
           </p>
         </div>
       </div>
-      <div className="h-1 overflow-hidden rounded-full bg-chip" aria-hidden="true">
-        <div className="h-full w-1/3 animate-[books-sweep_1.6s_ease-in-out_infinite] rounded-full bg-muted-foreground/45 motion-reduce:animate-none" />
+      {/* The print head running across the line: an ink block on a ruled track. */}
+      <div className="h-2 overflow-hidden border border-foreground" aria-hidden="true">
+        <div className="h-full w-1/4 animate-[books-sweep_1.6s_steps(8)_infinite] bg-foreground motion-reduce:animate-none" />
       </div>
-      <style>{`@keyframes books-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}`}</style>
+      <style>{`@keyframes books-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(400%)}}`}</style>
     </div>
   );
 }
@@ -357,14 +358,11 @@ export function ScanError() {
   const lwd = e.code === "lightwalletd_unreachable";
   const keyProblem = KEY_ERRORS.has(e.code);
   return (
-    <div
-      role="alert"
-      className="mt-2 grid gap-3 rounded-xl border border-destructive/30 bg-danger-bg px-5 py-5 sm:px-6"
-    >
+    <div role="alert" className="mt-2 grid gap-3 border-2 border-destructive px-5 py-5 sm:px-6">
       <div className="flex items-start gap-3">
         <TriangleAlert className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden="true" />
         <div className="grid gap-1">
-          <p className="text-[1.0625rem] text-foreground">
+          <p className="font-type text-[1rem] font-bold text-foreground">
             {lwd ? "The Zcash node did not answer, twice" : "The books could not be loaded"}
           </p>
           <p className="text-[0.8125rem] text-strong">
@@ -387,7 +385,7 @@ export function ScanError() {
         )}
         <details className="text-[0.8125rem] text-muted-foreground">
           <summary className="cursor-pointer">Details</summary>
-          <p className="mt-1 font-mono">
+          <p className="mt-1 font-type">
             {e.code}
             {e.status ? `, HTTP ${e.status}` : ""}
           </p>

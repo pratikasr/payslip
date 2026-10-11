@@ -6,7 +6,6 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Check, Download, LoaderCircle, RotateCw } from "lucide-react";
 import { Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
-import { Tag } from "@/components/ds/tag";
 import {
   ChainFacts,
   PaperView,
@@ -20,8 +19,10 @@ import {
 } from "@/components/ds/two-views";
 import { TYPE } from "@/components/ds/type";
 import { useDocumentTitle } from "@/components/portal/document-title";
+import { MarkStamp, StatusStamp } from "@/components/portal/paper-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, UNREACHABLE_CODE, api, toDisplayError, type VerifiedProof } from "@/lib/api";
 import { companyMark, companyName } from "@/lib/company";
@@ -35,9 +36,13 @@ const QrCode = dynamic(() => import("@/components/app/qr-code"), { ssr: false })
 /** The two views sit side by side from 1024px; this page has no sidebar. */
 const SPLIT = "lg" as const;
 
-/** A4 paper, and the dark theme's surfaces back to paper colours when printing. */
+/**
+ * A4 paper, the dark theme's surfaces back to paper colours, and stamps in plain ink when printing
+ * (the dark theme's screen blend would print them white on white).
+ */
 const PRINT_CSS = `@media print {
   @page { size: A4; margin: 16mm 15mm; }
+  .stamped, [data-stamp] { mix-blend-mode: normal !important; }
   .dark {
     --strong: #222222; --raised: #ffffff; --chip: #eeeeee; --hairline: #cccccc; --card-foreground: #000000;
   }
@@ -221,7 +226,7 @@ export function PublicPayslip() {
 
   let body: ReactNode;
   if (token === null) {
-    body = <Skeleton className="h-64 w-full" />;
+    body = <Skeleton className="h-64 w-full rounded-none" />;
   } else if (!token) {
     body = (
       <>
@@ -251,9 +256,14 @@ export function PublicPayslip() {
     const plain = problem ? { ...problem, retry: false } : explain(error as ApiError);
     body = (
       <>
-        <Title>We could not check this payslip</Title>
-        <div role="alert" className="rounded-[10px] bg-danger-bg px-4 py-3.5">
-          <p className="text-[0.9375rem] text-foreground">{plain.title}</p>
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+          <h1 className={cn(TYPE.title, "min-w-0 flex-1 basis-[14rem] text-balance")}>
+            We could not check this payslip
+          </h1>
+          <MarkStamp text={stampWord(problem ? "key" : (error as ApiError).code)} className="mt-1 mr-2" />
+        </div>
+        <div role="alert" className="border-2 border-destructive px-4 py-3.5">
+          <p className="font-type text-[0.9375rem] font-bold text-foreground">{plain.title}</p>
           <p className="mt-1 text-[0.8125rem] text-muted-foreground">{plain.body}</p>
         </div>
         {plain.retry ? (
@@ -268,7 +278,7 @@ export function PublicPayslip() {
             {loading ? "Checking" : "Try again"}
           </Button>
         ) : null}
-        <div className="mt-8 border-t border-hairline pt-6" data-print="hide">
+        <div className="mt-8 border-t border-dotted border-tear pt-6" data-print="hide">
           <PasteForm draft={draft} setDraft={setDraft} onSubmit={open} label="Check a different link" />
         </div>
       </>
@@ -277,11 +287,14 @@ export function PublicPayslip() {
     body = (
       <>
         <Title>Checking this payslip</Title>
-        <p role="status" className="flex items-start gap-2.5 text-[0.9375rem] text-muted-foreground">
-          <LoaderCircle className="mt-1 size-4 shrink-0 animate-spin text-foreground" aria-hidden="true" />
+        <p role="status" className="flex items-start gap-2.5 font-type text-[0.875rem] text-muted-foreground">
+          <LoaderCircle
+            className="mt-0.5 size-4 shrink-0 animate-spin text-foreground motion-reduce:animate-none"
+            aria-hidden="true"
+          />
           Fetching the transaction from the Zcash chain and checking the proof against it
         </p>
-        <Skeleton className="mt-6 h-[260px] w-full rounded-lg" />
+        <Skeleton className="mt-6 h-[260px] w-full rounded-none border border-bar-line bg-transparent" />
       </>
     );
   }
@@ -292,11 +305,14 @@ export function PublicPayslip() {
       <style>{PRINT_CSS}</style>
       <div className={cn("paper feed-edges", proof ? styles.wide : styles.card)}>
         {/* The masthead names the issuer and the company it was issued for, on screen and on paper. */}
-        <p className="mb-5 flex items-start gap-2 text-[0.8125rem] text-muted-foreground" data-testid="verify-issuer">
+        <p
+          className="mb-6 flex items-start gap-2 border-b-2 border-foreground pb-3 text-[0.8125rem] text-muted-foreground"
+          data-testid="verify-issuer"
+        >
           <Mark className="mt-px size-5 shrink-0 text-foreground" />
           <span className="text-pretty">
-            Payment proof issued through <span className="text-foreground">Payslip</span> for{" "}
-            <span className="font-display font-semibold text-foreground">{companyName()}</span>
+            Payment proof issued through <span className="font-type font-bold text-foreground">Payslip</span> for{" "}
+            <span className="font-type font-bold text-foreground">{companyName()}</span>
           </span>
         </p>
         {body}
@@ -307,15 +323,15 @@ export function PublicPayslip() {
         ) : (
           <p>Payslip is private payroll on Zcash.</p>
         )}
-        <p data-print="hide">
-          <Link href="/" className="rounded-sm text-link underline underline-offset-4">
+        <p data-print="hide" className="font-type">
+          <Link href="/" className="text-link underline underline-offset-4">
             About Payslip
           </Link>
           {token ? (
             <>
               {" "}
               or{" "}
-              <button type="button" onClick={reset} className="rounded-sm text-link underline underline-offset-4">
+              <button type="button" onClick={reset} className="text-link underline underline-offset-4">
                 check another payslip
               </button>
             </>
@@ -351,9 +367,7 @@ function PasteForm({
       }}
       className="space-y-2"
     >
-      <label htmlFor="proof-input" className="block text-[0.9375rem]">
-        {label}
-      </label>
+      <Label htmlFor="proof-input">{label}</Label>
       <Input
         id="proof-input"
         value={draft}
@@ -361,11 +375,12 @@ function PasteForm({
         autoComplete="off"
         spellCheck={false}
         placeholder="pp1…"
-        className="h-10 font-mono"
+        className="h-10"
         aria-describedby="proof-input-help"
       />
       <p id="proof-input-help" className="text-[0.8125rem] text-muted-foreground">
-        It starts with pp1, or is a link ending in #pp1…
+        It starts with <span className="font-type">pp1</span>, or is a link ending in{" "}
+        <span className="font-type">#pp1…</span>
       </p>
       <Button
         type="submit"
@@ -426,7 +441,7 @@ function ProofView({
       <Title>{title}</Title>
       {mined ? (
         <p
-          className="-mt-3 mb-7 inline-flex items-center gap-1.5 text-[0.9375rem] text-success"
+          className="-mt-3 mb-7 inline-flex items-center gap-2 font-type text-[0.9375rem] font-bold text-success"
           data-testid="verify-status"
         >
           <Check className="size-4" aria-hidden="true" />
@@ -434,7 +449,7 @@ function ProofView({
         </p>
       ) : (
         <p
-          className="-mt-3 mb-7 inline-flex items-center gap-1.5 text-[0.9375rem] text-warning"
+          className="-mt-3 mb-7 inline-flex items-center gap-2 font-type text-[0.9375rem] font-bold text-warning"
           data-testid="verify-status"
         >
           <LoaderCircle className="size-4" aria-hidden="true" />
@@ -451,14 +466,16 @@ function ProofView({
         rows={8}
         split={SPLIT}
         columns="aside"
-        caption={`${title} in two views: what the world sees on the Zcash chain, and what this proof shows.`}
+        className="print:[&_[data-tear]]:hidden"
+        caption={`${title} in two copies: the pay advice this proof opens, and the carbon copy the Zcash chain shows the world.`}
       >
-        <VaultView labelledBy="world-title" split={SPLIT}>
+        {/* On paper the carbon is the second sheet: the checked original prints alone on the first. */}
+        <VaultView labelledBy="world-title" split={SPLIT} className="print:break-before-page">
           <ViewTitle id="world-title" title="What the world sees">
             {mined ? (
               <>
-                A shielded transaction in block <span className="num">{formatHeight(proof.height)}</span>: no amount, no
-                names.
+                The carbon copy: a shielded transaction in block{" "}
+                <span className="font-type">{formatHeight(proof.height)}</span>, no amount, no names.
               </>
             ) : (
               "A shielded transaction waiting for a block: no amount, no names."
@@ -484,13 +501,13 @@ function ProofView({
           <ViewField label="Memo">
             <Redacted className="w-[min(100%,12em)] text-[0.9375rem]" />
           </ViewField>
-          <p className="border-t border-mist pt-5 text-[0.9375rem]" data-print="hide">
+          <p className="border-t border-mist pt-5 font-type text-[0.875rem]" data-print="hide">
             <a
               href={proof.explorer_url}
               target="_blank"
               rel="noreferrer"
               data-txid={proof.txid}
-              className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
+              className="text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
             >
               {host ? `Open it on ${host}` : "Open it on a public block explorer"}
               <span className="sr-only"> (opens in a new tab)</span>
@@ -498,15 +515,27 @@ function ProofView({
           </p>
         </VaultView>
 
-        <PaperView labelledBy="shows" split={SPLIT} className="print:rounded-none print:border-0 print:px-0 print:pb-0">
-          <div className="pb-5">
-            <h2 id="shows" className="text-[0.9375rem] font-medium">
-              What this proof shows
-            </h2>
-            <p className="mt-1 text-[0.8125rem] leading-[1.45] text-ash">
-              {checkedAt ? `Checked ${formatDateTime(checkedAt)} against the Zcash chain. ` : ""}
-              {proof.proves ?? "Nothing else about the payer or the contractor is revealed."}
-            </p>
+        <PaperView labelledBy="shows" split={SPLIT} className="print:break-inside-avoid">
+          {/* The original, stamped by the check: ink when it is in a block, soft ink while it waits. */}
+          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3 pb-5">
+            <div className="min-w-0 flex-1 basis-[15rem]">
+              <h2 id="shows" className="inked font-display text-[1.25rem] leading-[1.15] font-bold">
+                What this proof shows
+              </h2>
+              <p className="mt-1.5 text-[0.8125rem] leading-[1.45] text-ash">
+                {checkedAt ? (
+                  <>
+                    Checked <span className="font-type">{formatDateTime(checkedAt)}</span> against the Zcash chain.{" "}
+                  </>
+                ) : null}
+                {proof.proves ?? "Nothing else about the payer or the contractor is revealed."}
+              </p>
+            </div>
+            <MarkStamp
+              text={mined ? "Verified on Zcash" : "Not yet mined"}
+              tone={mined ? "ink" : "soft"}
+              className="mt-1 mr-1 shrink-0"
+            />
           </div>
           <div className="flex items-center pb-5">
             <Thread side="paper" split={SPLIT} />
@@ -521,7 +550,7 @@ function ProofView({
               {payLine ? <Usd cents={payLine.usd_basis_cents} /> : <Zec zat={proof.amount_zat} />}
             </span>
             {payLine ? (
-              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] text-ash">
+              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-type text-[0.8125rem] text-ash">
                 <Zec zat={proof.amount_zat} />
                 {testnet ? (
                   <span title="Testnet coins have no market price; testnet payrolls convert dollars at a fixed demo rate.">
@@ -532,7 +561,7 @@ function ProofView({
             ) : null}
           </ViewField>
           <ViewField label="Sender">
-            <span className="text-[0.9375rem]">Not shown</span>
+            <span className="font-type text-[0.9375rem]">Not shown</span>
             <span className="block text-[0.8125rem] text-ash">A payment proof does not say who sent it.</span>
           </ViewField>
           <ViewField label="Recipient">
@@ -551,7 +580,7 @@ function ProofView({
           <ViewField label="Memo">
             {payLine ? (
               <>
-                <span className="text-[0.9375rem]">
+                <span className="font-type text-[0.9375rem]">
                   {formatPeriodLabel(payLine.period)} pay, invoice{" "}
                   <span className="whitespace-nowrap">{payLine.invoice_ref}</span>
                 </span>
@@ -560,18 +589,21 @@ function ProofView({
                 </span>
               </>
             ) : memo.kind === "text" ? (
-              <span className="text-[0.9375rem] break-words">{memo.text}</span>
+              <span className="font-type text-[0.9375rem] break-words">{memo.text}</span>
             ) : (
-              <span className="text-[0.9375rem] text-ash">No memo</span>
+              <span className="font-type text-[0.9375rem] text-ash">No memo</span>
             )}
           </ViewField>
           <div className="border-t border-mist pt-5">
             {note ? (
-              <p className="mb-5 rounded-lg border px-4 py-3 text-[0.9375rem]" data-testid="verify-note">
-                <span className="block text-[0.8125rem] text-muted-foreground">
+              <p
+                className="mb-5 border border-dashed border-foreground px-4 py-3 text-[0.9375rem]"
+                data-testid="verify-note"
+              >
+                <span className="form-label block text-[0.75rem] text-muted-foreground">
                   A note from the person who shared this, not checked by Payslip
                 </span>
-                <span className="break-words text-foreground">{note}</span>
+                <span className="mt-1 block font-type break-words text-foreground">{note}</span>
               </p>
             ) : null}
 
@@ -580,8 +612,12 @@ function ProofView({
               Download payslip
             </Button>
 
-            <section aria-labelledby="check-address" className="mt-8 border-t border-mist pt-6" data-print="hide">
-              <h2 id="check-address" className="text-[0.9375rem] font-medium">
+            <section
+              aria-labelledby="check-address"
+              className="mt-8 border-t border-dotted border-tear pt-6"
+              data-print="hide"
+            >
+              <h2 id="check-address" className="inked font-display text-[1.125rem] leading-tight font-bold">
                 Check the address
               </h2>
               <p className="mt-1 text-[0.8125rem] text-muted-foreground">
@@ -594,10 +630,11 @@ function ProofView({
                 }}
                 className="mt-4 space-y-2"
               >
-                <label htmlFor="expected-address" className="block text-[0.9375rem]">
-                  Check the address it was paid to <span className="text-muted-foreground">(optional)</span>
-                </label>
-                <div className="flex flex-col gap-2 sm:flex-row">
+                <Label htmlFor="expected-address" className="block leading-snug">
+                  Check the address it was paid to{" "}
+                  <span className="font-normal tracking-normal text-muted-foreground normal-case">(optional)</span>
+                </Label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                   <Input
                     id="expected-address"
                     value={address}
@@ -605,7 +642,7 @@ function ProofView({
                     autoComplete="off"
                     spellCheck={false}
                     placeholder={testnet ? "utest1…" : "u1…"}
-                    className="h-10 font-mono"
+                    className="h-10"
                     aria-describedby="expected-address-result"
                   />
                   <Button type="submit" variant="secondary" size="lg" disabled={!address.trim() || checking}>
@@ -633,8 +670,8 @@ function ProofView({
               </form>
             </section>
 
-            <section aria-labelledby="not-proved" className="mt-8 border-t border-mist pt-6">
-              <h2 id="not-proved" className="text-[0.9375rem] font-medium">
+            <section aria-labelledby="not-proved" className="mt-8 border-t border-dotted border-tear pt-6">
+              <h2 id="not-proved" className="inked font-display text-[1.125rem] leading-tight font-bold">
                 What it does not prove
               </h2>
               <p className="mt-1 text-[0.8125rem] text-muted-foreground">
@@ -663,6 +700,7 @@ function ProofView({
   );
 }
 
+/** The answer to the address check, stamped on the form: ink for a match, the stamp's red for none. */
 function AddressResult({
   tone,
   tag,
@@ -673,11 +711,30 @@ function AddressResult({
   children: ReactNode;
 }) {
   return (
-    <div className="mt-1 space-y-1.5" role="status">
-      <Tag tone={tone}>{tag}</Tag>
+    <div className="mt-2 space-y-2" role="status">
+      <StatusStamp tone={tone === "success" ? "ink" : tone === "danger" ? "red" : "soft"} className="text-[0.75rem]">
+        {tag}
+      </StatusStamp>
       <p className="text-[0.8125rem] text-muted-foreground">{children}</p>
     </div>
   );
+}
+
+/** The stamp's word for a proof that could not be checked. */
+function stampWord(code: string): string {
+  switch (code) {
+    case "key":
+      return "Not a proof";
+    case "tx_not_found":
+      return "Not found";
+    case "proof_mismatch":
+    case "invalid_proof":
+      return "Not valid";
+    case "wrong_network":
+      return "Wrong network";
+    default:
+      return "Not checked";
+  }
 }
 
 /** The explorer's host name from a transaction link, for "Open it on testnet.zecblock.com". */

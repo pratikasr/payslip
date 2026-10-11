@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import { Fiat, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { ErrorState } from "@/components/app/states";
-import { Card } from "@/components/ds/card";
 import { PageTitle, SectionHeader } from "@/components/ds/page";
+import { DOT, FormBox, LEDGER, TypedOption } from "@/components/portal/paper-parts";
 import {
   CURRENCIES,
   csvName,
@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
   api,
@@ -155,74 +156,92 @@ export function TaxDocuments() {
         ) : null}
       </div>
 
-      <div className="mb-6 flex flex-wrap items-end gap-x-4 gap-y-3" data-print="hide">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Period">
-          {PRESETS.map((p) => (
-            <Chip
-              key={p.id}
-              active={preset === p.id}
-              onClick={() => {
-                setPreset(p.id);
-                setRange(p.range());
-              }}
-            >
-              {p.label}
-            </Chip>
-          ))}
-          <Chip active={preset === "custom"} onClick={() => setPreset("custom")}>
-            Custom
-          </Chip>
-        </div>
-        <div className="flex items-end gap-2 sm:ml-auto">
-          {showCurrency ? (
-            <div className="space-y-1">
-              <label htmlFor="tax-currency" className="block text-[0.8125rem] text-muted-foreground">
-                Value at receipt in
-              </label>
-              <NativeSelect
-                id="tax-currency"
-                value={currency.toUpperCase()}
-                onChange={(e) => setCurrency(e.target.value)}
-                className="w-28"
-              >
-                {CURRENCIES.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-          ) : null}
-          <DownloadMenu disabled={!current} onCsv={download} onPrint={print} />
-        </div>
-      </div>
-
-      {preset === "custom" ? (
-        <div className="-mt-2 mb-6 flex flex-wrap items-end gap-3" data-print="hide">
-          <DateField
-            id="tax-from"
-            label="From"
-            value={range.from}
-            onChange={(from) => setRange((r) => ({ ...r, from }))}
-            invalid={!valid}
-          />
-          <DateField
-            id="tax-to"
-            label="To"
-            value={range.to}
-            onChange={(to) => setRange((r) => ({ ...r, to }))}
-            invalid={!valid}
-          />
-        </div>
-      ) : null}
-      <p
-        className={cn("mb-5 text-[0.8125rem]", valid ? "text-muted-foreground" : "text-destructive")}
+      <FormBox
+        as="div"
+        title="Statement request"
+        titleId="tax-request-title"
+        label="Payments mined in the period, UTC"
+        className="mb-8"
         data-print="hide"
       >
-        {valid
-          ? `${formatRange(range.from, range.to)}, in UTC. A payment counts on the day its block was mined.`
-          : "The period must start on or before the day it ends, and cover at most a year."}
-      </p>
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+          <fieldset className="min-w-0">
+            <legend className={cn(TYPE.label, "mb-3")}>Period</legend>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2.5 sm:flex sm:flex-wrap">
+              {PRESETS.map((p) => (
+                <TypedOption
+                  key={p.id}
+                  name="tax-period"
+                  checked={preset === p.id}
+                  onChange={() => {
+                    setPreset(p.id);
+                    setRange(p.range());
+                  }}
+                >
+                  {p.label}
+                </TypedOption>
+              ))}
+              <TypedOption name="tax-period" checked={preset === "custom"} onChange={() => setPreset("custom")}>
+                Custom
+              </TypedOption>
+            </div>
+          </fieldset>
+          <div className="flex items-end gap-3 sm:ml-auto">
+            {showCurrency ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="tax-currency">Value at receipt in</Label>
+                <NativeSelect
+                  id="tax-currency"
+                  value={currency.toUpperCase()}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="w-28"
+                >
+                  {CURRENCIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : null}
+            <DownloadMenu disabled={!current} onCsv={download} onPrint={print} />
+          </div>
+        </div>
+
+        {preset === "custom" ? (
+          <div className="mt-5 flex flex-wrap items-end gap-5">
+            <DateField
+              id="tax-from"
+              label="From"
+              value={range.from}
+              onChange={(from) => setRange((r) => ({ ...r, from }))}
+              invalid={!valid}
+            />
+            <DateField
+              id="tax-to"
+              label="To"
+              value={range.to}
+              onChange={(to) => setRange((r) => ({ ...r, to }))}
+              invalid={!valid}
+            />
+          </div>
+        ) : null}
+        <p
+          className={cn(
+            "mt-5 border-t border-dotted border-tear pt-3 text-[0.8125rem]",
+            valid ? "text-muted-foreground" : "text-destructive",
+          )}
+        >
+          {valid ? (
+            <>
+              <span className="font-type text-foreground">{formatRange(range.from, range.to)}</span>, in UTC. A payment
+              counts on the day its block was mined.
+            </>
+          ) : (
+            "The period must start on or before the day it ends, and cover at most a year."
+          )}
+        </p>
+      </FormBox>
 
       {state.error ? (
         <ErrorState error={state.error} onRetry={() => setAttempt((n) => n + 1)} className="mb-5" />
@@ -248,22 +267,6 @@ function withinAYear(from: string, to: string): boolean {
   return (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000 <= 366;
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-8 items-center rounded-lg border px-3 text-[0.8125rem] text-strong transition-colors hover:bg-muted",
-        active && "border-transparent bg-chip text-foreground hover:bg-chip",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 function DateField({
   id,
   label,
@@ -278,10 +281,8 @@ function DateField({
   invalid: boolean;
 }) {
   return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="block text-[0.8125rem] text-muted-foreground">
-        {label}
-      </label>
+    <div className="space-y-1.5">
+      <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
         type="date"
@@ -349,12 +350,10 @@ function StatementBody({
   const testnet = s.network === "testnet";
   return (
     <>
-      <Card className="mb-8 print:mt-5" aria-label="Totals" data-print="plain">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-          <Figure label="Payments">
-            <span className="num">{s.totals.count}</span>
-          </Figure>
-          <Figure label="Agreed in USD">
+      <section className="mb-8 border-y-2 border-foreground py-4 print:mt-5" aria-label="Totals">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
+          <Figure label="Payments">{s.totals.count}</Figure>
+          <Figure label="Agreed in USD" dot>
             <Usd cents={s.totals.usd_cents} />
           </Figure>
           <Figure label="Received">
@@ -366,15 +365,14 @@ function StatementBody({
               <Fiat cents={market.total_cents ?? 0} currency={market.currency} />
             </Figure>
           ) : (
-            <Figure label="Scanned to block">
-              <span className="num">{formatHeight(s.scanned_to_height)}</span>
-            </Figure>
+            <Figure label="Scanned to block">{formatHeight(s.scanned_to_height)}</Figure>
           )}
         </dl>
         {market?.unpriced_lines ? (
           <p className="mt-3 text-[0.8125rem] text-muted-foreground">
-            {market.unpriced_lines} {market.unpriced_lines === 1 ? "payment has" : "payments have"} no price point near
-            its block time, so {market.unpriced_lines === 1 ? "it is" : "they are"} not in this total.
+            <span className="font-type">{market.unpriced_lines}</span>{" "}
+            {market.unpriced_lines === 1 ? "payment has" : "payments have"} no price point near its block time, so{" "}
+            {market.unpriced_lines === 1 ? "it is" : "they are"} not in this total.
           </p>
         ) : null}
         {currency && s.market && !s.market.available ? (
@@ -382,10 +380,10 @@ function StatementBody({
             {s.market.error ?? "Market prices are unavailable right now."}
           </p>
         ) : null}
-      </Card>
+      </section>
 
       {lines.length === 0 ? (
-        <p className="border-y border-hairline py-6 text-[0.9375rem] text-muted-foreground">
+        <p className="border-b-2 border-foreground pb-6 text-[0.9375rem] text-muted-foreground">
           No payments in this period. A September invoice paid in October counts in October.
         </p>
       ) : (
@@ -408,28 +406,28 @@ function StatementBody({
           <p className="mb-3 text-[0.8125rem] text-muted-foreground">
             Transactions on this key without a Payslip memo. Listed so nothing is hidden; not in the totals.
           </p>
-          <table className="w-full text-[0.9375rem]">
+          <table className={LEDGER.table}>
             <thead>
-              <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-                <th scope="col" className="py-2.5 pr-3 font-normal">
+              <tr className={LEDGER.headRow}>
+                <th scope="col" className={LEDGER.th}>
                   Date
                 </th>
-                <th scope="col" className="py-2.5 pr-3 font-normal">
+                <th scope="col" className={LEDGER.th}>
                   Memo
                 </th>
-                <th scope="col" className="py-2.5 text-right font-normal">
+                <th scope="col" className={cn(LEDGER.th, "text-right")}>
                   Amount
                 </th>
               </tr>
             </thead>
             <tbody>
               {s.unlabelled.map((u) => (
-                <tr key={`${u.txid}-${u.direction}-${u.amount_zat}`} className="h-[50px] border-b border-hairline">
-                  <td className="pr-3 whitespace-nowrap">{monthDay(u.date)}</td>
-                  <td className="max-w-0 truncate pr-3 text-muted-foreground">
+                <tr key={`${u.txid}-${u.direction}-${u.amount_zat}`} className={LEDGER.row}>
+                  <td className={cn(LEDGER.td, "whitespace-nowrap")}>{monthDay(u.date)}</td>
+                  <td className={cn(LEDGER.td, "max-w-0 truncate text-muted-foreground")}>
                     {u.memo_text ?? (u.reason === "no_memo" ? "No memo" : "A memo Payslip does not read")}
                   </td>
-                  <td className="text-right">
+                  <td className={cn(LEDGER.td, "text-right")}>
                     {u.direction === "out" ? "Sent " : "Received "}
                     <Zec zat={u.amount_zat} />
                   </td>
@@ -443,11 +441,14 @@ function StatementBody({
   );
 }
 
-function Figure({ label, children }: { label: string; children: React.ReactNode }) {
+/** A figure of the statement: its label in spaced caps, the value typed (the dollar total in dot matrix). */
+function Figure({ label, children, dot }: { label: string; children: React.ReactNode; dot?: boolean }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
-      <dd className={cn(TYPE.heading, "mt-1")}>{children}</dd>
+      <dt className={TYPE.label}>{label}</dt>
+      <dd className={cn("mt-2", dot ? cn(DOT, "text-[1.625rem]") : "font-type text-[1.0625rem] font-bold")}>
+        {children}
+      </dd>
     </div>
   );
 }
@@ -466,42 +467,44 @@ function LinesTable({
 }) {
   return (
     <div className="overflow-x-auto" data-print-scroll="">
-      <table className="w-full text-[0.9375rem]">
+      <table className={LEDGER.table}>
         <thead>
-          <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-            <th scope="col" className="py-2.5 pr-3 font-normal">
+          <tr className={LEDGER.headRow}>
+            <th scope="col" className={LEDGER.th}>
               Date
             </th>
-            <th scope="col" className="py-2.5 pr-3 font-normal">
+            <th scope="col" className={LEDGER.th}>
               Payslip
             </th>
-            <th scope="col" className="hidden py-2.5 pr-3 font-normal md:table-cell print:table-cell">
+            <th scope="col" className={cn(LEDGER.th, "hidden md:table-cell print:table-cell")}>
               Transaction
             </th>
             {currency ? (
-              <th scope="col" className="hidden py-2.5 pr-3 text-right font-normal sm:table-cell print:table-cell">
+              <th scope="col" className={cn(LEDGER.th, "hidden text-right sm:table-cell print:table-cell")}>
                 At receipt
               </th>
             ) : null}
-            <th scope="col" className="py-2.5 text-right font-normal">
+            <th scope="col" className={cn(LEDGER.th, "text-right")}>
               Amount
             </th>
           </tr>
         </thead>
         <tbody>
           {lines.map((l) => (
-            <tr key={`${l.txid}-${l.amount_zat}`} className="h-[54px] border-b border-hairline align-middle">
-              <td className="pr-3 whitespace-nowrap">{pending ? "Pending" : monthDay(l.block_time ?? l.date)}</td>
-              <td className="max-w-0 pr-3 sm:max-w-none">
-                <Link href={payslipHref(l, range)} className="block truncate rounded-sm hover:underline">
+            <tr key={`${l.txid}-${l.amount_zat}`} className={LEDGER.row}>
+              <td className={cn(LEDGER.td, "whitespace-nowrap")}>
+                {pending ? "Pending" : monthDay(l.block_time ?? l.date)}
+              </td>
+              <td className={LEDGER.td}>
+                <Link href={payslipHref(l, range)} className="block uppercase underline-offset-4 hover:underline">
                   {formatPeriodLabel(l.period)}
                 </Link>
-                <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                <span className="block text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">
                   {l.invoice_ref}
                   {l.settlement === "converted" ? ", converted to USDC" : ""}
                 </span>
               </td>
-              <td className="hidden pr-3 md:table-cell print:table-cell">
+              <td className={cn(LEDGER.td, "hidden md:table-cell print:table-cell")}>
                 <code className="font-mono text-[0.8125rem] text-muted-foreground" title={l.txid}>
                   <span data-print="hide">{truncateMiddle(l.txid, 8, 6)}</span>
                   <span data-print="only" className="break-all">
@@ -509,13 +512,11 @@ function LinesTable({
                   </span>
                 </code>
                 {l.height !== null ? (
-                  <span className="block text-[0.8125rem] text-muted-foreground">
-                    Block <span className="num">{formatHeight(l.height)}</span>
-                  </span>
+                  <span className="block text-[0.8125rem] text-muted-foreground">Block {formatHeight(l.height)}</span>
                 ) : null}
               </td>
               {currency ? (
-                <td className="hidden pr-3 text-right sm:table-cell print:table-cell">
+                <td className={cn(LEDGER.td, "hidden text-right sm:table-cell print:table-cell")}>
                   {l.market ? (
                     <Fiat cents={l.market.value_cents} currency={l.market.currency} />
                   ) : (
@@ -523,7 +524,7 @@ function LinesTable({
                   )}
                 </td>
               ) : null}
-              <td className="text-right">
+              <td className={cn(LEDGER.td, "text-right whitespace-nowrap")}>
                 <Usd cents={l.usd_basis_cents} />
                 <span className="block text-[0.8125rem] text-muted-foreground">
                   <Zec zat={l.amount_zat} short />

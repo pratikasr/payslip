@@ -28,7 +28,7 @@ export function PortalFrame({ children }: { children: ReactNode }) {
     <Initials name={name} />
   ) : (
     <span
-      className="grid size-[26px] shrink-0 place-items-center rounded-full bg-avatar text-strong"
+      className="grid size-[26px] shrink-0 place-items-center border border-foreground text-foreground"
       aria-hidden="true"
     >
       <KeyRound className="size-3.5" />
@@ -39,8 +39,8 @@ export function PortalFrame({ children }: { children: ReactNode }) {
       <SidebarBrand mark={mark} name={name ?? "Your payslips"} />
     ) : (
       <div className="flex items-center gap-2 pb-1" role="status" aria-label="Opening your payslips">
-        <Skeleton className="size-[26px] rounded-full" />
-        <Skeleton className="h-3.5 w-28" />
+        <Skeleton className="size-[26px] rounded-none" />
+        <Skeleton className="h-3.5 w-28 rounded-none" />
       </div>
     );
 
@@ -78,22 +78,24 @@ export function PortalFrame({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={() => lock()}
-            className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-left text-strong transition-colors hover:bg-muted hover:text-foreground"
+            className="flex w-full items-center gap-2.5 px-2 py-[7px] text-left text-strong transition-colors hover:bg-card/60 hover:text-foreground"
           >
             <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             Lock
           </button>
-          <p className="px-2 pt-0.5 pb-1 text-[0.8125rem] text-muted-foreground">Forgets your key in this tab.</p>
+          <p className="px-2 pt-0.5 pb-1 font-sans text-[0.8125rem] text-muted-foreground">
+            Forgets your key in this tab.
+          </p>
           <button
             type="button"
             onClick={() => void forget()}
             disabled={forgetting}
-            className="mt-1 flex w-full items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-left text-strong transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+            className="mt-1 flex w-full items-center gap-2.5 px-2 py-[7px] text-left text-strong transition-colors hover:bg-card/60 hover:text-foreground disabled:opacity-60"
           >
             <Eraser className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             {forgetting ? "Forgetting" : "Forget on the service"}
           </button>
-          <p className="px-2 pt-0.5 pb-1 text-[0.8125rem] text-muted-foreground">
+          <p className="px-2 pt-0.5 pb-1 font-sans text-[0.8125rem] text-muted-foreground">
             Deletes the service&apos;s read-only scan of your key, then locks.
           </p>
         </div>

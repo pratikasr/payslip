@@ -5,8 +5,10 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { Initials } from "@/components/ds/avatar";
+import { ShieldedMark } from "@/components/ds/status";
 import { Tag } from "@/components/ds/tag";
 import { FilterPill } from "@/components/books/filter-pill";
+import { DOT, LEDGER, StatusStamp } from "@/components/portal/paper-parts";
 import {
   accountKeyOf,
   ledgerOf,
@@ -97,7 +99,11 @@ export function LedgerView({ r }: { r: BooksResult }) {
 
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filters">
+      <div
+        className="grid grid-cols-2 items-end gap-x-6 gap-y-4 border-y-2 border-foreground py-4 sm:flex sm:flex-wrap"
+        role="group"
+        aria-label="Filters"
+      >
         <FilterPill
           label="Contractor"
           value={person}
@@ -138,8 +144,9 @@ export function LedgerView({ r }: { r: BooksResult }) {
         {filtered ? (
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
+            className="justify-self-start"
             onClick={() => {
               setPerson("all");
               setRun("all");
@@ -151,30 +158,32 @@ export function LedgerView({ r }: { r: BooksResult }) {
         ) : null}
       </div>
 
-      <dl className="flex flex-wrap gap-x-10 gap-y-3 border-b border-hairline pb-4" aria-label="Shown lines">
+      <dl className="flex flex-wrap items-end gap-x-10 gap-y-4" aria-label="Shown lines">
         <div>
-          <dt className="text-[0.8125rem] text-muted-foreground">Payments</dt>
-          <dd className={cn(TYPE.heading, "num")} data-testid="ledger-count">
+          <dt className={TYPE.label}>Payments</dt>
+          <dd className={cn(DOT, "mt-2 text-[1.5rem]")} data-testid="ledger-count">
             {formatCount(lines.length)}
           </dd>
         </div>
         <div>
-          <dt className="text-[0.8125rem] text-muted-foreground">Paid</dt>
-          <dd className={TYPE.heading}>
-            <Usd cents={total} />
-            <span className="ml-2 text-[0.8125rem] text-muted-foreground">
+          <dt className={TYPE.label}>Paid</dt>
+          <dd className="mt-2 flex flex-wrap items-baseline gap-x-3">
+            <span className={cn(DOT, "text-[1.5rem]")}>
+              <Usd cents={total} />
+            </span>
+            <span className="font-type text-[0.8125rem] text-muted-foreground">
               <Zec zat={totalZat} />
             </span>
           </dd>
         </div>
         <div>
-          <dt className="text-[0.8125rem] text-muted-foreground">Pending</dt>
-          <dd className={cn(TYPE.heading, "num")}>{formatCount(pending)}</dd>
+          <dt className={TYPE.label}>Pending</dt>
+          <dd className={cn(DOT, "mt-2 text-[1.5rem]")}>{formatCount(pending)}</dd>
         </div>
       </dl>
 
       {lines.length === 0 ? (
-        <p className="py-10 text-center text-[0.9375rem] text-muted-foreground">
+        <p className="border-y-2 border-foreground py-8 text-[0.9375rem] text-muted-foreground">
           {filtered ? "No payments match these filters." : "No payments in this period."}
         </p>
       ) : (
@@ -201,27 +210,24 @@ function StatusTags({ l }: { l: LedgerLine }) {
   return (
     <span className="inline-flex flex-wrap gap-1">
       {l.pending ? (
-        <Tag>Pending</Tag>
+        <StatusStamp tone="soft">Pending</StatusStamp>
       ) : l.settlement === "converted" ? null : (
-        <span title="Amount, sender and recipient hidden on chain">
-          <Tag tone="shielded">Shielded</Tag>
-        </span>
+        <ShieldedMark />
       )}
       {l.settlement === "converted" ? <Tag>Converted to USDC</Tag> : null}
     </span>
   );
 }
 
-const TH =
-  "h-10 px-2.5 pb-2 text-left align-bottom text-[0.8125rem] font-normal whitespace-nowrap text-muted-foreground";
-const TD = "px-2.5 py-3 align-top";
+const TH = LEDGER.th;
+const TD = "px-2.5 py-2.5 align-top";
 
 function LedgerTable({ groups }: { groups: Group[] }) {
   return (
     <div className="hidden overflow-x-auto xl:block" role="region" aria-label="Ledger" tabIndex={0}>
-      <table className="w-full min-w-[860px] border-collapse text-[0.9375rem]" data-testid="ledger-table">
+      <table className={cn(LEDGER.table, "min-w-[860px]")} data-testid="ledger-table">
         <thead>
-          <tr className="border-b border-hairline">
+          <tr className={LEDGER.headRow}>
             <th scope="col" className={TH}>
               Date
             </th>
@@ -245,20 +251,23 @@ function LedgerTable({ groups }: { groups: Group[] }) {
         <tbody>
           {groups.map((g) => (
             <Fragment key={g.runId}>
-              <tr className="border-b border-hairline bg-raised" data-testid="ledger-group">
-                <th scope="colgroup" colSpan={6} className="px-2.5 py-2 text-left text-[0.8125rem] font-normal">
-                  <span className="text-foreground">{formatPeriodLabel(g.period)} payroll</span>
-                  <span className="text-muted-foreground">
-                    , run <code className="font-mono">{g.runId.slice(0, 8)}</code>, {formatCount(g.lines.length)}{" "}
-                    {g.lines.length === 1 ? "payment" : "payments"},{" "}
+              <tr className="border-b border-foreground" data-group="" data-testid="ledger-group">
+                <th scope="colgroup" colSpan={6} className="px-2.5 pt-6 pb-2.5 text-left font-normal">
+                  <span className="inked block font-display text-[1.125rem] leading-tight font-bold normal-case">
+                    {formatPeriodLabel(g.period)} payroll
                   </span>
-                  <Usd cents={groupTotal(g)} className="text-foreground" />
+                  <span className="mt-1 block text-[0.8125rem] tracking-normal text-muted-foreground normal-case">
+                    Run {g.runId.slice(0, 8)}, {formatCount(g.lines.length)}{" "}
+                    {g.lines.length === 1 ? "payment" : "payments"},{" "}
+                    <Usd cents={groupTotal(g)} className="text-foreground" />
+                  </span>
                 </th>
               </tr>
               {g.lines.map((l, i) => (
                 <tr
                   key={`${l.txid}-${l.account ?? l.account_index}-${i}`}
-                  className="border-b border-hairline"
+                  className={cn(LEDGER.row, i % 2 === 0 && "bg-bar")}
+                  data-plain=""
                   data-testid="ledger-row"
                 >
                   <td className={cn(TD, "whitespace-nowrap")}>
@@ -295,7 +304,7 @@ function LedgerTable({ groups }: { groups: Group[] }) {
                   </td>
                   <td className={cn(TD, "whitespace-nowrap")}>
                     <Hash value={l.txid} label="transaction id" explorerUrl={l.explorer_url} head={6} tail={4} />
-                    <span className="num block text-[0.8125rem] text-muted-foreground">
+                    <span className="block text-[0.8125rem] text-muted-foreground">
                       {l.height ? `Block ${formatHeight(l.height)}` : "Not mined"}
                     </span>
                   </td>
@@ -314,25 +323,25 @@ function LedgerList({ groups }: { groups: Group[] }) {
     <div className="grid gap-6 xl:hidden">
       {groups.map((g) => (
         <section key={g.runId} aria-label={`${formatPeriodLabel(g.period)} payroll`}>
-          <h3 className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-hairline pb-2 text-[0.8125rem]">
-            <span>
-              <span className="text-foreground">{formatPeriodLabel(g.period)} payroll</span>
-              <span className="text-muted-foreground">
-                , {formatCount(g.lines.length)} {g.lines.length === 1 ? "payment" : "payments"}
-              </span>
+          <h2 className="flex flex-wrap items-baseline justify-between gap-x-3 border-b-2 border-foreground pb-2">
+            <span className="inked font-display text-[1.125rem] leading-tight font-bold">
+              {formatPeriodLabel(g.period)} payroll
             </span>
-            <Usd cents={groupTotal(g)} />
-          </h3>
-          <ul className="divide-y divide-hairline" aria-label="Ledger">
+            <span className="font-type text-[0.8125rem] text-muted-foreground">
+              {formatCount(g.lines.length)} {g.lines.length === 1 ? "payment" : "payments"},{" "}
+              <Usd cents={groupTotal(g)} className="text-foreground" />
+            </span>
+          </h2>
+          <ul className="green-bar" aria-label="Ledger">
             {g.lines.map((l, i) => (
               <li
                 key={`${l.txid}-${l.account ?? l.account_index}-${i}`}
-                className="grid grid-cols-[26px_minmax(0,1fr)_auto] gap-x-3 py-3"
+                className="grid grid-cols-[26px_minmax(0,1fr)_auto] gap-x-3 border-b border-bar-line px-1.5 py-3 font-type"
               >
                 <Initials name={l.label ?? payeeOf(l)} className="mt-0.5" />
                 <div className="min-w-0">
-                  <span className="block truncate text-[0.9375rem]">{payeeOf(l)}</span>
-                  <span className="num block text-[0.8125rem] text-muted-foreground">
+                  <span className="block truncate text-[0.9375rem] font-bold">{payeeOf(l)}</span>
+                  <span className="block text-[0.8125rem] text-muted-foreground">
                     {l.pending ? "Not mined" : formatDate(l.block_time ?? l.date)}
                     {l.invoice_ref ? `, ${l.invoice_ref}` : ""}
                   </span>
