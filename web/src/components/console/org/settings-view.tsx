@@ -100,14 +100,16 @@ export function SettingsView({ initial }: { initial?: Organisation }) {
           </Card>
           <Card aria-labelledby="preview-title" className="self-start">
             <CardHeader id="preview-title" title="How it looks" />
-            <div className="mt-4 flex items-center gap-2.5 rounded-lg bg-sidebar px-3 py-2.5">
+            <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-hairline bg-sidebar px-3 py-2.5">
               {logo.trim() ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logo.trim()} alt="" className="size-[22px] shrink-0 rounded-[5px] object-cover" />
               ) : (
                 <LogoMark className="size-[22px]" />
               )}
-              <span className="min-w-0 truncate font-[450]">{name.trim() || "Payslip"}</span>
+              <span className="min-w-0 truncate font-display text-[0.9375rem] font-[600]">
+                {name.trim() || "Payslip"}
+              </span>
             </div>
             <p className="mt-3 text-[0.8125rem] text-muted-foreground">
               Members see this at the top of the sidebar. Payslips and statements keep naming the company from the

@@ -7,6 +7,7 @@ import { Card } from "@/components/ds/card";
 import { FocusShell } from "@/components/shell/focus-shell";
 import { Button } from "@/components/ui/button";
 import { roleLabel } from "@/lib/roles";
+import { TYPE } from "@/components/ds/type";
 
 /**
  * Run payroll is for admins and approvers. Another role gets the same full-screen frame with a
@@ -18,7 +19,7 @@ export function RunPayrollGate({ children }: { children: ReactNode }) {
   return (
     <FocusShell context="Run payroll" closeHref="/console/runs">
       <Card className="mt-6">
-        <h1 className="text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">Your role cannot run payroll</h1>
+        <h1 className={TYPE.title}>Your role cannot run payroll</h1>
         <p className="mt-2 text-[0.9375rem] text-muted-foreground">
           You are signed in as {roleLabel(auth.role).toLowerCase() || "a member"}. Admins and approvers create, fund and
           execute payroll runs; an admin can change your role under Members.

@@ -179,7 +179,7 @@ export function AmountsStep({
                   type="checkbox"
                   checked={l.include}
                   onChange={(e) => update(c.id, { include: e.target.checked })}
-                  className="size-4 self-center rounded accent-[var(--primary-edge)]"
+                  className="size-4 self-center rounded accent-[var(--foreground)]"
                 />
                 <label htmlFor={`include-${c.id}`} className="flex min-w-0 items-center gap-3">
                   <Initials name={c.name} />

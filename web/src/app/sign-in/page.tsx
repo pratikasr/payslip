@@ -8,6 +8,8 @@ import { Card } from "@/components/ds/card";
 import { Button } from "@/components/ui/button";
 import { authRequired, googleConfigured, testLoginEnabled, workspaceDomain } from "@/lib/auth-config";
 import { signedIn } from "@/lib/service-session";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 export const metadata: Metadata = { title: "Sign in" };
 
@@ -45,7 +47,7 @@ function SignInOff() {
     <main id="main" className="mx-auto grid min-h-dvh max-w-[440px] content-center px-4 py-12">
       <Card className="px-6 py-7 sm:px-8">
         <LogoMark className="size-[30px]" />
-        <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">No sign-in here</h1>
+        <h1 className={cn(TYPE.title, "mt-5")}>No sign-in here</h1>
         <p className="mt-2 text-[0.9375rem] text-muted-foreground">
           This Payslip runs without sign-in: the console is open on this machine. To require sign-in, set
           PAYSLIP_AUTH=required on the web app and the service.

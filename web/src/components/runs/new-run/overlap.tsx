@@ -84,7 +84,7 @@ export function OverlapWarning({
               onChange={(e) => setDraft((d) => ({ ...d, overlapAck: e.target.checked ? key : undefined }))}
               aria-invalid={showError && !confirmed}
               aria-describedby={showError && !confirmed ? "overlap-error" : undefined}
-              className="mt-0.5 size-4 shrink-0 rounded accent-[var(--primary-edge)]"
+              className="mt-0.5 size-4 shrink-0 rounded accent-[var(--foreground)]"
             />
             This is an extra run for the same period, such as a bonus or a correction
           </label>

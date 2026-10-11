@@ -60,7 +60,7 @@ export function RunViews({ run, onShowPrivacy }: { run: Run; onShowPrivacy: () =
       rows={rows}
       split={SPLIT}
       className="mb-6"
-      caption={`The ${title} payroll in two views: what the Zcash explorer shows, and what your keys show.`}
+      caption={`The ${title} payroll in two views: what anyone sees on the Zcash explorer, and what your keys read.`}
     >
       <VaultView labelledBy="run-vault-title" split={SPLIT} className="py-6 md:py-7">
         <ViewTitle id="run-vault-title" title="What the explorer shows">

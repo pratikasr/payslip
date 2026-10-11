@@ -120,7 +120,7 @@ test.describe("payroll runs", () => {
     // Above the tabs: the run in two views, what the explorer shows beside what the payer's keys
     // read, joined by each transaction id, with a way into the Privacy view.
     const views = page.getByRole("figure", {
-      name: `The ${title} payroll in two views: what the Zcash explorer shows, and what your keys show.`,
+      name: `The ${title} payroll in two views: what anyone sees on the Zcash explorer, and what your keys read.`,
     });
     const vault = views.getByRole("group", { name: "What the explorer shows" });
     const paper = views.getByRole("group", { name: "What your keys show" });
@@ -194,6 +194,8 @@ test.describe("payroll runs", () => {
     // A click on the Transaction cell (outside its buttons) opens the line like the rest of the row.
     await page.setViewportSize({ width: 1440, height: 900 });
     const cell = page.locator("tbody tr").first().locator("td").nth(4);
+    // The two views above the tabs push the table below the fold: bring the row on screen first.
+    await cell.scrollIntoViewIfNeeded();
     const box = await cell.boundingBox();
     if (box) {
       await page.mouse.click(box.x + box.width - 4, box.y + box.height / 2);

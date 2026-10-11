@@ -9,6 +9,8 @@ import { Card } from "@/components/ds/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 /** Better Auth's error codes after a Google round trip, in plain words. */
 function describeError(code: string): string {
@@ -88,7 +90,7 @@ export function SignInCard({
   return (
     <Card className="px-6 py-7 sm:px-8">
       <LogoMark className="size-[30px]" />
-      <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">Sign in to Payslip</h1>
+      <h1 className={cn(TYPE.title, "mt-5")}>Sign in to Payslip</h1>
       <p className="mt-2 text-[0.9375rem] text-muted-foreground">
         Private payroll on Zcash. Sign in with the Google account your organisation invited
         {domain && domain !== "*" ? (
@@ -100,7 +102,7 @@ export function SignInCard({
         .
       </p>
       {problem ? (
-        <div role="alert" className="mt-5 flex items-start gap-2.5 rounded-xl bg-danger-bg px-4 py-3 text-[0.875rem]">
+        <div role="alert" className="mt-5 flex items-start gap-2.5 rounded-xl bg-danger-bg px-4 py-3 text-[0.8125rem]">
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
           <span>{problem}</span>
         </div>
@@ -112,7 +114,7 @@ export function SignInCard({
             {busy === "google" ? "Opening Google" : "Continue with Google"}
           </Button>
         ) : (
-          <p className="text-[0.875rem] text-muted-foreground">
+          <p className="text-[0.8125rem] text-muted-foreground">
             Google sign-in is not configured on this deployment yet: whoever runs it sets GOOGLE_CLIENT_ID and
             GOOGLE_CLIENT_SECRET (see the Sign-in section of the README).
           </p>

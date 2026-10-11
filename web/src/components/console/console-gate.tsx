@@ -42,7 +42,7 @@ function NotAMember({ email }: { email: string }) {
     <main id="main" className="mx-auto grid min-h-dvh max-w-[560px] content-center px-4 py-12">
       <Card className="px-6 py-7 sm:px-8">
         <LogoMark className="size-[30px]" />
-        <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">You are not a member yet</h1>
+        <h1 className={cn(TYPE.title, "mt-5")}>You are not a member yet</h1>
         <p className="mt-2 text-[0.9375rem] text-muted-foreground">
           You are signed in as <span className="text-foreground">{email}</span>, but this organisation has not invited
           that address. Ask an admin for an invitation link and open it while signed in with this email, or sign out and

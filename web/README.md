@@ -55,7 +55,7 @@ The dark demo bar's "Viewing as" menu switches between Company, Contractor and A
 
 ## How it is built
 
-- Next.js 15 App Router, React 19, TypeScript strict, Tailwind CSS 4, shadcn/ui (Radix). Inter (with its optical-size axis) and IBM Plex Mono through `next/font/google`, which downloads them at build time and serves them from this app.
+- Next.js 15 App Router, React 19, TypeScript strict, Tailwind CSS 4, shadcn/ui (Radix). Instrument Sans (text), Bricolage Grotesque with its optical-size axis (titles, the company name, headline money) and IBM Plex Mono (chain data) through `next/font/google` (docs/DESIGN.md section 16), which downloads them at build time and serves them from this app.
 - `src/lib/api.ts` is the typed client for `docs/API.md`. Every failure becomes an `ApiError` with the service's `message` and `hint`; a network failure becomes `service_unreachable` with a hint that names the fix.
 - `src/hooks/use-run-events.ts` subscribes to `GET /api/runs/{id}/events` (events `snapshot` and `log`) and reconnects with backoff when the browser gives up. The run page also loads `GET /api/runs/{id}/log` so the activity feed survives a reload.
 - Viewing keys are checked in the browser before anything is sent (`src/lib/keys.ts`): seed phrases, spending keys, raw hex, addresses and incoming viewing keys are refused with a reason. Only unified full viewing keys (`uview`, `uvf`, `uviewtest`, `uvftest`) and the period are sent to the statement endpoints; labels from an imported file stay in the browser.

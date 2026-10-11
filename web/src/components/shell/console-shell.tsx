@@ -152,7 +152,7 @@ function SignedInAs({ me }: { me: NonNullable<ReturnType<typeof useAuth>["me"]> 
           <Initials name={name} />
         )}
         <span className="grid min-w-0">
-          <span className="truncate text-[0.875rem] text-foreground">{name}</span>
+          <span className="truncate text-[0.8125rem] text-foreground">{name}</span>
           <span className="truncate text-[0.8125rem] text-muted-foreground">
             {me.membership ? roleLabel(me.membership.role) : "Not a member"}
           </span>

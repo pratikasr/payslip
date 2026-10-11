@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Problem } from "@/components/runs/problem";
 import { api, toDisplayError, type ApiError, type Membership } from "@/lib/api";
 import { roleLabel } from "@/lib/roles";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 /** Accepts the invitation once, says what happened, and opens the console. */
 export function InviteAccept({ token }: { token: string }) {
@@ -35,9 +37,7 @@ export function InviteAccept({ token }: { token: string }) {
       <LogoMark className="size-[30px]" />
       {membership ? (
         <>
-          <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">
-            Welcome to {membership.org.name}
-          </h1>
+          <h1 className={cn(TYPE.title, "mt-5")}>Welcome to {membership.org.name}</h1>
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             You joined as {roleLabel(membership.role).toLowerCase()}.
           </p>
@@ -54,7 +54,7 @@ export function InviteAccept({ token }: { token: string }) {
         </>
       ) : error ? (
         <>
-          <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">
+          <h1 className={cn(TYPE.title, "mt-5")}>
             {alreadyIn ? "You are already a member" : "This invitation cannot be used"}
           </h1>
           <div className="mt-4">
@@ -72,7 +72,7 @@ export function InviteAccept({ token }: { token: string }) {
         </>
       ) : (
         <>
-          <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">Joining</h1>
+          <h1 className={cn(TYPE.title, "mt-5")}>Joining</h1>
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">Checking your invitation.</p>
         </>
       )}
