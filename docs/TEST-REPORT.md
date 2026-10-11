@@ -2,7 +2,7 @@
 
 Every round runs against real Zcash testnet (NU7, `testnet.zec.rocks:443`) unless it says otherwise. Dates are UTC. Commands run from the repository root unless a directory is given.
 
-Rounds 1 to 5 ran against the first version of the web app, so the screen names in them (Share viewing key, Contractor page, Accountant page, Confirm funding, Execute run, Launch app) are that version's. The redesigned app (docs/DESIGN.md section 15) names them People, Payslip access, the contractor portal, Books, Fund from treasury and Pay N contractors; its click path is in docs/DEMO.md and its tests are in Round 6.
+Rounds 1 to 5 ran against the first version of the web app, so the screen names in them (Share viewing key, Contractor page, Accountant page, Confirm funding, Execute run, Launch app) are that version's. The redesigned app (docs/DESIGN.md section 15) names them People, Payslip access, the contractor portal, Books, Fund from treasury and Pay N contractors; its click path is in docs/DEMO.md and its tests are in Round 6. Round 7 tests the 11 Oct additions (Fund with ZEC, sign-in, approvals, the pay schedule and payment requests) on the paper look of docs/DESIGN.md section 17.
 
 ## Round 1: unit and integration
 
@@ -174,3 +174,42 @@ Step timings, every txid and the click path are in `docs/DEMO.md`; the raw recor
 | `/books` | 92 | 100 | 100 |
 | `/portal` | 94 | 100 | 100 |
 | `/verify` | 95 | 100 | 100 |
+
+## Round 7, 11 Oct 2026
+
+After the launch-day work merged to main (docs/PROGRESS.md, 11 Oct 2026): Fund with ZEC (ADR-025), sign-in, organisation and roles (ADR-026), the pay schedule and payment requests (ADR-028), recorded approvals (ADR-029) and the paper look (docs/DESIGN.md section 17). Counts on main at 99604de.
+
+| Date | Command | Outcome |
+| --- | --- | --- |
+| 2026-10-11 | `cd service && cargo fmt --check && cargo clippy --all-targets --locked -- -D warnings` | clean |
+| 2026-10-11 | `cd service && cargo test --locked`, with no network variables set | 78 unit, 31 API, 36 executor and 1 prices test passed; the 7 live testnet tests ignored, as they need `ZCASH_NETWORK=testnet` and `LIGHTWALLETD_URL` |
+| 2026-10-11 | `cd web && pnpm typecheck && pnpm lint` | clean |
+| 2026-10-11 | `cd web && pnpm exec playwright test --list` | 57 browser tests in 13 specs |
+| 2026-10-11 | The browser suite with sign-in off against the demo wallet (the sample company of the judge kit: six contractors, three paid runs) | 47 of 47 passed: every spec except the demo walkthrough, which pays from a clean data directory and spends testnet coins, and the two suites below, which run on ports of their own |
+| 2026-10-11 | `scripts/e2e-signin.sh` (its own service with `PAYSLIP_AUTH=required`, the web app with the test login, a throwaway testnet wallet) | 5 of 5 passed |
+| 2026-10-11 | `scripts/e2e-requests.sh` (its own service with sign-in off, a throwaway testnet wallet with no funds) | 4 of 4 passed |
+| 2026-10-11 | axe-core accessibility scan of the paper build | 0 violations |
+
+What the service suites cover, beyond Round 1:
+
+- Unit (78, in `service/src`): the memo codec, statement math and reconciliation, money and the seed file as before; the pay schedule's period rules (weekly periods end on the pay day, monthly periods are calendar months, pay days validated per cadence, the draft decision follows the draft day and what a run already covers); payment requests joining their contractor's line or adding one, joined references that still fit the memo, and successors for the next period with the invoice number counted up; the role matrix, every payer write audited and the audit target; the approvals policy following the sign-in mode; the Fund with ZEC deadline; and the funding rate agreeing with the market value at receipt for the same block time.
+- API (31, `service/tests/api.rs`): framework errors as JSON with a hint; statements-only mode has no payer endpoints; idempotency and period overlap; sign-in: tokens checked before anything else, the bootstrap admin then invite-only membership, invitations accepted once by the invited email before they expire, the role matrix over every payer route, every write on the audit log, a first sight that survives parallel requests, and sign-in off keeping the old behaviour; Fund with ZEC answering the treasury address, amount, rate and deadline; a run over the cap refused at creation; approvals by each role once each and never by the creator at two, execute refused until the approvals are in, none needed with sign-in off, an approved draft that can still be discarded; requests keyed by the contractor's viewing key and validated, approved or rejected from the queue, joining a run for their period; a contractor's default amount; the schedule drafting from default amounts and approved requests and passing over a period a run already covers.
+- Executor (36, `service/tests/executor.rs`, against the in-memory chain): the Round 1 and Round 3 cases (crashes, rebroadcast, expiry, reorg, disk full, venue timeouts and partial fills) plus Fund with ZEC (the run is funded when the treasury balance confirms, the shortfall shows until the rest arrives, an expired request can be funded again or cancelled, two runs awaiting ZEC claim the balance in creation order, a run over the cap is refused), approvals (the swap is recorded only once the run is approved, and a run resumed after a restart waits for its approvals), and a paid request carrying its txid with a recurring one repeating.
+- Prices (1, `service/tests/prices.rs`): recent statement prices are cached.
+- Live testnet (7, ignored without network variables): the 5 of Round 6 plus an earlier birthday rescanning a cached key, and the judge kit reconciling while a partial key set is flagged.
+
+| Spec | Tests | What it proves |
+| --- | ---: | --- |
+| `e2e/demo.spec.ts` | 1 | The demo script through the app: onboard six, approve, fund, pay, the contractor portal, Books and the CSV. Spends testnet coins; needs a clean data directory, so it is not in the 47 |
+| `e2e/runs.spec.ts` | 3 | The runs list with its status chips; a paid run's page with its figures, pay lines, drawer, privacy view and audit trail; the Run payroll flow prefills, validates and reaches Review without creating a run |
+| `e2e/console.spec.ts` | 10 | Home renders on the server and matches the service's figures; Export makes the payroll CSV and the auditor package; People opens and closes the detail drawer, `?add=1` opens Add contractor and Cancel saves nothing; each Payslip access invite link carries the key, name and birthday, masked until revealed; Treasury shows the receive address and balance; privacy mode blurs amounts, keys and addresses and survives a reload into Run payroll; search finds a person and a run; the demo bar names the network on the first paint, phones included |
+| `e2e/portal.spec.ts` | 7 | The first click on Open payslips opens the portal at 1440 and at 375 pixels; the demo key opens the judge kit's contractor by name on any testnet service; a pasted key unlocks; an invite link unlocks and the key leaves the address bar; a payslip document matches the chain and prints cleanly; tax documents download as Payslip, Koinly and CoinTracker CSV, then Lock forgets the key |
+| `e2e/proof.spec.ts` | 3 | A contractor proves one payment and anyone can verify it; a viewing key opened as a proof is refused in the browser and never sent; `/verify` asks for a proof when the link carries none |
+| `e2e/books.spec.ts` | 7 | The judge kit the web app serves is the published one; Load the judge kit loads it with one click and names every payment; a key set missing contractors never reads as reconciled; Load this company's keys reconciles every run; the key file imports and the ledger filters; every exception is listed and the accounting exports download; a seed phrase is refused and the keys are forgotten on request |
+| `e2e/landing.spec.ts` | 7 | Every section is present, in order; the hero shows one payment in two copies; the reveal plays once, and not at all with reduced motion; every transaction link opens the testnet explorer; every focus stop shows focus; the phone menu opens, jumps and closes; the phone header stays reachable after scrolling |
+| `e2e/keyboard.spec.ts` | 6 | Skip link and Try the live demo; the portal unlocks by keyboard; the Add contractor dialog and the person drawer take and return focus; Run payroll announces its errors and moves focus to each new step's heading |
+| `e2e/qr-scan.spec.ts` | 1 | An invite link shown as a QR code is scanned by camera into the contractor portal |
+| `e2e/wallet-fund.spec.ts` | 2 | Fund with USDC sends exactly the quoted transfer on Base and reports the hash; a rejection in the wallet sends nothing (service and wallet are fixtures) |
+| `e2e/zec-fund.spec.ts` | 1 | The Fund step offers ZEC and USDC, and the ZEC card shows the treasury address, amount, rate and shortfall (the service is a fixture, since a real deposit moves money) |
+| `e2e/auth.spec.ts` | 5 | With sign-in on (`scripts/e2e-signin.sh`): the console needs a sign-in and the bootstrap email is the first admin; an admin renames the organisation and invites a viewer; the viewer joins through the link, sees the console and cannot run payroll; the audit log lists the invitation and run progress streams through the proxy; recorded approvals: the admin's run needs two other approvers before it can be paid. Skipped unless `E2E_AUTH=1` |
+| `e2e/requests.spec.ts` | 4 | With `scripts/e2e-requests.sh`: a contractor sends a request from the portal and sees it as Sent; the payer approves one with a note and rejects another; Run payroll offers the approved request as a prefilled line and the run takes it; a pay schedule saved on its draft day drafts this month's payroll from default amounts. No coins needed |

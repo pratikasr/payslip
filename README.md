@@ -10,13 +10,19 @@ Built for the Zcash track of Colosseum's [Crypto World's Fair](https://colosseum
 
 A DAO or remote-first team pays 5 to 50 contractors on-chain. Today every salary is readable on a block explorer. With Payslip:
 
-- The payer funds a run with ZEC sent shielded to the treasury (the run is funded when it confirms, at the market rate of that block, which becomes the USD basis), or in USDC from their own wallet, which NEAR Intents swaps into native ZEC delivered into the shielded Ironwood pool at a fill rate that becomes the USD basis.
-- Each contractor is paid with one shielded transaction from a dedicated ZIP-32 account. The memo carries run id, period, invoice reference and the USD basis.
-- Each contractor receives the full viewing key of their own account. It shows their payments and nothing else, because that account pays nobody else.
-- The accountant receives every account's viewing key: every run, every line, no spending power.
-- Payroll can run on a schedule. Under Settings the payer sets a cadence and a pay day; a few days before each pay day Payslip drafts the run from each contractor's usual amount or from the payment request they sent from their portal, which the payer approved from a queue (what Request Finance calls a request or an invoice). The draft waits for a person to review, fund and pay it; nothing moves on its own. A paid request shows its transaction id in the contractor's portal, and a request marked to repeat is sent again for the next period.
-- The statement engine scans the chain with those keys, decodes the memos and renders per-contractor statements and a reconciliation of funded USD against paid USD per run, with the variance explained. CSV export, PDF through print.
-- A contractor who does not want ZEC can choose to have their pay converted to USDC on receipt, with the privacy cost of that leg stated plainly.
+- **Fund with ZEC or USDC.** The payer funds a run with ZEC sent shielded from their own wallet to the treasury: the run is funded when the deposit confirms, and the market rate of that block becomes the USD basis (ADR-025). Nothing on any public chain shows the payroll total. Or with USDC from an EVM wallet, which NEAR Intents swaps into native ZEC delivered into the shielded Ironwood pool, at a fill rate that becomes the USD basis.
+- **Shielded pay lines.** Each contractor is paid with one shielded transaction from a dedicated ZIP-32 account. The memo carries run id, period, invoice reference and the USD basis.
+- **Sign-in, organisation and roles.** On a hosted Payslip people sign in with Google, the first admin invites colleagues by link, and every member is an admin, approver, accountant or viewer. The service checks each request's token and role, and every change is on the audit log (ADR-026). Statements, proofs and the testnet demo need no account.
+- **Recorded approvals.** With sign-in on, a run is paid only once the set number of admins or approvers have each approved it; at two or more, the person who created the run cannot approve it. The service holds the line: it refuses to pay a run short of approvals, even one resumed after a restart (ADR-029).
+- **Pay schedules.** Under Settings the payer sets a cadence and a pay day. A few days before each pay day Payslip drafts the run from each contractor's usual amount or their approved payment request. The draft waits for a person to review, approve, fund and pay it; nothing moves on its own (ADR-028).
+- **Payment requests.** A contractor sends a request from their portal (amount, period, invoice, due date, note), as Request Finance offers. The payer approves or rejects it from a queue; an approved request becomes a prefilled pay line, shows its transaction id in the contractor's portal once paid, and a request marked to repeat is sent again for the next period.
+- **A viewing key per person.** Each contractor receives the full viewing key of their own account. It shows their payments and nothing else, because that account pays nobody else. The accountant receives every account's viewing key: every run, every line, no spending power.
+- **Statements.** The contractor's portal scans the chain with their key, decodes the memos and lays out a statement of earnings: each payslip with its USD basis, invoice, txid and block, and on mainnet its market value when it arrived. CSV for Payslip, Koinly and CoinTracker; PDF through print.
+- **Payment proofs.** A contractor shares a link that opens one payment and nothing else, checked against the chain at `/verify`, for a landlord, a bank or a visa office (ADR-021).
+- **The accountant's reconciliation.** Books reconciles every run: funded USD against paid USD, with the variance explained by network fees and unspent ZEC at the run's rate, and anything without a Payslip memo listed rather than dropped. Exports for Xero and QuickBooks.
+- **Convert on receipt.** A contractor who does not want ZEC can choose to have their pay converted to USDC on receipt, with the privacy cost of that leg stated plainly.
+
+Every screen is printed on paper. A payslip is the white original of a pay advice; what the explorer sees is its yellow carbon copy, with every field the chain hides inked out (docs/DESIGN.md section 17).
 
 There is no smart contract. Zcash has none. Payslip is a service plus a wallet library: the chain holds shielded payments and memos; the service holds keys and renders statements.
 
@@ -39,14 +45,14 @@ Round-by-round results: [docs/TEST-REPORT.md](docs/TEST-REPORT.md). The demo cli
 
 ### Mainnet demo run
 
-The mainnet run and its video are pending the USDC deposit; see [Status](#status).
+The mainnet run (three real people with Zashi addresses, funded with ZEC from the owner's own wallet on the hosted app) and its video are pending the owner's ZEC and the three addresses; see [Status](#status).
 
 ## Check it yourself (for judges)
 
 Payslip's claim is "private to the world, transparent to your accountant". Each half can be checked without trusting us:
 
 1. **Private to the world.** Open any payroll payment above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient. (The USDC conversion leg, run d9248c70, is the stated exception.)
-2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). On a statements-only Payslip (below), choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
+2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power), and a Payslip web app on testnet serves the same file, so there is nothing to download. In Books (`/books`, or Viewing as Accountant) choose **Load the judge kit**: every run, every line, funded against paid, read from the chain. In the contractor portal (`/portal`, or Viewing as Contractor) choose **Try it with a demo key**: Amara Okafor's payslips from the kit, and nobody else's. Where the kit is not served, Import key file in Books, or one contractor key pasted into the portal, does the same. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
 There is no hosted statements page yet; the runbook that puts one on AWS is [deploy/README.md](deploy/README.md) (see Hosting below). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
@@ -57,7 +63,7 @@ There is no hosted statements page yet; the runbook that puts one on AWS is [dep
    cd service && PAYSLIP_MODE=statements ZCASH_NETWORK=testnet PAYSLIP_VIEWER_BIRTHDAY_HEIGHT=4466850 cargo run --release -- serve
    ```
 
-2. In a second terminal, from the repository root, start the web app, then open http://127.0.0.1:3000/books:
+2. In a second terminal, from the repository root, start the web app, then open http://127.0.0.1:3000/books and choose Load the judge kit (or http://127.0.0.1:3000/portal and Try it with a demo key):
 
    ```
    cd web && pnpm install && pnpm build && pnpm start
@@ -89,6 +95,7 @@ flowchart LR
     Venue[NEAR Intents 1Click]
     Zcash[Zcash: Ironwood pool, lightwalletd]
 
+    Payer -->|ZEC, shielded, from the payer's own wallet| Zcash
     Payer -->|USDC from an EVM wallet| Venue
     Venue -->|native ZEC, shielded| Zcash
     RB --> KM
@@ -209,13 +216,13 @@ cd service && cargo test                                   # unit and executor t
 cd service && ZCASH_NETWORK=testnet LIGHTWALLETD_URL=https://testnet.zec.rocks:443 cargo test --test testnet -- --ignored   # live testnet tests
 cd service && cargo clippy --all-targets -- -D warnings && cargo audit
 cd web && pnpm lint && pnpm typecheck && pnpm build
-cd web && E2E_BASE_URL=http://127.0.0.1:3000 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e   # 46 browser tests with sign-in off, prerequisites below
-scripts/e2e-signin.sh                                                                     # 4 browser tests with sign-in on, on their own ports
+cd web && E2E_BASE_URL=http://127.0.0.1:3000 E2E_API_URL=http://127.0.0.1:8080 pnpm e2e   # the browser suite with sign-in off, prerequisites below
+scripts/e2e-signin.sh                                                                     # 5 browser tests with sign-in on, on their own ports
 scripts/e2e-requests.sh                                                                   # 4 browser tests: payment requests and the pay schedule, on their own ports
 python3 scripts/adversarial-testnet.py --api http://127.0.0.1:8080 --skip-chain           # adversarial API scenarios
 ```
 
-`pnpm e2e` covers the demo walkthrough, runs, console, portal, payment proofs, books, landing, keyboard, camera QR and wallet funding. It needs Chromium (`pnpm exec playwright install chromium`), a testnet service on a clean data directory (`scripts/fresh-testnet-env.sh <name>`) with a funded treasury, and the web app; `E2E_BASE_URL` defaults to http://127.0.0.1:3100 and `E2E_API_URL` to http://127.0.0.1:8080. The demo walkthrough adds contractors and pays a run, spending testnet coins, and the adversarial script without `--skip-chain` spends coins and restarts the service, so point both at a throwaway service, never at a wallet you care about. `scripts/e2e-signin.sh` starts a throwaway testnet wallet, a service with `PAYSLIP_AUTH=required` on port 8096 and the web app with the test login on port 3304, then runs `web/e2e/auth.spec.ts` (sign in, the first admin, invite a viewer, the viewer cannot run payroll, run progress through the proxy, sign out) and stops both. The sign-in unit and API tests (`cargo test`) sign tokens with a test key and serve a JWKS from a test server. `scripts/e2e-requests.sh` does the same with sign-in off on ports 8093 and 3313 for `web/e2e/requests.spec.ts` (a contractor sends a request from the portal, the payer approves one and rejects another, Run payroll offers the approved one as a prefilled line, and a pay schedule saved on its draft day drafts this month's payroll from default amounts); no coins are needed, since nothing in it funds or pays a run.
+The browser suite is 57 tests in 13 specs (`pnpm exec playwright test --list`). `pnpm e2e` covers the demo walkthrough, runs, console, portal (the demo key included), payment proofs, Books (Load the judge kit included), landing, keyboard, camera QR and both funding cards, ZEC and USDC; on 11 Oct 2026 the 47 that read the demo wallet passed 47 of 47 (docs/TEST-REPORT.md, Round 7). It needs Chromium (`pnpm exec playwright install chromium`), a testnet service on a clean data directory (`scripts/fresh-testnet-env.sh <name>`) with a funded treasury, and the web app; `E2E_BASE_URL` defaults to http://127.0.0.1:3100 and `E2E_API_URL` to http://127.0.0.1:8080. The demo walkthrough adds contractors and pays a run, spending testnet coins, and the adversarial script without `--skip-chain` spends coins and restarts the service, so point both at a throwaway service, never at a wallet you care about. `scripts/e2e-signin.sh` starts a throwaway testnet wallet, a service with `PAYSLIP_AUTH=required` on port 8096 and the web app with the test login on port 3304, then runs `web/e2e/auth.spec.ts` (sign in, the first admin, invite a viewer, the viewer cannot run payroll, run progress through the proxy, sign out, and a run that needs two other approvers before it can be paid) and stops both. The sign-in unit and API tests (`cargo test`) sign tokens with a test key and serve a JWKS from a test server. `scripts/e2e-requests.sh` does the same with sign-in off on ports 8093 and 3313 for `web/e2e/requests.spec.ts` (a contractor sends a request from the portal, the payer approves one and rejects another, Run payroll offers the approved one as a prefilled line, and a pay schedule saved on its draft day drafts this month's payroll from default amounts); no coins are needed, since nothing in it funds or pays a run.
 
 CI runs formatting, clippy, tests and audit for the service and lint, typecheck and build for the web on every push.
 
@@ -224,7 +231,8 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | Path | What |
 | --- | --- |
 | `service/` | Rust service on `zcash_client_backend` 0.25.0-pre.0: wallet core, run executor, swap venues, statement engine, HTTP API |
-| `web/` | Next.js 15 app: landing page, company console, contractor portal, accountant books and the public payslip page |
+| `web/` | Next.js 15 app: landing page, company console, contractor portal, accountant books and the public payslip page, with sign-in through Better Auth |
+| `deploy/` | Container images, compose file and the AWS scripts for a hosted Payslip (ADR-027), with its runbook |
 | `docs/` | Spec, technical decisions and verified facts, API, design, test report, demo, progress log |
 | `scripts/` | Demo driver, testnet seeding, clean environments, adversarial suite |
 | `CLAUDE.md` | Guide for coding agents working in this repo |
@@ -238,9 +246,9 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M2 Wallet core (accounts, FVK export, sync, send with memo) | done, verified on testnet |
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
-| M5 Web dashboards | done, redesigned with layout conventions informed by Mercury's banking app and Payslip's own mark, colour and components (docs/DESIGN.md section 15), verified on testnet |
-| M6 Mainnet demo run | scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; Fund with ZEC built (ADR-025); needs the ZEC (or USDC) deposit |
-| M7 Submission | prepared (docs/SUBMISSION.md); needs the team's Colosseum account, and a hosting account for the public statements page |
+| M5 Web dashboards | done: console, contractor portal, Books and the public proof printed on paper, the payslip as a pay advice with the explorer's view as its yellow carbon copy (docs/DESIGN.md section 17), with sign-in, recorded approvals, the pay schedule and payment requests; verified on testnet |
+| M6 Mainnet demo run | Fund with ZEC built (ADR-025), the run scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; waiting on the owner's ZEC and the three contractors' Zashi addresses |
+| M7 Submission | prepared (docs/SUBMISSION.md, docs/RUN-DAY.md); waiting on hosting (the owner runs the AWS scripts in deploy/README.md), the two videos and the Colosseum form |
 
 ## How it is judged (Rules §8 and FAQ)
 
@@ -248,8 +256,8 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | --- | --- |
 | Functionality | A real payroll run on Zcash, visible in the explorer as shielded transactions, read back by the contractor's and accountant's keys |
 | Potential impact | On-chain payroll is public by default everywhere; the buyer is every DAO and remote team paying in crypto |
-| Novelty | Per-contractor viewing keys; single-payment proofs that open one payment and nothing else, built from that output's outgoing cipher key and checked against the chain at `/verify` (ADR-021); and a reconciliation of funded USD against paid USD read from the memos on chain alone |
-| UX | Fund from an EVM wallet holding USDC, pay in one click after a review step, statements by pasting a key; contractors never need to share a key, and nobody handles a spending key |
+| Novelty | Per-contractor viewing keys; single-payment proofs that open one payment and nothing else, built from that output's outgoing cipher key and checked against the chain at `/verify` (ADR-021); a reconciliation of funded USD against paid USD read from the memos on chain alone; and an interface that is the claim itself: each payment is a pay advice on paper, and the explorer's view is its yellow carbon copy with everything the chain hides inked out |
+| UX | Fund with ZEC from the payer's own wallet or with USDC from an EVM wallet; pay in one click after a review step and the recorded approvals; Google sign-in with roles; payroll drafted on a schedule and from contractors' requests; statements by pasting a key, or one click on the demo key and Load the judge kit. Every screen is a typewritten form: the payslip is the white original of a pay advice, the explorer's view its yellow carbon copy with the private fields inked out. Contractors never need to share a key, and nobody handles a spending key |
 | Open source | This repo, MIT. It composes with existing primitives: NEAR Intents 1Click for funding and conversion, ZIP 316 viewing keys that wallets import (the judge kit carries the Revision 0 form), and Koinly, CoinTracker, Xero and QuickBooks import formats |
 | Business plan | Per-seat monthly fee per contractor plus an optional fee on the stablecoin to ZEC leg (`PAYSLIP_APP_FEE_BPS`, paid through NEAR Intents app fees); see Pricing |
 
