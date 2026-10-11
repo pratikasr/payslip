@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
+import { ChevronLeft, Repeat } from "lucide-react";
 import { Tabs as TabsPrimitive } from "radix-ui";
 import { Rate, Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
@@ -11,6 +11,7 @@ import { Card } from "@/components/ds/card";
 import { PageTitle } from "@/components/ds/page";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
 import { SHIELDED_HELP } from "@/components/ds/status";
+import { TYPE } from "@/components/ds/type";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
@@ -24,6 +25,7 @@ import { CancelRun } from "./cancel-run";
 import { LineDrawer } from "./line-drawer";
 import { PayLinesTable } from "./pay-lines-table";
 import { PrivacyView } from "./privacy-view";
+import { RunViews } from "./run-views";
 import { Problem } from "./problem";
 import {
   archivedLineIds,
@@ -97,7 +99,7 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
       // History can be unavailable in some embedded views; the tab still changes.
     }
   }, []);
-  /** From the privacy strip: open the Privacy view and move focus to its tab. */
+  /** From the two views above the tabs: open the Privacy view and move focus to its tab. */
   const showPrivacy = useCallback(() => {
     changeTab("privacy");
     requestAnimationFrame(() => {
@@ -165,13 +167,12 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
           </span>
         }
         description={
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem]">
-            <span>{formatRange(run.period_start, run.period_end)}</span>
-            <span aria-hidden="true">·</span>
-            <span>Created {formatDate(run.created_at)}</span>
-            <span aria-hidden="true">·</span>
+          <span className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[0.8125rem]">
+            <span>
+              {formatRange(run.period_start, run.period_end)}, created {formatDate(run.created_at)}, run
+            </span>
             <span className="inline-flex items-center gap-0.5">
-              Run{" "}
+              <span className="sr-only">id </span>
               <code className="font-mono text-[0.8125rem]" title={run.id}>
                 {truncateMiddle(run.id, 8, 4)}
               </code>
@@ -192,7 +193,7 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
       />
 
       <Hero run={run} />
-      <PrivacyStrip run={run} onShow={showPrivacy} />
+      <RunViews run={run} onShowPrivacy={showPrivacy} />
       <SummaryStrip run={run} />
 
       <NextAction run={run} archived={archived.size} />
@@ -261,8 +262,8 @@ function paidCents(run: Run): number {
 }
 
 /**
- * The run in one line, as Mercury's transaction page leads with the amount: what was paid (or is
- * to be paid), to how many people, and the gold mark that says nobody else can read it.
+ * The run in one line, led by its amount in the display face: what was paid (or is to be paid),
+ * to how many people, and the gold mark that says nobody else can read it.
  */
 function Hero({ run }: { run: Run }) {
   const paid = run.status === "paid";
@@ -271,18 +272,18 @@ function Hero({ run }: { run: Run }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <p className="text-[2.125rem] leading-none font-[380] tracking-[-0.02em]">
+        <p className={TYPE.hero}>
           <Usd cents={paid ? paidCents(run) : run.total_usd_cents} />
         </p>
-        <p className="mt-2 text-[0.9375rem] text-strong">
+        <p className="mt-2.5 text-[0.9375rem] text-strong">
           {paid ? "Paid to " : run.status === "cancelled" ? "Was for " : "To "}
           {plural(n, "person", "people")}
-          {paid && at ? <span className="text-muted-foreground"> · {formatDateTime(at)}</span> : null}
+          {paid && at ? <span className="text-muted-foreground"> on {formatDateTime(at)}</span> : null}
         </p>
       </div>
       {run.status === "cancelled" ? null : (
         <span
-          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-primary-soft px-3 text-[0.8125rem] text-foreground"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-chip px-3 text-[0.8125rem] text-foreground"
           title={SHIELDED_HELP}
         >
           <span aria-hidden="true" className="size-1.5 rounded-full bg-primary-edge" />
@@ -291,44 +292,6 @@ function Hero({ run }: { run: Run }) {
         </span>
       )}
     </div>
-  );
-}
-
-/**
- * The product's point, above the tabs: what anyone can see of this run on a block explorer next
- * to what the payer sees here. Built from the run's own lines; it links to the Privacy view.
- */
-function PrivacyStrip({ run, onShow }: { run: Run; onShow: () => void }) {
-  const sent = run.lines.filter((l) => l.txid);
-  if (sent.length === 0) return null;
-  const people = new Set(sent.map((l) => l.contractor_id)).size;
-  const cents = sent.reduce((s, l) => s + l.amount_usd_cents, 0);
-  return (
-    <section
-      aria-label="What the public sees"
-      className="mb-6 grid overflow-hidden rounded-xl border sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
-    >
-      <div className="px-5 py-3.5">
-        <p className="text-[0.8125rem] text-muted-foreground">On the explorer</p>
-        <p className="mt-0.5 text-[0.9375rem]">{plural(sent.length, "transaction")}. No amounts, no names.</p>
-      </div>
-      <div className="border-t border-hairline bg-primary-soft/50 px-5 py-3.5 sm:border-t-0 sm:border-l">
-        <p className="text-[0.8125rem] text-muted-foreground">Here, with your keys</p>
-        <p className="mt-0.5 text-[0.9375rem]">
-          <Usd cents={cents} /> to {plural(people, "person", "people")}.
-        </p>
-      </div>
-      <div className="flex items-center border-t border-hairline px-5 py-3 sm:border-t-0 sm:border-l sm:px-4">
-        <button
-          type="button"
-          onClick={onShow}
-          className="inline-flex items-center gap-0.5 rounded-sm text-[0.9375rem] whitespace-nowrap text-link hover:underline"
-        >
-          See the Privacy view
-          <ChevronRight className="size-4" aria-hidden="true" />
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -491,7 +454,7 @@ function NextAction({ run, archived }: { run: Run; archived: number }) {
             aria-valuenow={confirmed}
           >
             <div
-              className="h-full rounded-full bg-primary"
+              className="h-full rounded-full bg-viz"
               style={{ width: `${n ? Math.max(3, (confirmed / n) * 100) : 0}%` }}
             />
           </div>

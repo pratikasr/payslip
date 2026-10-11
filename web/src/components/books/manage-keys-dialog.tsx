@@ -79,7 +79,7 @@ export function ManageKeysDialog({
         <DialogHeader>
           <DialogTitle>Viewing keys</DialogTitle>
           <DialogDescription>
-            {keys.length} {keys.length === 1 ? "key" : "keys"} · {keySetSummary(described)}. They read payments but
+            {keys.length} {keys.length === 1 ? "key" : "keys"}: {keySetSummary(described)}. They read payments but
             cannot spend.
           </DialogDescription>
         </DialogHeader>
@@ -96,7 +96,7 @@ export function ManageKeysDialog({
                     <span className="truncate text-[0.9375rem]">{k.label ?? `Key ${i + 1}`}</span>
                     {tag ? <Tag tone={tag.tone}>{tag.text}</Tag> : null}
                   </div>
-                  <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+                  <span className="flex flex-wrap gap-x-2 text-[0.8125rem] text-muted-foreground">
                     <code className="font-mono">{keyPreview(k.ufvk)}</code>
                     {k.birthday ? <span className="num">from block {formatHeight(k.birthday)}</span> : null}
                   </span>
@@ -120,7 +120,7 @@ export function ManageKeysDialog({
         </div>
         <div className="grid gap-2 border-t border-hairline pt-4">
           <h3 className="text-[0.9375rem] text-strong">Forget</h3>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[0.8125rem] text-muted-foreground">
             The Payslip service keeps a read-only scan of these keys so the next visit is quick. Forget them here only,
             or ask the service to delete its scan too.
           </p>

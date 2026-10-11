@@ -11,6 +11,8 @@ import { parseUsdToCents } from "@/lib/format";
 import { feeReserveZat, runCoin } from "@/lib/payroll";
 import { confirmedCount, estimateZat, periodTitle, plural, RunTag, runTitle } from "../run-meta";
 import type { Draft, DraftCheck } from "./draft";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 function Row({ label, children, sub }: { label: ReactNode; children: ReactNode; sub?: ReactNode }) {
   return (
@@ -41,7 +43,7 @@ function Frame({
         <h2 className="text-[0.8125rem] text-strong">Summary</h2>
         {tag}
       </div>
-      <p className="mt-2 text-[1.75rem] leading-none font-[380] tracking-[-0.015em]">
+      <p className={cn(TYPE.title, "mt-2")}>
         <Usd cents={total} />
       </p>
       <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">to {plural(people, "person", "people")}</p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { Building2, ChevronRight, FileJson, FlaskConical, OctagonAlert, ScanLine, TriangleAlert } from "lucide-react";
+import { Building2, FileJson, FlaskConical, OctagonAlert, ScanLine, TriangleAlert } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
 import { ScanDialog } from "@/components/keys/scan-dialog";
 import { Button } from "@/components/ui/button";
@@ -200,7 +200,7 @@ export function KeyImport({
   return (
     <div className="grid gap-5">
       {offline ? (
-        <div role="alert" className="flex items-start gap-2.5 rounded-[10px] bg-danger-bg px-3.5 py-3 text-sm">
+        <div role="alert" className="flex items-start gap-2.5 rounded-[10px] bg-danger-bg px-3.5 py-3 text-[0.8125rem]">
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
           <span>
             Payslip cannot reach its service right now, so no keys can be read. {healthLoading ? "Checking again." : ""}
@@ -250,7 +250,7 @@ export function KeyImport({
       />
 
       {message ? (
-        <div role={message.tone === "ok" ? "status" : "alert"} className="text-sm">
+        <div role={message.tone === "ok" ? "status" : "alert"} className="text-[0.8125rem]">
           <p className={message.tone === "ok" ? "text-success" : "text-destructive"}>{message.text}</p>
           {message.hint ? <p className="mt-0.5 text-muted-foreground">{message.hint}</p> : null}
         </div>
@@ -269,7 +269,7 @@ export function KeyImport({
           autoComplete="off"
           autoCapitalize="off"
           placeholder={network === "mainnet" ? "uview1…" : "uviewtest1…"}
-          className="max-h-48 min-h-[84px] font-mono text-xs break-all"
+          className="max-h-48 min-h-[84px] font-mono text-[0.8125rem] break-all"
           aria-describedby={problems.length ? `${idPrefix}-problems` : undefined}
         />
         {problems.length ? (
@@ -282,10 +282,11 @@ export function KeyImport({
                   ? p.result.reason
                   : `A ${networkLabel(p.result.network).toLowerCase()} key, but this service runs on ${network}.`;
               return (
-                <li key={`${p.raw}-${i}`} className="flex items-start gap-2 text-sm text-destructive">
+                <li key={`${p.raw}-${i}`} className="flex items-start gap-2 text-[0.8125rem] text-destructive">
                   <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                   <span>
-                    <code className="font-mono text-xs text-muted-foreground">{keyPreview(p.raw)}</code> {reason}
+                    <code className="font-mono text-[0.8125rem] text-muted-foreground">{keyPreview(p.raw)}</code>{" "}
+                    {reason}
                   </span>
                 </li>
               );
@@ -296,7 +297,7 @@ export function KeyImport({
           <Button type="button" variant="secondary" size="sm" onClick={addPasted} disabled={ready.length === 0}>
             {ready.length > 0 ? `Add ${ready.length} ${ready.length === 1 ? "key" : "keys"}` : "Add keys"}
           </Button>
-          <span className={cn("text-xs text-muted-foreground", staged.length === 0 && "sr-only")}>
+          <span className={cn("text-[0.8125rem] text-muted-foreground", staged.length === 0 && "sr-only")}>
             {ready.length} of {staged.length} ready. Spending keys and seed phrases are refused here and never sent.
           </span>
         </div>
@@ -364,7 +365,6 @@ function ChoiceRow({ choice: c, testId }: { choice: Choice; testId: string }): R
         <span className="block text-[0.9375rem] text-foreground">{c.title}</span>
         <span className="block text-[0.8125rem] text-muted-foreground">{c.hint}</span>
       </span>
-      <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
     </button>
   );
 }

@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { HERO_PAYMENT } from "@/components/marketing/data";
 import { DemoLink } from "@/components/marketing/demo-link";
 import { Container } from "@/components/marketing/parts";
-import { TwoViews } from "@/components/marketing/two-views";
+import { HeroTwoViews } from "@/components/marketing/two-views";
 import { goldPill, t, textLink } from "@/components/marketing/classes";
 
 /**
@@ -31,7 +31,7 @@ export function Hero() {
           </div>
         </div>
 
-        <TwoViews className="mt-10 md:mt-12" />
+        <HeroTwoViews className="mt-10 md:mt-12" />
         <p className="mt-3 text-[13px] text-ash">
           {HERO_PAYMENT.label}.{" "}
           {HERO_PAYMENT.simulatedRate ? "Dollars convert to TAZ at a simulated testnet rate." : null}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { BookOpenCheck, ChevronRight, Download, KeyRound } from "lucide-react";
+import { BookOpenCheck, Download, KeyRound } from "lucide-react";
 import { Fiat, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { ErrorState } from "@/components/app/states";
@@ -20,6 +20,7 @@ import type { Statement, StatementLine } from "@/lib/api";
 import { SAMPLE_COMPANY_LINE, companyMark, companyName } from "@/lib/company";
 import { formatPeriodLabel, formatUsd } from "@/lib/format";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 const LATEST = 5;
 
@@ -77,7 +78,7 @@ function PaidBy({ treasury }: { treasury: boolean }) {
 
 function Scope() {
   return (
-    <p className="mb-6 flex items-start gap-2.5 rounded-[10px] bg-raised px-3.5 py-2.5 text-sm text-muted-foreground">
+    <p className="mb-6 flex items-start gap-2.5 rounded-[10px] bg-raised px-3.5 py-2.5 text-[0.8125rem] text-muted-foreground">
       <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       Your viewing key shows payments to you and nothing else. It cannot move money.
     </p>
@@ -98,7 +99,7 @@ function TreasuryKeyNote() {
   return (
     <div
       role="note"
-      className="mb-6 flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3.5 text-sm sm:flex-row sm:items-center sm:justify-between"
+      className="mb-6 flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning-bg px-4 py-3.5 text-[0.8125rem] sm:flex-row sm:items-center sm:justify-between"
     >
       <span className="text-strong">
         This is the company&apos;s Treasury key. It reads the payroll account, not one person&apos;s pay, so it has no
@@ -142,24 +143,24 @@ function HomeBody({ statement: s }: { statement: Statement }) {
           <CardHeader id="last-payment" title="Last payment" actions={last ? <SettlementTag line={last} /> : null} />
           {last ? (
             <>
-              <div className="mt-1 text-[1.1875rem] font-[380]">
+              <div className={cn(TYPE.heading, "mt-1")}>
                 <Usd cents={last.usd_basis_cents} />
               </div>
               <CardFoot
                 label="Paid"
                 value={
                   <span className="text-pretty">
-                    {monthDay(last.block_time ?? last.date)} · {formatPeriodLabel(last.period)} · {last.invoice_ref}
+                    {monthDay(last.block_time ?? last.date)}, for {formatPeriodLabel(last.period)}, invoice{" "}
+                    {last.invoice_ref}
                   </span>
                 }
                 action={
                   <Link
                     href={payslipHref(last)}
-                    className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-[0.9375rem] text-link hover:underline"
+                    className="inline-flex shrink-0 items-center rounded-sm text-[0.9375rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
                     aria-label={`Open the payslip for ${formatPeriodLabel(last.period)}`}
                   >
                     Payslip
-                    <ChevronRight className="size-4" aria-hidden="true" />
                   </Link>
                 }
               />
@@ -184,10 +185,9 @@ function HomeBody({ statement: s }: { statement: Statement }) {
         {lines.length > LATEST ? (
           <Link
             href="/portal/payslips"
-            className="ml-auto inline-flex items-center gap-0.5 rounded-sm text-[0.9375rem] text-link hover:underline"
+            className="ml-auto inline-flex items-center rounded-sm text-[0.9375rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
           >
             View all
-            <ChevronRight className="size-4" aria-hidden="true" />
           </Link>
         ) : null}
       </SectionHeader>
@@ -245,10 +245,10 @@ function PaidThisYear({ statement: s }: { statement: Statement }) {
           ) : null
         }
       />
-      <div className="mt-1 text-[1.75rem] leading-tight font-[380]">
+      <div className={cn(TYPE.hero, "mt-2")}>
         {local ? <Fiat cents={market} currency={currency.toUpperCase()} /> : <Usd cents={usd} />}
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm text-strong">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.8125rem] text-strong">
         <span>
           <Zec zat={zat} short /> received
         </span>
@@ -267,7 +267,7 @@ function PaidThisYear({ statement: s }: { statement: Statement }) {
         )}
       </div>
       {ytd.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">No payments yet this year.</p>
+        <p className="mt-3 text-[0.8125rem] text-muted-foreground">No payments yet this year.</p>
       ) : (
         <MonthStrip lines={s.lines} year={year} />
       )}
@@ -293,7 +293,7 @@ function MonthStrip({ lines, year }: { lines: StatementLine[]; year: number }) {
   const max = Math.max(1, ...months.map((m) => m.cents));
   return (
     <figure className="mt-4" aria-labelledby="month-strip-caption">
-      <figcaption id="month-strip-caption" className="mb-1.5 text-xs text-muted-foreground">
+      <figcaption id="month-strip-caption" className="mb-1.5 text-[0.8125rem] text-muted-foreground">
         By pay period
       </figcaption>
       <div className="flex h-12 items-end gap-[2px]" aria-hidden="true">
@@ -304,16 +304,13 @@ function MonthStrip({ lines, year }: { lines: StatementLine[]; year: number }) {
             className="flex h-full flex-1 items-end"
           >
             <div
-              className={cn(
-                "w-full rounded-t-[4px]",
-                m.cents ? "bg-[#b3820e] dark:bg-[#bd8a14]" : "h-[2px] rounded-none bg-hairline",
-              )}
+              className={cn("w-full rounded-t-[4px]", m.cents ? "bg-viz" : "h-[2px] rounded-none bg-hairline")}
               style={m.cents ? { height: `${Math.max(8, (m.cents / max) * 100)}%` } : undefined}
             />
           </div>
         ))}
       </div>
-      <div className="mt-1 flex gap-[2px] text-center text-[0.6875rem] text-muted-foreground" aria-hidden="true">
+      <div className="mt-1 flex gap-[2px] text-center text-[0.8125rem] text-muted-foreground" aria-hidden="true">
         {months.map((m) => (
           <span key={m.period} className="flex-1">
             {m.label.slice(0, 1)}

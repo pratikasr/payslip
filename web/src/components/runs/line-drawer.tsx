@@ -16,6 +16,7 @@ import type { PayLine, Run, RunLogEvent } from "@/lib/api";
 import { formatDateTime, formatHeight, formatPeriodLabel, settlementName } from "@/lib/format";
 import { decodeMemo } from "@/lib/memo";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 import { isLineWarning, LineStatus, runTitle } from "./run-meta";
 
 const CHAIN_NAMES: Record<string, string> = { base: "Base", arb: "Arbitrum", eth: "Ethereum", sol: "Solana" };
@@ -170,7 +171,7 @@ function DrawerBody({ run, line, logs }: { run: Run; line: PayLine; logs: RunLog
           <LineStatus line={line} run={run} />
         </div>
         <p className="mt-3">
-          <Usd cents={line.amount_usd_cents} className="text-[1.75rem] leading-none font-[380]" />
+          <Usd cents={line.amount_usd_cents} className={TYPE.title} />
         </p>
         {line.amount_zat ? (
           <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">

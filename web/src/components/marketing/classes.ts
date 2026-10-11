@@ -2,7 +2,7 @@
   The landing page's type scale and shared class names (docs/DESIGN.md section 16): 13, 15, 17,
   22, 30, 44 and 64px at 1440, the two largest steps one step smaller from 768px and two below it.
   Display is Bricolage Grotesque (font-display), text is Instrument Sans (font-text), chain data
-  is IBM Plex Mono (font-mono). Colours are the identity tokens in globals.css (.identity).
+  is IBM Plex Mono (font-mono). Colours are the identity tokens in globals.css.
 */
 export const t = {
   h1: "font-display text-[30px] leading-[1.06] font-[620] tracking-[-0.018em] text-balance md:text-[44px] md:leading-[1.02] xl:text-[64px] xl:leading-[0.98]",
@@ -27,12 +27,3 @@ export const quietPill =
 /** A text link in running copy: ink, a quiet underline that darkens on hover. */
 export const textLink =
   "rounded-[3px] text-ink underline decoration-ash/50 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink";
-
-/** Landing-only CSS classes (landing-styles.tsx). */
-export const lp = {
-  reveal: "lp-reveal",
-  thread: "lp-thread",
-  threadPaper: "lp-thread-paper",
-  dot: "lp-dot",
-  dotPaper: "lp-dot-paper",
-} as const;

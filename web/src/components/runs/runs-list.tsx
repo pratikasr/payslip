@@ -13,6 +13,7 @@ import { formatShortDate } from "@/lib/format";
 import { latestPeriodFirst, runPaidAt } from "@/lib/payroll";
 import { FilterChips } from "@/components/console/ui";
 import { Problem } from "./problem";
+import { TYPE } from "@/components/ds/type";
 import {
   confirmedCount,
   isPaying,
@@ -123,9 +124,9 @@ function RunsTable({ runs }: { runs: Run[] }) {
                     {runTitle(r)} payroll
                   </Link>
                   <span className="block truncate text-[0.8125rem] text-muted-foreground">
-                    <span className="sm:hidden">{plural(n, "person", "people")} · </span>
-                    {paidAt ? <span className="lg:hidden">Paid {formatShortDate(paidAt)} · </span> : null}
-                    Created {formatShortDate(r.created_at)}
+                    <span className="sm:hidden">{plural(n, "person", "people")}, </span>
+                    {paidAt ? <span className="lg:hidden">paid {formatShortDate(paidAt)}, </span> : null}
+                    created {formatShortDate(r.created_at)}
                   </span>
                 </td>
                 <td className="hidden py-2 pr-3 text-strong sm:table-cell">
@@ -150,7 +151,7 @@ function RunsTable({ runs }: { runs: Run[] }) {
                       aria-valuetext={`${confirmed} of ${n} confirmed`}
                     >
                       <span
-                        className="block h-full rounded-full bg-primary"
+                        className="block h-full rounded-full bg-viz"
                         style={{ width: `${Math.max(6, (confirmed / n) * 100)}%` }}
                       />
                     </span>
@@ -194,9 +195,7 @@ function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
         )}
       </span>
       <div className="max-w-md space-y-1.5">
-        <h2 className="text-[1.1875rem] font-normal tracking-[-0.01em]">
-          {hasPeople === false ? "Add the people you pay" : "No payroll runs yet"}
-        </h2>
+        <h2 className={TYPE.heading}>{hasPeople === false ? "Add the people you pay" : "No payroll runs yet"}</h2>
         <p className="text-[0.9375rem] text-muted-foreground">
           {hasPeople === false
             ? "A payroll run pays everyone on your people list in one shielded batch."

@@ -29,6 +29,8 @@ import { linesWithRuns, runStateLabel, settlementLabel } from "@/components/cons
 import { Drawer, DrawerTitle } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
 import { accessTag, LineStatus, runTitle } from "@/components/runs/run-meta";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 /** Mercury's detail drawer for one person: who they are, how they are paid, and every payment. */
 export function PersonDrawer({
@@ -88,10 +90,7 @@ function PersonBody({
         <Initials name={c.name} size="lg" />
         <div className="min-w-0">
           {/* A long name wraps to two lines and an email breaks anywhere: nothing is cut off unseen. */}
-          <DrawerTitle
-            className="line-clamp-2 text-[1.1875rem] leading-snug font-[380] tracking-[-0.01em] [overflow-wrap:anywhere]"
-            title={c.name}
-          >
+          <DrawerTitle className={cn(TYPE.heading, "line-clamp-2 [overflow-wrap:anywhere]")} title={c.name}>
             {c.name}
           </DrawerTitle>
           {c.email ? (
@@ -107,7 +106,7 @@ function PersonBody({
 
       <div className="mt-5">
         <div className="text-[0.8125rem] text-muted-foreground">Paid to date</div>
-        <div className="mt-1 text-[1.75rem] leading-tight font-[380]">
+        <div className={cn(TYPE.title, "mt-1")}>
           <Usd cents={paidCents} />
         </div>
         <Zec zat={paidZat} short className="text-[0.8125rem] text-muted-foreground" />
@@ -194,7 +193,9 @@ function PersonBody({
                       className="block truncate rounded-sm text-[0.9375rem] hover:underline"
                     >
                       {runTitle(run)}
-                      {line.invoice_ref ? <span className="text-muted-foreground"> · {line.invoice_ref}</span> : null}
+                      {line.invoice_ref ? (
+                        <span className="text-muted-foreground">, invoice {line.invoice_ref}</span>
+                      ) : null}
                     </Link>
                     <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
                       <LineStatus line={line} run={run} detail={paidAt ? formatShortDate(paidAt) : undefined} />
@@ -292,7 +293,7 @@ export function ArchiveDialog({
     >
       <DialogContent className="gap-0 p-0 sm:max-w-md">
         <DialogHeader className="gap-1.5 px-6 pt-6 pb-4">
-          <DialogTitle className="text-[1.1875rem] leading-tight font-[380] [overflow-wrap:anywhere]">
+          <DialogTitle className={cn(TYPE.heading, "[overflow-wrap:anywhere]")}>
             Archive {contractor?.name}?
           </DialogTitle>
           <DialogDescription className="text-[0.9375rem]">
@@ -315,7 +316,7 @@ export function ArchiveDialog({
                   <Link href={`/console/runs/${r.id}`} className="text-link underline">
                     {runTitle(r)} run
                   </Link>{" "}
-                  <span className="text-muted-foreground">· {runStateLabel(r)}</span>
+                  <span className="text-muted-foreground">{runStateLabel(r).toLowerCase()}</span>
                 </li>
               ))}
             </ul>

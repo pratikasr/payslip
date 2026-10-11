@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { ComponentType, ReactNode } from "react";
-import { ChevronRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { Button } from "@/components/ui/button";
 import { useFocusReturn } from "@/components/ui/dialog";
@@ -52,23 +52,22 @@ export function MiniStats({
   );
 }
 
-/** A gold text link with a chevron: "Share >", "View all >". */
+/** A link beside a heading ("All runs", "Go to Books"): gold text on paper, underlined, no arrow. */
 export function ArrowLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
   return (
     <Link
       href={href}
       className={cn(
-        "inline-flex shrink-0 items-center gap-0.5 rounded-sm text-[0.9375rem] whitespace-nowrap text-link hover:underline",
+        "inline-flex shrink-0 items-center rounded-sm text-[0.9375rem] whitespace-nowrap text-link underline decoration-1 underline-offset-[3px] hover:decoration-2",
         className,
       )}
     >
       {children}
-      <ChevronRight className="size-4" aria-hidden="true" />
     </Link>
   );
 }
 
-/** A thin rounded progress bar; gold by default. */
+/** A thin rounded progress bar on a Mist track: ink by default (gold stays for the primary action). */
 export function Bar({
   value,
   label,
@@ -93,7 +92,7 @@ export function Bar({
       <div
         className={cn(
           "h-full rounded-full",
-          tone === "gold" && "bg-primary",
+          tone === "gold" && "bg-viz",
           tone === "danger" && "bg-destructive",
           tone === "muted" && "bg-faint/50",
         )}

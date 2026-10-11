@@ -7,6 +7,8 @@ import { useHealth } from "@/components/app/health-provider";
 import { LogoMark } from "@/components/app/logo";
 import { Card } from "@/components/ds/card";
 import { Button } from "@/components/ui/button";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 /**
  * Decides what /console can be on this deployment. A statements-only service (PAYSLIP_MODE=
@@ -33,9 +35,7 @@ function StatementsOnly() {
     <main id="main" className="mx-auto grid min-h-[calc(100dvh-3rem)] max-w-[640px] content-center px-4 py-12">
       <Card className="px-6 py-7 sm:px-8">
         <LogoMark className="size-[30px]" />
-        <h1 className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">
-          This Payslip only reads statements
-        </h1>
+        <h1 className={cn(TYPE.title, "mt-5")}>This Payslip only reads statements</h1>
         <p className="mt-2 text-[0.9375rem] text-muted-foreground">
           It runs without a wallet, so there is no company console here: it cannot add people or run payroll. It reads
           payslips and books from viewing keys, and checks payment proofs against the Zcash chain.

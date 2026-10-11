@@ -1,131 +1,47 @@
 /*
-  The public payslip, its layout informed by Mercury's public invoice page: one card on a soft gradient with a
-  few fine grid lines. No app chrome. Colours for the ground are local to this page; the card
-  uses the app's tokens.
+  The public payslip: no app chrome, on Paper. A checked proof opens wide, in the identity's two
+  views (what the world sees beside what the proof shows); asking for a proof, checking it, and
+  its errors sit in one narrow sheet with a Mist edge. Colours are the app's tokens.
 */
 .page {
-  --pay-top: #f6efe7;
-  --pay-bot: #e2e2ec;
-  --pay-grid: rgba(112, 115, 147, 0.2);
   position: relative;
   min-height: 100dvh;
-  padding: 64px 16px 40px;
-  overflow: hidden;
-  background: linear-gradient(180deg, var(--pay-top), var(--pay-bot));
-}
-
-:global(.dark) .page {
-  --pay-top: #1d1b22;
-  --pay-bot: #121219;
-  --pay-grid: rgba(255, 255, 255, 0.06);
-}
-
-/* Two pairs of vertical lines either side of the card and two horizontal lines across the top. */
-.page::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(
-      90deg,
-      transparent calc(50% - 300px),
-      var(--pay-grid) calc(50% - 300px),
-      var(--pay-grid) calc(50% - 299px),
-      transparent calc(50% - 299px),
-      transparent calc(50% + 299px),
-      var(--pay-grid) calc(50% + 299px),
-      var(--pay-grid) calc(50% + 300px),
-      transparent calc(50% + 300px)
-    ),
-    linear-gradient(
-      90deg,
-      transparent calc(50% - 340px),
-      var(--pay-grid) calc(50% - 340px),
-      var(--pay-grid) calc(50% - 339px),
-      transparent calc(50% - 339px),
-      transparent calc(50% + 339px),
-      var(--pay-grid) calc(50% + 339px),
-      var(--pay-grid) calc(50% + 340px),
-      transparent calc(50% + 340px)
-    ),
-    linear-gradient(
-      180deg,
-      transparent 40px,
-      var(--pay-grid) 40px,
-      var(--pay-grid) 41px,
-      transparent 41px,
-      transparent 76px,
-      var(--pay-grid) 76px,
-      var(--pay-grid) 77px,
-      transparent 77px
-    );
+  padding: 56px 16px 40px;
+  background: var(--background);
 }
 
 .card {
   position: relative;
   max-width: 576px;
   margin: 0 auto;
-  border-radius: 10px;
-  padding: 48px 56px 40px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 44px 52px 40px;
   background: var(--card);
   color: var(--card-foreground);
-  box-shadow: 0 1px 3px rgba(14, 14, 45, 0.08);
 }
 
-:global(.dark) .card {
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 1px 3px rgba(0, 0, 0, 0.3);
+.wide {
+  position: relative;
+  max-width: 1040px;
+  margin: 0 auto;
 }
 
 .foot {
   position: relative;
   margin-top: 30px;
   text-align: center;
-  font-size: 14px;
+  font-size: 0.8125rem;
   line-height: 1.7;
   color: var(--muted-foreground);
 }
 
-/* The payslip thumbnail is paper: white with dark ink. A white sheet glares on the dark card, so the
-   dark theme leaves it out. */
-:global(.dark) .thumb {
-  display: none;
-}
-
-.thumb {
-  width: 200px;
-  margin: 22px auto 0;
-  padding: 14px 14px 10px;
-  border-radius: 3px 3px 0 0;
-  background: #ffffff;
-  color: #1e1e2a;
-  box-shadow: 0 0 0 1px rgba(112, 115, 147, 0.18);
-}
-
-.thumbLine {
-  height: 3px;
-  margin-top: 6px;
-  border-radius: 2px;
-  background: #e6e6ec;
-}
-
-.thumbRow {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  font-size: 7px;
-  color: #70707d;
-}
-
 @media (max-width: 640px) {
   .page {
-    padding: 36px 12px 28px;
+    padding: 28px 16px 28px;
   }
   .card {
-    padding: 30px 22px 28px;
+    padding: 28px 20px 26px;
   }
 }
 
@@ -135,13 +51,13 @@
     padding: 0;
     background: none;
   }
-  .page::before {
-    display: none;
-  }
   .card {
     max-width: none;
     padding: 0;
-    box-shadow: none;
+    border: 0;
+  }
+  .wide {
+    max-width: none;
   }
   .foot {
     margin-top: 18px;

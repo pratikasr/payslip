@@ -8,7 +8,7 @@ import { Slot } from "radix-ui"
 // (Apple's minimum) around it, so a 24px copy icon or a 32px pill is easy to tap without
 // changing how it looks.
 const buttonVariants = cva(
-  "group/button relative pointer-coarse:after:absolute pointer-coarse:after:content-[''] inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-sm font-[450] whitespace-nowrap transition-colors outline-hidden focus-visible:outline-solid select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button relative pointer-coarse:after:absolute pointer-coarse:after:content-[''] inline-flex shrink-0 items-center justify-center rounded-full border border-transparent bg-clip-padding text-[0.9375rem] font-medium whitespace-nowrap transition-colors outline-hidden focus-visible:outline-solid select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -25,7 +25,7 @@ const buttonVariants = cva(
       size: {
         default:
           "h-9 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3 pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-1",
-        xs: "h-6 gap-1 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3 pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5",
+        xs: "h-6 gap-1 px-2.5 text-[0.8125rem] [&_svg:not([class*='size-'])]:size-3 pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5",
         sm: "h-8 gap-1.5 px-3.5 text-[0.8125rem] [&_svg:not([class*='size-'])]:size-3.5 pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-1.5",
         lg: "h-10 gap-2 px-5 text-[0.9375rem] pointer-coarse:after:-inset-x-0 pointer-coarse:after:-inset-y-0.5",
         icon: "size-9 pointer-coarse:after:-inset-1",

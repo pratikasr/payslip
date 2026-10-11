@@ -48,7 +48,10 @@ function stageOf(
   return "run";
 }
 
-/** Company home: Mercury's dashboard with payroll figures, all from the live service. */
+/**
+ * Company home: the company's name in the display face, then what it paid this year, then the
+ * cards. Every figure comes from the live service.
+ */
 export function ConsoleHome({ initial }: { initial: HomeData }) {
   const { network } = useHealth();
   const wallet = useResource((s) => retryOnce(() => api.wallet(s)), "console-wallet", initial.wallet);
@@ -140,18 +143,20 @@ function HomeBody({ wallet, contractors, runs }: { wallet?: Wallet; contractors:
   const hasLines = runs.some((r) => r.lines.length > 0 && pastFunding(r));
   const hasPeople = contractors.length > 0;
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {hasPaid ? (
         <>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
-            <PayrollHero runs={runs} />
-            <ContractorsCard contractors={contractors} runs={runs} />
-          </div>
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            <TreasuryCard wallet={wallet} runs={runs} />
-            <NextPayrollCard runs={runs} contractors={contractors} />
-            {/* Three cards on two columns: the to-do list takes the full second row. */}
-            <TodoCard runs={runs} contractors={contractors} className="md:col-span-2 xl:col-span-1" />
+          {/* The year's figure leads the page, on Paper with no card around it. */}
+          <PayrollHero runs={runs} />
+          <div className="grid items-start gap-5 lg:grid-cols-2">
+            <div className="grid gap-5">
+              <ContractorsCard contractors={contractors} runs={runs} />
+              <NextPayrollCard runs={runs} contractors={contractors} />
+            </div>
+            <div className="grid gap-5">
+              <TreasuryCard wallet={wallet} runs={runs} />
+              <TodoCard runs={runs} contractors={contractors} />
+            </div>
           </div>
         </>
       ) : (
@@ -350,15 +355,11 @@ function ContractorsCard({ contractors, runs }: { contractors: Contractor[]; run
 
 function HomeSkeleton() {
   return (
-    <div role="status" aria-label="Loading home" className="space-y-5">
-      <div className="grid gap-5 lg:grid-cols-2">
-        {[0, 1].map((i) => (
-          <div key={i} className="space-y-3 rounded-xl border p-5">
-            <Skeleton className="h-4 w-36" />
-            <Skeleton className="h-8 w-48" />
-            <Skeleton className="h-40 w-full" />
-          </div>
-        ))}
+    <div role="status" aria-label="Loading home" className="space-y-6">
+      <div className="space-y-3">
+        <Skeleton className="h-4 w-44" />
+        <Skeleton className="h-11 w-64" />
+        <Skeleton className="h-40 w-full" />
       </div>
       <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
         {[0, 1, 2].map((i) => (

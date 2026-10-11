@@ -9,6 +9,8 @@ import { ReconciliationView } from "@/components/books/reconciliation-view";
 import { exceptionsOf, shortRange } from "@/components/books/books-data";
 import { useBooks } from "@/components/books/books-provider";
 import { formatCount } from "@/lib/format";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 export function ReconciliationPage() {
   return <BooksPage title="Reconciliation">{(r) => <ReconciliationView r={r} />}</BooksPage>;
@@ -48,9 +50,7 @@ function ExportsHeader({ controls, meta }: { controls: React.ReactNode; meta: Re
       className="mx-auto mb-8 grid max-w-[640px] justify-items-center gap-3 pt-4 text-center sm:pt-8"
       data-print="hide"
     >
-      <h1 className="text-[1.75rem] leading-tight font-[380] tracking-[-0.015em] text-balance">
-        Choose where your books live
-      </h1>
+      <h1 className={cn(TYPE.title, "text-balance")}>Choose where your books live</h1>
       <p className="text-[0.9375rem] text-muted-foreground">
         {r && ex
           ? `Your books for ${shortRange(r.period)} are ready: ${formatCount(r.runs.length)} ${r.runs.length === 1 ? "run" : "runs"}, ${formatCount(r.totals.count)} ${r.totals.count === 1 ? "payment" : "payments"} and ${formatCount(ex.unlabelled.length)} unlabelled ${ex.unlabelled.length === 1 ? "transaction" : "transactions"}.`
@@ -59,7 +59,7 @@ function ExportsHeader({ controls, meta }: { controls: React.ReactNode; meta: Re
             : "Preparing your books."}
       </p>
       {controls}
-      <p className="text-xs text-muted-foreground">{meta}</p>
+      <p className="text-[0.8125rem] text-muted-foreground">{meta}</p>
     </div>
   );
 }

@@ -117,9 +117,18 @@ test.describe("payroll runs", () => {
     await expect(page.getByText("A simulated testnet rate")).toBeVisible();
     await page.keyboard.press("Escape");
 
-    // Above the tabs: what the explorer shows next to what the payer sees, linking to the Privacy view.
-    const strip = page.getByRole("region", { name: "What the public sees" });
-    await expect(strip.getByText(/\d+ transactions?\. No amounts, no names\./)).toBeVisible();
+    // Above the tabs: the run in two views, what the explorer shows beside what the payer's keys
+    // read, joined by each transaction id, with a way into the Privacy view.
+    const views = page.getByRole("figure", {
+      name: `The ${title} payroll in two views: what the Zcash explorer shows, and what your keys show.`,
+    });
+    const vault = views.getByRole("group", { name: "What the explorer shows" });
+    const paper = views.getByRole("group", { name: "What your keys show" });
+    await expect(vault.getByText(/^\d+ shielded transactions?\. No amounts, no names\.$/)).toBeVisible();
+    const sentLine = run.lines.find((l) => l.txid)!;
+    for (const side of [vault, paper]) await expect(side).toContainText(sentLine.txid!.slice(0, 6));
+    for (const secret of [sentLine.contractor_name, "$"]) await expect(vault).not.toContainText(secret);
+    await expect(paper).toContainText(sentLine.contractor_name);
     // A paid run needs no action card.
     await expect(page.getByRole("link", { name: /^(Resume|Fund run|Follow progress)$/ })).toHaveCount(0);
 
@@ -151,8 +160,8 @@ test.describe("payroll runs", () => {
     // Focus returns to the name that opened the drawer.
     await expect(page.getByRole("button", { name: line.contractor_name, exact: true })).toBeFocused();
 
-    // Privacy view, from the strip: the public side is labelled an illustration; the Zcash side lists the real txids.
-    await strip.getByRole("button", { name: "See the Privacy view" }).click();
+    // Privacy view, from the two views: the public side is labelled an illustration; the Zcash side lists the real txids.
+    await paper.getByRole("button", { name: "See the Privacy view" }).click();
     await expect(page.getByRole("tab", { name: "Privacy view" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("What a public chain would show")).toBeVisible();
     await expect(page.getByText("Illustration", { exact: true })).toBeVisible();
@@ -275,7 +284,7 @@ test.describe("payroll runs", () => {
     await expect(page.getByText(/^By clicking Approve, I authorise Payslip/)).toBeVisible();
 
     // Review restates every line without a click (up to ten), and they fold away on request.
-    const toggle = page.getByRole("button", { name: /contractors? · / });
+    const toggle = page.getByRole("button", { name: /contractors? for / });
     if (contractors.length <= 10) await expect(toggle).toHaveAttribute("aria-expanded", "true");
     else await toggle.click();
     await expect(page.locator("#review-lines")).toContainText("E2E-REVIEW-ONLY");
@@ -283,7 +292,7 @@ test.describe("payroll runs", () => {
     // A reload keeps the draft (amounts and invoice references) on the Review step.
     await page.reload();
     await expect(page.getByRole("heading", { level: 1, name: /^Review payroll for / })).toBeVisible();
-    if (contractors.length > 10) await page.getByRole("button", { name: /contractors? · / }).click();
+    if (contractors.length > 10) await page.getByRole("button", { name: /contractors? for / }).click();
     await expect(page.locator("#review-lines")).toContainText("E2E-REVIEW-ONLY");
 
     // Back returns to Amounts with what was typed.

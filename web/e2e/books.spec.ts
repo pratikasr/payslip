@@ -115,7 +115,7 @@ test("the judge kit loads with one click and names every payment by its key file
   await expect(page.getByTestId("books-scan-meta")).toContainText(
     `scanned from block ${kit.birthday_height.toLocaleString("en-US")}`,
   );
-  await expect(page.getByTestId("books-key-chip")).toContainText("7 keys · Treasury and 6 contractors");
+  await expect(page.getByTestId("books-key-chip")).toContainText("7 keys: Treasury and 6 contractors");
   // The header names the company above the title, and the sidebar too; the subtitle says the
   // company is a sample on testnet and says nothing of the kind on mainnet.
   await expect(page.getByTestId("books-company")).toHaveText(COMPANY);

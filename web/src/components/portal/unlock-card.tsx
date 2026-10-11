@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { classifyKey } from "@/lib/keys";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 /** The judge kit contractor the demo key opens. */
 const DEMO_PERSON = "Amara Okafor";
@@ -118,7 +120,7 @@ export function UnlockScreen() {
           className="rounded-xl border bg-card px-6 py-8 text-card-foreground sm:px-9 sm:py-10"
         >
           <LogoMark className="size-8" />
-          <h1 id="unlock-title" className="mt-5 text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">
+          <h1 id="unlock-title" className={cn(TYPE.title, "mt-5")}>
             Open your payslips
           </h1>
           <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
@@ -128,7 +130,7 @@ export function UnlockScreen() {
           {lockReason ? (
             <div
               role="alert"
-              className="mt-5 flex items-start gap-2.5 rounded-[10px] bg-danger-bg px-3.5 py-3 text-sm text-foreground"
+              className="mt-5 flex items-start gap-2.5 rounded-[10px] bg-danger-bg px-3.5 py-3 text-[0.8125rem] text-foreground"
             >
               <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
               <span>{lockReason}</span>
@@ -178,7 +180,7 @@ export function UnlockScreen() {
               autoComplete="off"
               autoCapitalize="off"
               placeholder="uviewtest1… or uview1…"
-              className="min-h-24 font-mono text-xs break-all md:text-xs"
+              className="min-h-24 font-mono text-[0.8125rem] break-all"
               aria-invalid={showStatus && (result.kind !== "ufvk" || mismatch)}
               aria-describedby="portal-key-status"
             />
@@ -187,21 +189,21 @@ export function UnlockScreen() {
               {showStatus ? (
                 <KeyStatus result={result} serviceNetwork={health?.network} id="portal-key-status" />
               ) : (
-                <p id="portal-key-status" className="text-sm text-muted-foreground">
+                <p id="portal-key-status" className="text-[0.8125rem] text-muted-foreground">
                   A full viewing key starts with uviewtest or uvftest on testnet, uview or uvf on mainnet.
                 </p>
               )}
             </div>
             {fileError ? (
-              <p role="alert" className="flex items-start gap-2 text-sm text-danger">
+              <p role="alert" className="flex items-start gap-2 text-[0.8125rem] text-danger">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 <span>{fileError}</span>
               </p>
             ) : null}
             {choices ? (
               <fieldset className="rounded-[10px] border px-3.5 pt-2.5 pb-3">
-                <legend className="px-1 text-sm text-strong">Whose payslips?</legend>
-                <p className="mb-2 text-xs text-muted-foreground">
+                <legend className="px-1 text-[0.8125rem] text-strong">Whose payslips?</legend>
+                <p className="mb-2 text-[0.8125rem] text-muted-foreground">
                   This file holds {choices.length} contractor keys. Open one at a time.
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -237,12 +239,12 @@ export function UnlockScreen() {
             </Button>
           ) : null}
 
-          <p className="mt-6 flex items-start gap-2.5 border-t border-hairline pt-5 text-sm text-muted-foreground">
+          <p className="mt-6 flex items-start gap-2.5 border-t border-hairline pt-5 text-[0.8125rem] text-muted-foreground">
             <KeyRound className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             Your viewing key reads payments to you. It cannot move money.
           </p>
         </section>
-        <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+        <p className="mt-4 px-2 text-center text-[0.8125rem] text-muted-foreground">
           The key stays in this browser tab and is sent only to the Payslip service, which keeps a read-only scan of
           your payments so the next visit is quick. Lock forgets it here; you can also ask the service to forget it.
         </p>

@@ -14,6 +14,8 @@ import { runCoin } from "@/lib/payroll";
 import { auditTimeline, chainName, type LogEvent, type TimelineEntry } from "@/lib/run-log";
 import { Problem } from "./problem";
 import { fundingTag, plural, runTitle } from "./run-meta";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 const HEX64 = /\b[0-9a-f]{64}\b/gi;
 
@@ -375,7 +377,7 @@ export function AuditTrail({
       </div>
 
       <section aria-labelledby="activity-title">
-        <h2 id="activity-title" className="mb-4 text-[1.1875rem] font-normal tracking-[-0.01em]">
+        <h2 id="activity-title" className={cn(TYPE.heading, "mb-4")}>
           Activity
         </h2>
         {error && logs.length === 0 ? (

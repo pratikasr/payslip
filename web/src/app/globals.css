@@ -5,17 +5,22 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Payslip tokens, modelled on Mercury's app (measured on demo.mercury.com,
-  5 Oct 2026; see docs/DESIGN.md section 15) with Zcash gold in place of
-  Mercury's indigo. One accent: gold fills the primary action and marks what
-  is shielded. Status colours are semantic, never decorative.
+  Payslip's tokens (docs/DESIGN.md section 16: one payment, two views). Five colours carry the
+  identity. Paper is the key's view: pages, payslips, the console. Vault is the explorer's view:
+  the dark panel where redaction bars live, and the ink on paper. Gold is the thread between the
+  two views, the primary action, the shielded mark and the active tab; as text on paper it is
+  #8A6400. Ash is secondary text and Mist the hairlines, surfaces and tracks; both change value on
+  a vault surface (.identity-vault). Status colours stay semantic and are never decorative.
 */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  /* Instrument Sans for all text; Bricolage Grotesque for titles, the company name and headline money; Plex Mono for chain data. */
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-text: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
-  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -55,6 +60,15 @@
   --color-redact: var(--redact);
   --color-viz: var(--viz);
   --color-viz-soft: var(--viz-soft);
+  /* The five identity names as utilities (bg-paper, bg-vault, text-ink, text-ash, bg-mist, bg-gold, text-gold-ink). */
+  --color-paper: var(--id-paper);
+  --color-vault: var(--id-vault);
+  --color-ink: var(--id-ink);
+  --color-gold: var(--id-gold);
+  --color-gold-ink: var(--id-gold-ink);
+  --color-on-gold: var(--id-on-gold);
+  --color-ash: var(--id-ash);
+  --color-mist: var(--id-mist);
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: calc(var(--radius) * 0.75);
   --radius-lg: var(--radius);
@@ -65,31 +79,44 @@
 }
 
 :root {
+  /* The five names. */
+  --id-paper: #ffffff;
+  --id-vault: #1c2230;
+  --id-ink: #1c2230;
+  --id-gold: #f4b728;
+  --id-gold-ink: #8a6400;
+  --id-on-gold: #1c2230;
+  --id-ash: #5c6472;
+  --id-mist: #eef1f5;
+
+  /* The app's roles, from the five names. */
   --radius: 0.5rem;
   --background: #ffffff;
-  --foreground: #1e1e2a;
-  --strong: #363644;
-  --muted-foreground: #5e5f6c;
-  --faint: #8b8c98;
+  --foreground: #1c2230;
+  --strong: #343c4b;
+  --muted-foreground: #5c6472;
+  /* Not for text: dividers, empty chart stubs, icons beside a label. */
+  --faint: #8b93a5;
   --card: #ffffff;
-  --card-foreground: #1e1e2a;
+  --card-foreground: #1c2230;
   --popover: #ffffff;
-  --popover-foreground: #1e1e2a;
-  --raised: #f6f6f9;
-  --sidebar: #fbfcfd;
-  --chip: #efeff3;
-  --avatar: #e3f0f2;
-  --banner: #30303c;
-  --banner-foreground: #f0f0f5;
+  --popover-foreground: #1c2230;
+  --raised: #f6f8fa;
+  --sidebar: #ffffff;
+  --chip: #eef1f5;
+  --avatar: #eef1f5;
+  --banner: #1c2230;
+  --banner-foreground: #eef1f5;
   --primary: #f4b728;
-  --primary-edge: #d9a21c;
-  --primary-foreground: #1e1e2a;
-  --primary-soft: #fdf1d4;
-  --secondary: #efeff3;
-  --secondary-foreground: #1e1e2a;
-  --muted: #f4f4f7;
-  --accent: #f4f4f7;
-  --accent-foreground: #1e1e2a;
+  --primary-edge: #f4b728;
+  --primary-foreground: #1c2230;
+  /* Gold is never a wash: the soft step is Mist. */
+  --primary-soft: #eef1f5;
+  --secondary: #eef1f5;
+  --secondary-foreground: #1c2230;
+  --muted: #f3f5f8;
+  --accent: #f3f5f8;
+  --accent-foreground: #1c2230;
   --destructive: #b0175f;
   --danger-bg: #fbe8f0;
   --success: #036e43;
@@ -98,57 +125,91 @@
   --warning-bg: #fdf3d7;
   --info: #2f4a7a;
   --info-bg: #e8eef8;
-  --link: #8a6100;
-  --border: #e3e3e9;
-  --hairline: #ececf1;
-  --input: #8b8c98;
-  --ring: #b3820e;
-  --redact: #1e1e2a;
-  --viz: #d9a21c;
-  --viz-soft: #f4dfa6;
+  --link: #8a6400;
+  --border: #e3e7ed;
+  --hairline: #eef1f5;
+  --input: #868e9c;
+  /* Gold as text on paper (5.4:1); gold itself on a vault surface. */
+  --ring: #8a6400;
+  --redact: #eef1f5;
+  --viz: #1c2230;
+  --viz-soft: #c3cad5;
 }
 
 .dark {
-  --background: #171721;
-  --foreground: #f4f5f9;
-  --strong: #dddde5;
-  --muted-foreground: #a6a6b2;
-  --faint: #7f7f8b;
-  --card: #1e1e2a;
-  --card-foreground: #f4f5f9;
-  --popover: #272735;
-  --popover-foreground: #f4f5f9;
-  --raised: #232330;
-  --sidebar: #1a1a24;
-  --chip: #2a2a37;
-  --avatar: #253338;
-  --banner: #0b0b12;
-  --banner-foreground: #ededf3;
+  --id-paper: #14181f;
+  --id-vault: #0f1218;
+  --id-ink: #eef1f5;
+  --id-gold-ink: #f4b728;
+  --id-ash: #8b93a5;
+  --id-mist: #262c38;
+
+  --background: #14181f;
+  --foreground: #eef1f5;
+  --strong: #d3d8e0;
+  --muted-foreground: #8b93a5;
+  --faint: #6b7385;
+  --card: #14181f;
+  --card-foreground: #eef1f5;
+  --popover: #1b2029;
+  --popover-foreground: #eef1f5;
+  --raised: #1a1f28;
+  --sidebar: #14181f;
+  --chip: #262c38;
+  --avatar: #262c38;
+  --banner: #0f1218;
+  --banner-foreground: #eef1f5;
   --primary: #f4b728;
   --primary-edge: #f4b728;
-  --primary-foreground: #1e1e2a;
-  --primary-soft: #3a3020;
-  --secondary: #2a2a37;
-  --secondary-foreground: #f4f5f9;
-  --muted: #232330;
-  --accent: #272735;
-  --accent-foreground: #f4f5f9;
+  --primary-foreground: #1c2230;
+  --primary-soft: #262c38;
+  --secondary: #262c38;
+  --secondary-foreground: #eef1f5;
+  --muted: #1b2029;
+  --accent: #1f252f;
+  --accent-foreground: #eef1f5;
   --destructive: #fc92b4;
   --danger-bg: #3a1a28;
   --success: #77c599;
-  --success-bg: #18302a;
+  --success-bg: #15302a;
   --warning: #f6c453;
   --warning-bg: #2e2512;
   --info: #8da4f5;
   --info-bg: #1d2340;
   --link: #f4b728;
-  --border: #2f2f3c;
-  --hairline: #262632;
-  --input: #6c6c7a;
+  --border: #2e3542;
+  --hairline: #262c38;
+  --input: #6b7385;
   --ring: #f4b728;
-  --redact: #c3c3cc;
-  --viz: #f4b728;
-  --viz-soft: #6b5520;
+  --redact: #262c38;
+  --viz: #eef1f5;
+  --viz-soft: #4a5263;
+}
+
+/*
+  A vault surface: the explorer's side of a two-view panel (components/ds/two-views.tsx). Ink
+  turns white, Ash and Mist take their vault values, and the app's own roles follow, so shared
+  pieces (a money figure, a muted line, a focus ring) read right on it.
+*/
+.identity-vault {
+  --id-ink: #ffffff;
+  --id-ash: #8b93a5;
+  --id-mist: #2a3242;
+  --foreground: #ffffff;
+  --muted-foreground: #8b93a5;
+  --border: #2a3242;
+  --hairline: #2a3242;
+  --link: #f4b728;
+  --ring: #f4b728;
+  color-scheme: dark;
+}
+.dark .identity-vault {
+  --id-ink: #eef1f5;
+  --id-ash: #8b93a5;
+  --id-mist: #262c38;
+  --foreground: #eef1f5;
+  --border: #262c38;
+  --hairline: #262c38;
 }
 
 @layer base {
@@ -161,7 +222,6 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "ss01" 0;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {
@@ -188,13 +248,14 @@
 
 @layer utilities {
   /*
-    Money, set the way Mercury sets it: tabular digits, tightened 3%, cents
-    smaller and raised (src/components/ds/money.tsx).
+    Money, typeset: tabular digits in the text face, cents smaller and raised
+    (src/components/app/amount.tsx). A headline figure adds the display face
+    (TYPE.hero in src/components/ds/type.ts).
   */
   .money {
     font-variant-numeric: tabular-nums;
     font-feature-settings: "tnum" 1;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.01em;
     white-space: nowrap;
   }
   .money-cents {
@@ -309,6 +370,31 @@ html[data-private] .money {
     --sidebar: #ffffff;
     --popover: #ffffff;
     --popover-foreground: #000000;
+    --id-paper: #ffffff;
+    --id-vault: #ffffff;
+    --id-ink: #000000;
+    --id-gold-ink: #000000;
+    --id-ash: #333333;
+    --id-mist: #d9d9d9;
+  }
+  /* The explorer's view prints as a ruled box beside the paper: black on white, bars in grey. */
+  .identity-vault,
+  .dark .identity-vault {
+    --id-ink: #000000;
+    --id-ash: #333333;
+    --id-mist: #d9d9d9;
+    --foreground: #000000;
+    --muted-foreground: #333333;
+    --border: #999999;
+    --hairline: #cccccc;
+    --link: #000000;
+    border: 0.5pt solid #999999 !important;
+    break-inside: avoid;
+  }
+  [data-redact]::before,
+  [data-thread] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   html,
   body {
@@ -386,56 +472,68 @@ html[data-private] .money {
 }
 
 /*
-  Identity tokens (docs/DESIGN.md section 16: one payment, two views). Scoped to .identity, which
-  only the landing page uses for now, so the console, portal and Books keep the tokens above
-  until the app-wide switch. Paper is the key's view, Vault the explorer's; Gold is the thread
-  between them and the one primary action; Ash and Mist change value on a vault surface
-  (.identity-vault), so the same utilities read right on either side.
+  The two-view panel's one orchestrated motion (docs/DESIGN.md section 16), for a panel that asks
+  for it (TwoViews motion, the landing hero): the gold thread draws from the explorer's txid to
+  the key's txid, a dot landing at each end, then each private value on the paper side resolves
+  from a Mist bar into its value, top to bottom. Values are in the markup from the start, so
+  screen readers and reduced motion get the final state at once; nothing here runs under reduced
+  motion.
 */
-@theme inline {
-  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
-  --font-text: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
-  --color-paper: var(--id-paper);
-  --color-vault: var(--id-vault);
-  --color-ink: var(--id-ink);
-  --color-gold: var(--id-gold);
-  --color-gold-ink: var(--id-gold-ink);
-  --color-on-gold: var(--id-on-gold);
-  --color-ash: var(--id-ash);
-  --color-mist: var(--id-mist);
+@media (prefers-reduced-motion: no-preference) {
+  .tv-motion .tv-thread {
+    transform-origin: left center;
+    animation: tv-draw 520ms cubic-bezier(0.55, 0, 0.25, 1) 240ms both;
+  }
+  .tv-motion .tv-thread-paper {
+    animation-duration: 200ms;
+    animation-delay: 760ms;
+    animation-timing-function: linear;
+  }
+  .tv-motion .tv-dot {
+    animation: tv-pop 260ms cubic-bezier(0.3, 1.4, 0.5, 1) 180ms both;
+  }
+  .tv-motion .tv-dot-paper {
+    animation-delay: 920ms;
+  }
+  .tv-motion .tv-reveal {
+    position: relative;
+  }
+  .tv-motion .tv-reveal > .tv-value {
+    animation: tv-fade 380ms ease-out calc(var(--tv-delay, 1000ms) + 220ms) both;
+  }
+  .tv-motion .tv-reveal::after {
+    content: "";
+    position: absolute;
+    inset: 0.14em 0;
+    border-radius: 4px;
+    background: var(--id-mist);
+    transform-origin: right center;
+    animation: tv-unbar 560ms cubic-bezier(0.65, 0, 0.35, 1) var(--tv-delay, 1000ms) both;
+  }
 }
-
-.identity {
-  --id-paper: #ffffff;
-  --id-vault: #1c2230;
-  --id-ink: #1c2230;
-  --id-gold: #f4b728;
-  --id-gold-ink: #8a6400;
-  --id-on-gold: #1c2230;
-  --id-ash: #5c6472;
-  --id-mist: #eef1f5;
-  /* Focus rings: gold text on paper (5.3:1), gold itself on a vault surface. */
-  --ring: #8a6400;
-  color-scheme: light;
+@keyframes tv-draw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
 }
-.identity .identity-vault {
-  --id-ink: #ffffff;
-  --id-ash: #8b93a5;
-  --id-mist: #2a3242;
-  --ring: #f4b728;
+@keyframes tv-pop {
+  from {
+    transform: scale(0);
+  }
 }
-.dark .identity {
-  --id-paper: #14181f;
-  --id-vault: #0f1218;
-  --id-ink: #eef1f5;
-  --id-gold-ink: #f4b728;
-  --id-ash: #8b93a5;
-  --id-mist: #262c38;
-  --ring: #f4b728;
-  color-scheme: dark;
+@keyframes tv-unbar {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
 }
-.dark .identity .identity-vault {
-  --id-ink: #eef1f5;
-  --id-ash: #8b93a5;
-  --id-mist: #262c38;
+@keyframes tv-fade {
+  from {
+    opacity: 0;
+  }
 }

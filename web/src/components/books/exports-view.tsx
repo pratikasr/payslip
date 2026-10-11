@@ -223,8 +223,8 @@ export function ExportsView({ r }: { r: BooksResult }) {
                 ))}
               </ul>
               {o.id !== "pdf" ? (
-                <p className="text-xs break-all text-muted-foreground" data-testid={`export-${o.id}-file`}>
-                  <code className="font-mono">{fileName(o.id, r)}</code> · {formatCount(rowCount(o.id, r))}{" "}
+                <p className="text-[0.8125rem] break-all text-muted-foreground" data-testid={`export-${o.id}-file`}>
+                  <code className="font-mono">{fileName(o.id, r)}</code>, {formatCount(rowCount(o.id, r))}{" "}
                   {rowCount(o.id, r) === 1 ? "row" : "rows"}
                 </p>
               ) : null}
@@ -242,7 +242,7 @@ export function ExportsView({ r }: { r: BooksResult }) {
                 {busy === o.id ? "Preparing" : o.action}
               </Button>
               {done[o.id] ? (
-                <span className="inline-flex min-w-0 items-center gap-1 text-xs text-success" role="status">
+                <span className="inline-flex min-w-0 items-center gap-1 text-[0.8125rem] text-success" role="status">
                   <Check className="size-3.5 shrink-0" aria-hidden="true" />
                   <span className="truncate">Downloaded</span>
                 </span>
@@ -272,7 +272,7 @@ function Preview({ columns, pdf, more }: { columns: string[]; pdf: boolean; more
         </div>
       ) : (
         <div className="grid w-full max-w-[290px] gap-1.5 rounded-md border bg-card px-3 py-2.5 shadow-[0_1px_2px_rgba(112,115,147,0.12)]">
-          <code className="font-mono text-[10px] leading-snug break-all text-strong">
+          <code className="font-mono text-[0.8125rem] leading-snug break-all text-strong">
             {columns.join(",")}
             {more ? ",…" : ""}
           </code>
@@ -310,8 +310,8 @@ function PrintReport({ r }: { r: BooksResult }) {
         <P className="text-[9pt]">Payslip</P>
         <h1 className="text-[16pt] font-normal">Reconciliation, {shortRange(r.period)}</h1>
         <P>
-          Zcash {networkLabel(r.network).toLowerCase()} · {r.accounts.length} viewing keys · scanned to block{" "}
-          {formatHeight(r.scanned_to_height)} · generated {formatDateTime(r.generated_at)}
+          Zcash {networkLabel(r.network).toLowerCase()}, {r.accounts.length} viewing keys, scanned to block{" "}
+          {formatHeight(r.scanned_to_height)}, generated {formatDateTime(r.generated_at)}
         </P>
       </header>
       <table>

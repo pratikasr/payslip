@@ -48,7 +48,7 @@ function search(query: string, people: Contractor[], runs: Run[]): { label: stri
       title: `${runTitle(r)} payroll`,
       detail: (
         <>
-          {runTag(r).label} · <Usd cents={r.total_usd_cents} />
+          {runTag(r).label}, <Usd cents={r.total_usd_cents} />
         </>
       ),
     }));
@@ -61,10 +61,10 @@ function search(query: string, people: Contractor[], runs: Run[]): { label: stri
           key: `l-${l.id}`,
           href: `/console/runs/${r.id}`,
           icon: ReceiptText,
-          title: `${l.invoice_ref || "No invoice"} · ${l.contractor_name}`,
+          title: `${l.invoice_ref || "No invoice"}, ${l.contractor_name}`,
           detail: (
             <>
-              {runTitle(r)} · <Usd cents={l.amount_usd_cents} />
+              {runTitle(r)}, <Usd cents={l.amount_usd_cents} />
             </>
           ),
         })),
@@ -104,7 +104,7 @@ export function ConsoleSearch() {
       >
         <Search aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">Search people, runs, invoices</span>
-        <kbd className="rounded border px-1 font-sans text-[11px] text-muted-foreground" aria-hidden="true">
+        <kbd className="rounded border px-1 font-sans text-[0.8125rem] text-muted-foreground" aria-hidden="true">
           Ctrl K
         </kbd>
       </Button>

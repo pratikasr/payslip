@@ -25,7 +25,7 @@ export function ScanProgress({ startedAt, title }: { startedAt?: number; title?:
   return (
     <div
       role="status"
-      className="flex items-start gap-3 rounded-[10px] bg-raised px-4 py-3 text-sm text-muted-foreground"
+      className="flex items-start gap-3 rounded-[10px] bg-raised px-4 py-3 text-[0.8125rem] text-muted-foreground"
       data-print="hide"
     >
       <LoaderCircle className="mt-0.5 size-4 shrink-0 animate-spin text-foreground" aria-hidden="true" />
@@ -35,7 +35,7 @@ export function ScanProgress({ startedAt, title }: { startedAt?: number; title?:
           {health
             ? `Scanning Zcash ${networkLabel(health.network).toLowerCase()} up to block ${formatHeight(health.chain_tip)} with your key`
             : "Scanning the chain with your key"}
-          {secs > 0 ? <span className="num">{` · ${secs} s`}</span> : null}
+          {secs > 0 ? <span className="num">{`, ${secs} s so far`}</span> : null}
         </p>
       </div>
     </div>

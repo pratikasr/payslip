@@ -20,6 +20,7 @@ import { lastPaidByContractor, settlementLabel } from "@/components/console/lib"
 import { ContractorDialog } from "@/components/console/people/contractor-dialog";
 import { ArchiveDialog, PersonDrawer } from "@/components/console/people/person-drawer";
 import { Problem } from "@/components/runs/problem";
+import { TYPE } from "@/components/ds/type";
 
 /**
  * Set or clear one search parameter without a server round trip (Next syncs useSearchParams).
@@ -125,7 +126,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
             <UsersRound className="size-5" aria-hidden="true" />
           </span>
           <div className="max-w-md space-y-1.5">
-            <h2 className="text-[1.1875rem] font-normal tracking-[-0.01em]">No contractors yet</h2>
+            <h2 className={TYPE.heading}>No contractors yet</h2>
             <p className="text-[0.9375rem] text-muted-foreground">
               Each person gets a private account and a key to their own payslips.
             </p>
@@ -217,7 +218,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                               <span className="lg:hidden">{settlementLabel(c, coin)}</span>
                               {c.email ? (
                                 <>
-                                  <span className="lg:hidden"> · </span>
+                                  <span className="lg:hidden">, </span>
                                   {c.email}
                                 </>
                               ) : null}
@@ -268,7 +269,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                           <>
                             <Usd cents={lp.cents} className="block" />
                             <span className="block truncate text-[0.8125rem] text-muted-foreground" title={lp.period}>
-                              {lp.period} · {formatShortDate(lp.date)}
+                              {lp.period}, paid {formatShortDate(lp.date)}
                             </span>
                           </>
                         ) : (

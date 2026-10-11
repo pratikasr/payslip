@@ -28,7 +28,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 min-w-48 overflow-hidden rounded-xl bg-popover p-1.5 text-sm text-popover-foreground shadow-[0_1px_4px_rgba(183,187,219,0.14),0_0_1px_rgba(175,178,206,0.9),0_8px_12px_rgba(14,14,45,0.08)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 dark:ring-1 dark:ring-white/10",
+          "z-50 min-w-48 overflow-hidden rounded-xl bg-popover p-1.5 text-[0.9375rem] text-popover-foreground shadow-[0_1px_4px_rgba(183,187,219,0.14),0_0_1px_rgba(175,178,206,0.9),0_8px_12px_rgba(14,14,45,0.08)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 dark:ring-1 dark:ring-white/10",
           className
         )}
         {...props}
@@ -54,7 +54,7 @@ function DropdownMenuLabel({ className, ...props }: React.ComponentProps<typeof 
   return (
     <DropdownMenuPrimitive.Label
       data-slot="dropdown-menu-label"
-      className={cn("px-2.5 py-1.5 text-xs text-muted-foreground", className)}
+      className={cn("px-2.5 py-1.5 text-[0.8125rem] text-muted-foreground", className)}
       {...props}
     />
   )

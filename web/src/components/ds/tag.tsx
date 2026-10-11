@@ -5,7 +5,7 @@ export type TagTone = "neutral" | "shielded" | "success" | "warning" | "danger" 
 
 const TONES: Record<TagTone, string> = {
   neutral: "bg-chip text-strong",
-  shielded: "bg-primary-soft text-strong",
+  shielded: "bg-chip text-strong",
   success: "bg-success-bg text-success",
   warning: "bg-warning-bg text-warning",
   danger: "bg-danger-bg text-destructive",
@@ -13,8 +13,8 @@ const TONES: Record<TagTone, string> = {
 };
 
 /**
- * Mercury's status tag: 12px text on a 10 to 15% tint, 4px corners. Gold ("shielded") marks a
- * private payment; colour otherwise only for states that need attention.
+ * The status tag: caption text on a tint, 4px corners. A gold dot on Mist marks a private
+ * payment ("shielded"); colour otherwise only for states that need attention.
  */
 export function Tag({
   tone = "neutral",

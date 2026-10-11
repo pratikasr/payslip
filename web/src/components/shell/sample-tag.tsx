@@ -19,7 +19,10 @@ export function SampleTag({ className }: { className?: string }) {
   const sample = useSampleCompany();
   if (!sample) return null;
   return (
-    <Tag className={cn("h-5 shrink-0 px-1.5 text-xs text-muted-foreground", className)} title={SAMPLE_COMPANY_LINE}>
+    <Tag
+      className={cn("h-5 shrink-0 px-1.5 text-[0.8125rem] text-muted-foreground", className)}
+      title={SAMPLE_COMPANY_LINE}
+    >
       Sample data
     </Tag>
   );

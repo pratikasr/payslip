@@ -16,7 +16,7 @@ export function KeyStatus({
   if (result.kind === "rejected") {
     const Icon = result.spending ? OctagonAlert : TriangleAlert;
     return (
-      <p id={id} role="alert" className="flex items-start gap-2 text-sm text-danger">
+      <p id={id} role="alert" className="flex items-start gap-2 text-[0.8125rem] text-danger">
         <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>{result.reason}</span>
       </p>
@@ -24,7 +24,7 @@ export function KeyStatus({
   }
   if (serviceNetwork && result.network !== serviceNetwork) {
     return (
-      <p id={id} role="alert" className="flex items-start gap-2 text-sm text-danger">
+      <p id={id} role="alert" className="flex items-start gap-2 text-[0.8125rem] text-danger">
         <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
         <span>
           This is a {networkLabel(result.network).toLowerCase()} key, but the service runs on {serviceNetwork}. Use a
@@ -34,7 +34,7 @@ export function KeyStatus({
     );
   }
   return (
-    <p id={id} className="flex items-start gap-2 text-sm text-success">
+    <p id={id} className="flex items-start gap-2 text-[0.8125rem] text-success">
       <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
       <span>
         Unified full viewing key for {networkLabel(result.network).toLowerCase()}. It can read payments but cannot

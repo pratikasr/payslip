@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { ArrowRight } from "lucide-react";
 import { Coin, Rate, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { Initials } from "@/components/ds/avatar";
@@ -31,7 +30,7 @@ export function explorerFor(r: BooksResult, txid: string): string | null {
 /** A small label and value list for drill-downs: label left, value right. */
 export function Facts({ items, className }: { items: { label: ReactNode; value: ReactNode }[]; className?: string }) {
   return (
-    <dl className={cn("grid divide-y divide-hairline text-[0.875rem]", className)}>
+    <dl className={cn("grid divide-y divide-hairline text-[0.8125rem]", className)}>
       {items.map((it, i) => (
         <div key={i} className="flex items-baseline justify-between gap-4 py-2">
           <dt className="text-muted-foreground">{it.label}</dt>
@@ -102,7 +101,7 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
                   value: (
                     <span className="num">
                       {formatDate(record.date)}
-                      {record.height ? ` · block ${formatHeight(record.height)}` : " · not mined"}
+                      {record.height ? `, block ${formatHeight(record.height)}` : ", not mined"}
                     </span>
                   ),
                 },
@@ -127,13 +126,16 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
               ]}
             />
           ) : (
-            <p className="py-2 text-sm text-strong">
+            <p className="py-2 text-[0.8125rem] text-strong">
               No funding record is visible in this period. Load the Treasury key, or widen the period: the record is
               written the day the run starts paying.
             </p>
           )}
           {missing ? (
-            <p className="mt-2 rounded-lg bg-warning-bg px-3 py-2 text-sm text-strong" data-testid="run-missing-keys">
+            <p
+              className="mt-2 rounded-lg bg-warning-bg px-3 py-2 text-[0.8125rem] text-strong"
+              data-testid="run-missing-keys"
+            >
               {missing} of the {allocations} {allocations === 1 ? "account" : "accounts"} this run paid{" "}
               {missing === 1 ? "is" : "are"} not in this key set
               {run.missing_zat ? (
@@ -147,7 +149,7 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
             </p>
           ) : null}
           {unpaid ? (
-            <p className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-sm text-strong">
+            <p className="mt-2 rounded-lg bg-danger-bg px-3 py-2 text-[0.8125rem] text-strong">
               {unpaid} funded {unpaid === 1 ? "account shows" : "accounts show"} no payment for this run.
             </p>
           ) : null}
@@ -171,7 +173,7 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
                     <span>
                       <Usd cents={diff} />
                       {run.status === "reconciled" && diff !== 0 ? (
-                        <span className="block text-xs text-muted-foreground">rounding</span>
+                        <span className="block text-[0.8125rem] text-muted-foreground">rounding</span>
                       ) : null}
                     </span>
                   ),
@@ -188,7 +190,6 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
             className="inline-flex items-center gap-1 rounded-sm text-[0.8125rem] text-link underline-offset-4 hover:underline"
           >
             Open in ledger
-            <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
         </div>
         <ul className="divide-y divide-hairline">
@@ -202,16 +203,15 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
                     {isPending ? <Tag>Pending</Tag> : null}
                     {l.settlement === "converted" ? <Tag>Converted to USDC</Tag> : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                    <span>{l.invoice_ref || "No invoice"}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="num">{isPending ? "Not mined" : formatDate(l.block_time ?? l.date)}</span>
+                  <div className="flex flex-wrap items-center gap-x-2 text-[0.8125rem] text-muted-foreground">
+                    <span>{l.invoice_ref || "No invoice"},</span>
+                    <span className="num">{isPending ? "not mined" : formatDate(l.block_time ?? l.date)}</span>
                     <Hash value={l.txid} label="transaction id" explorerUrl={l.explorer_url} head={6} tail={4} />
                   </div>
                 </div>
                 <div className={cn("text-right", isPending && "text-muted-foreground")}>
                   <Usd cents={l.usd_basis_cents} className="text-[0.9375rem]" />
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-[0.8125rem] text-muted-foreground">
                     <Zec zat={l.amount_zat} />
                   </div>
                 </div>
@@ -220,7 +220,7 @@ export function RunDetail({ r, run }: { r: BooksResult; run: BooksRun }) {
           )}
         </ul>
         {lines.length + pending.length === 0 ? (
-          <p className="py-2 text-sm text-muted-foreground">No payments of this run fall in the period.</p>
+          <p className="py-2 text-[0.8125rem] text-muted-foreground">No payments of this run fall in the period.</p>
         ) : null}
       </section>
     </div>

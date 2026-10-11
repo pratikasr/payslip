@@ -446,7 +446,7 @@ export function paidDateOf(r: BooksResult, runId: string): string | null {
 }
 
 export function runName(period: string, runId: string): string {
-  return `${formatPeriodLabel(period)} · ${runId.slice(0, 8)}`;
+  return `${formatPeriodLabel(period)}, run ${runId.slice(0, 8)}`;
 }
 
 /** True when any run in the result has a funding record: what was funded can be read. */

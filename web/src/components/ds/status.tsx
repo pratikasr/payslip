@@ -42,7 +42,7 @@ export function ShieldedMark({
 }: {
   className?: string;
   label?: ReactNode;
-  /** A short addition after the word, for example a paid time. */
+  /** A short addition after the word, for example ", 08:13 UTC" (it carries its own comma). */
   detail?: ReactNode;
   explain?: boolean;
 }) {
@@ -55,8 +55,8 @@ export function ShieldedMark({
       <span>
         {label}
         {explain ? <span className="sr-only">: {SHIELDED_HELP.toLowerCase()}</span> : null}
+        {detail ? <span className="text-muted-foreground">{detail}</span> : null}
       </span>
-      {detail ? <span className="text-muted-foreground">{detail}</span> : null}
     </span>
   );
 }

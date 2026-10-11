@@ -37,7 +37,7 @@ export function SimulatedRate({
         <span className="sr-only">, what this means</span>
       </PopoverTrigger>
       <PopoverContent aria-labelledby={titleId}>
-        <p id={titleId} className="text-[0.8125rem] font-[450] text-foreground">
+        <p id={titleId} className="text-[0.8125rem] font-medium text-foreground">
           A simulated testnet rate
         </p>
         <p className="mt-1 text-muted-foreground">

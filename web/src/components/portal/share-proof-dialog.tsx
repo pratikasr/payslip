@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toDisplayError, type ApiError, type CreatedProof, type StatementLine } from "@/lib/api";
 import { copyText } from "@/lib/download";
+import { TYPE } from "@/components/ds/type";
 
 /**
  * Share proof: makes a link that opens this one payment, checked against the chain, for someone
@@ -44,9 +45,7 @@ export function ShareProofDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle className="text-[1.1875rem] leading-snug font-normal tracking-[-0.01em]">
-            Share proof of this payment
-          </DialogTitle>
+          <DialogTitle className={TYPE.heading}>Share proof of this payment</DialogTitle>
           <DialogDescription className="text-[0.9375rem]">
             Anyone with the link can check this one payment against the Zcash chain. They need no key and no account.
           </DialogDescription>
@@ -108,7 +107,7 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
         <div className="min-w-0 flex-1">
           <p className="truncate text-[0.9375rem]">{payslipTitle(line)}</p>
           <p className="truncate text-[0.8125rem] text-muted-foreground">
-            Paid {monthDay(line.block_time ?? line.date)} · {line.invoice_ref}
+            Paid {monthDay(line.block_time ?? line.date)}, invoice {line.invoice_ref}
           </p>
         </div>
         <Usd cents={line.usd_basis_cents} className="text-[0.9375rem]" />
@@ -117,7 +116,7 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
       {error ? <ErrorState error={error} onRetry={() => setAttempt((n) => n + 1)} compact /> : null}
 
       {!error && !proof ? (
-        <p role="status" className="flex items-center gap-2.5 text-sm text-muted-foreground">
+        <p role="status" className="flex items-center gap-2.5 text-[0.8125rem] text-muted-foreground">
           <LoaderCircle className="size-4 animate-spin text-foreground" aria-hidden="true" />
           Creating the proof from the Zcash chain
         </p>
@@ -133,7 +132,7 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
             readOnly
             value={link}
             onFocus={(e) => e.currentTarget.select()}
-            className="h-10 w-full min-w-0 rounded-lg border border-input bg-raised px-3 font-mono text-xs text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="h-10 w-full min-w-0 rounded-lg border border-input bg-raised px-3 font-mono text-[0.8125rem] text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
           />
           <div className="flex flex-wrap gap-2 pt-1">
             <Button type="button" onClick={copy}>
@@ -161,16 +160,16 @@ function ShareBody({ line, onCreated }: { line: StatementLine; onCreated?: (proo
             maxLength={120}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Paid by Acme Labs for design work"
-            className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-sm text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="h-10 w-full min-w-0 rounded-lg border border-input bg-background px-3 text-[0.8125rem] text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[0.8125rem] text-muted-foreground">
             Rides in the link and is shown as your note, marked as not checked. Payslip never stores it.
           </p>
         </div>
       ) : null}
 
       {/* Each term and its description are direct children of one group, the icon inside the term. */}
-      <dl className="grid gap-3 border-t border-hairline pt-4 text-sm sm:grid-cols-2">
+      <dl className="grid gap-3 border-t border-hairline pt-4 text-[0.8125rem] sm:grid-cols-2">
         <div>
           <dt className="flex items-start gap-2.5 text-foreground">
             <Eye className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

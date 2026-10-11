@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { cn } from "cn";
 
 /**
- * Mercury's card: white, a hairline border, 12px corners, no shadow. Use it for objects and
- * summaries (a balance, a run, a person); page-level tables sit on the page without one.
+ * A card: Paper with a border, 12px corners, no shadow. Only for an object with a boundary (a
+ * balance, a run, a person); sections and page-level tables flow on the page without one.
  */
 export function Card({
   children,
@@ -22,7 +22,7 @@ export function Card({
   );
 }
 
-/** The card's title row: a 15px label on the left, round icon actions on the right. */
+/** The card's title row: a body-size label on the left, round icon actions on the right. */
 export function CardHeader({
   title,
   actions,
@@ -36,7 +36,7 @@ export function CardHeader({
 }) {
   return (
     <div className={cn("flex items-center justify-between gap-3", className)}>
-      <h2 id={id} className="text-[0.9375rem] font-normal text-strong">
+      <h2 id={id} className="text-[0.9375rem] font-medium text-strong">
         {title}
       </h2>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

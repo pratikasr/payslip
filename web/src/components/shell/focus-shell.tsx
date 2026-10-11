@@ -1,14 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { LucideProvider, X } from "lucide-react";
+import { X } from "lucide-react";
 import { LogoMark } from "@/components/app/logo";
 import { PrivacyToggle } from "@/components/shell/privacy-toggle";
 import { cn } from "cn";
 
 /**
- * Mercury's full-screen task layout (send money, review a batch): logo and context at the top,
- * a close button, a step rail on the left and one focused column. No sidebar, so nothing competes
- * with the decision being made.
+ * The full-screen task layout (run payroll): the mark and context at the top, a close button, a
+ * step rail on the left and one focused column. No sidebar, so nothing competes with the decision
+ * being made.
  */
 export function FocusShell({
   context,
@@ -32,7 +32,7 @@ export function FocusShell({
   summary?: ReactNode;
 }) {
   return (
-    <LucideProvider strokeWidth={1.5}>
+    <>
       <div className="min-h-[calc(100dvh-3rem)] bg-background">
         <header role="banner" className="flex items-center gap-3.5 px-4 py-5 sm:px-10" data-print="hide">
           <LogoMark className="size-[26px]" />
@@ -80,7 +80,7 @@ export function FocusShell({
           </div>
         ) : null}
       </div>
-    </LucideProvider>
+    </>
   );
 }
 
@@ -91,7 +91,7 @@ export function RailStep({ state, children }: { state: "done" | "current" | "upc
       aria-current={state === "current" ? "step" : undefined}
       className={cn(
         "flex items-center gap-2 border-l-2 py-[7px] pl-3.5 text-[0.9375rem]",
-        state === "current" && "border-primary-edge font-[450] text-foreground",
+        state === "current" && "border-gold font-medium text-foreground",
         state === "done" && "border-hairline text-strong",
         state === "upcoming" && "border-hairline text-muted-foreground",
       )}

@@ -77,7 +77,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
             href={`/console/runs/${latest.id}`}
             icon={BookmarkIcon}
             label={`${runTitle(latest)} payroll`}
-            detail={`${runStateLabel(latest)} · ${plural(latest.lines.length, "person", "people")}`}
+            detail={`${runStateLabel(latest)}, ${plural(latest.lines.length, "person", "people")}`}
           />
         ) : null}
       </div>

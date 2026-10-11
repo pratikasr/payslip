@@ -33,8 +33,8 @@ const matches: Record<Exclude<Filter, "recent">, (l: PayLine) => boolean> = {
 };
 
 /**
- * Payments, latest pay period first, grouped under their run ("Sep 2026 payroll · 6 payments ·
- * $30,375.50"), as Mercury groups transactions. Only runs that were funded appear: a draft has
+ * Payments, latest pay period first, grouped under their run ("Sep 2026 payroll, 6 payments,
+ * $30,375.50"). Only runs that were funded appear: a draft has
  * paid nobody. A confirmed payment shows the gold Shielded mark instead of a grey status; a
  * payment that needs attention shows its tag. Testnet funding is not listed: on testnet nothing
  * arrives (coins already in the treasury are set aside); Treasury lists it.
@@ -138,7 +138,7 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
               {runTitle(run)} payroll
             </Link>
             <span className="shrink-0 text-muted-foreground">
-              {plural(lines.length, "payment")} · <Usd cents={total} />
+              {plural(lines.length, "payment")}, <Usd cents={total} />
             </span>
           </span>
         </th>

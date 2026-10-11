@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ComponentType, type ReactNode } from "react";
-import { LucideProvider, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { PrivacyToggle } from "@/components/shell/privacy-toggle";
@@ -80,7 +80,7 @@ function SidebarBody({
               aria-current={s.active ? "page" : undefined}
               className={cn(
                 "rounded-md py-1.5 text-center text-muted-foreground transition-colors hover:text-foreground pointer-coarse:py-2.5",
-                s.active && "bg-background text-foreground shadow-[0_1px_2px_rgba(112,115,147,0.18)]",
+                s.active && "bg-background font-medium text-foreground shadow-[0_0_0_1px_var(--border)]",
               )}
             >
               {s.label}
@@ -100,8 +100,10 @@ function SidebarBody({
                     onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "flex items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-strong transition-colors hover:bg-muted hover:text-foreground pointer-coarse:py-2.5",
-                      active && "bg-chip font-[450] text-foreground hover:bg-chip",
+                      "relative flex items-center gap-2.5 rounded-[7px] px-2 py-[7px] text-strong transition-colors hover:bg-muted hover:text-foreground pointer-coarse:py-2.5",
+                      // The active item is the sidebar's active tab: Mist, ink, and a gold edge.
+                      active &&
+                        "bg-chip font-medium text-foreground before:absolute before:inset-y-2 before:-left-2.5 before:w-0.5 before:rounded-full before:bg-gold before:content-[''] hover:bg-chip",
                     )}
                   >
                     <item.icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -123,16 +125,16 @@ function SidebarBody({
 }
 
 /**
- * Mercury's app shell: a 220px sidebar on a barely tinted ground, a quiet top bar, and a centred
- * content column about 970px wide. On phones the sidebar slides in from a menu button.
+ * The app shell: a 220px sidebar on Paper with a Mist edge, a quiet top bar, and a centred content
+ * column about 970px wide. On phones the sidebar slides in from a menu button.
  */
 export function AppShell({ config, children }: { config: ShellConfig; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   useEffect(() => setOpen(false), [pathname]);
   return (
-    // Mercury's icons are drawn thinner than Lucide's default 2px: 1.5 everywhere in the app.
-    <LucideProvider strokeWidth={1.5}>
+    // Icons are drawn at stroke 1.5 everywhere (LucideProvider in the root layout).
+    <>
       <div className="grid min-h-[calc(100dvh-3rem)] md:grid-cols-[220px_minmax(0,1fr)] print:block">
         <div className="hidden border-r border-hairline bg-sidebar md:block" data-print="hide">
           <aside className="sticky top-0 h-[calc(100dvh-3rem)] overflow-y-auto">
@@ -183,13 +185,13 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
           </main>
         </div>
       </div>
-    </LucideProvider>
+    </>
   );
 }
 
 /**
- * The sidebar's top block: mark, name and a small chip (Mercury's org switcher with "Pro"). `sub`
- * is a quieter second line under the name, aligned with it (the "Sample data" tag on testnet).
+ * The sidebar's top block: mark, the name in the display face, and a small chip (the network).
+ * `sub` is a quieter second line under the name, aligned with it (the "Sample data" tag on testnet).
  */
 export function SidebarBrand({
   name,
@@ -205,9 +207,11 @@ export function SidebarBrand({
   return (
     <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 pb-1">
       {mark}
-      <span className="col-start-2 min-w-0 truncate font-[450]">{name}</span>
+      <span className="col-start-2 line-clamp-2 min-w-0 font-display text-[0.9375rem] leading-tight font-[600] break-words">
+        {name}
+      </span>
       {chip ? (
-        <span className="col-start-3 rounded-md bg-foreground px-1.5 py-1 text-[11px] leading-none font-medium text-background">
+        <span className="col-start-3 rounded-md bg-foreground px-1.5 py-1 text-[0.8125rem] leading-none font-medium text-background">
           {chip}
         </span>
       ) : null}

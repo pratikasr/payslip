@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BookOpen, Building2, ChevronDown, FileCheck2, Home, LucideProvider, UserRound } from "lucide-react";
+import { BookOpen, Building2, ChevronDown, FileCheck2, Home, UserRound } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
 import { LogoMark } from "@/components/app/logo";
 import {
@@ -64,7 +64,7 @@ export function showRoleSwitcher(network: string | undefined): boolean {
 }
 
 /**
- * The dark bar above the app (Mercury's "Explore the demo" bar). Its "Viewing as" menu is how a
+ * The vault-dark bar above the app: on testnet, the notice that this is a sample company. Its "Viewing as" menu is how a
  * visitor switches between the company, contractor and accountant products; inside each product
  * there is no cross-role navigation. The menu shows on testnet and, on mainnet, only on a demo
  * build (NEXT_PUBLIC_PAYSLIP_DEMO=1). A statements-only deployment has no company to show, and a
@@ -87,7 +87,7 @@ export function DemoBar() {
   const line = networkLine(network, offline);
   const switcher = showRoleSwitcher(network);
   return (
-    <LucideProvider strokeWidth={1.5}>
+    <>
       <aside
         aria-label="Payslip demo"
         className="flex h-12 items-center gap-3 bg-banner px-4 text-[0.8125rem] text-banner-foreground sm:px-5"
@@ -150,6 +150,6 @@ export function DemoBar() {
           </div>
         ) : null}
       </aside>
-    </LucideProvider>
+    </>
   );
 }

@@ -53,6 +53,7 @@ import {
 } from "@/lib/format";
 import { isValidRange, lastNDays, previousMonth, yearToDate } from "@/lib/period";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 const PRESETS = [
   { id: "ytd", label: "Year to date", range: () => yearToDate() },
@@ -145,9 +146,9 @@ export function TaxDocuments() {
         />
       </div>
       <div className="hidden print:block">
-        <h1 className="text-xl font-medium">Payment statement{name ? ` for ${name}` : ""}</h1>
+        <h1 className={TYPE.title}>Payment statement{name ? ` for ${name}` : ""}</h1>
         {s ? (
-          <p className="mt-1 text-sm">
+          <p className="mt-1 text-[0.8125rem]">
             {formatRange(s.period.from, s.period.to)}. Zcash {networkLabel(s.network).toLowerCase()}, scanned to block{" "}
             {formatHeight(s.scanned_to_height)}. Generated {formatDateTime(s.generated_at)}.
           </p>
@@ -214,7 +215,10 @@ export function TaxDocuments() {
           />
         </div>
       ) : null}
-      <p className={cn("mb-5 text-sm", valid ? "text-muted-foreground" : "text-destructive")} data-print="hide">
+      <p
+        className={cn("mb-5 text-[0.8125rem]", valid ? "text-muted-foreground" : "text-destructive")}
+        data-print="hide"
+      >
         {valid
           ? `${formatRange(range.from, range.to)}, in UTC. A payment counts on the day its block was mined.`
           : "The period must start on or before the day it ends, and cover at most a year."}
@@ -251,7 +255,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center rounded-lg border px-3 text-sm text-strong transition-colors hover:bg-muted",
+        "inline-flex h-8 items-center rounded-lg border px-3 text-[0.8125rem] text-strong transition-colors hover:bg-muted",
         active && "border-transparent bg-chip text-foreground hover:bg-chip",
       )}
     >
@@ -314,7 +318,7 @@ function DownloadMenu({
             <FileSpreadsheet aria-hidden="true" />
             <span className="grid">
               <span className="text-foreground">{f.label}</span>
-              <span className="text-xs text-muted-foreground">{f.hint}</span>
+              <span className="text-[0.8125rem] text-muted-foreground">{f.hint}</span>
             </span>
           </DropdownMenuItem>
         ))}
@@ -323,7 +327,7 @@ function DownloadMenu({
           <Printer aria-hidden="true" />
           <span className="grid">
             <span className="text-foreground">PDF</span>
-            <span className="text-xs text-muted-foreground">Print or save as PDF</span>
+            <span className="text-[0.8125rem] text-muted-foreground">Print or save as PDF</span>
           </span>
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -368,13 +372,13 @@ function StatementBody({
           )}
         </dl>
         {market?.unpriced_lines ? (
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-3 text-[0.8125rem] text-muted-foreground">
             {market.unpriced_lines} {market.unpriced_lines === 1 ? "payment has" : "payments have"} no price point near
             its block time, so {market.unpriced_lines === 1 ? "it is" : "they are"} not in this total.
           </p>
         ) : null}
         {currency && s.market && !s.market.available ? (
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p className="mt-3 text-[0.8125rem] text-muted-foreground">
             {s.market.error ?? "Market prices are unavailable right now."}
           </p>
         ) : null}
@@ -391,7 +395,9 @@ function StatementBody({
       {s.pending.length > 0 ? (
         <>
           <SectionHeader title="Waiting to be mined" />
-          <p className="mb-3 text-sm text-muted-foreground">Sent but not yet in a block, so not in the totals above.</p>
+          <p className="mb-3 text-[0.8125rem] text-muted-foreground">
+            Sent but not yet in a block, so not in the totals above.
+          </p>
           <LinesTable lines={newestFirst(s.pending)} currency={null} range={range} pending />
         </>
       ) : null}
@@ -399,7 +405,7 @@ function StatementBody({
       {s.unlabelled.length > 0 ? (
         <>
           <SectionHeader title="Other transactions" />
-          <p className="mb-3 text-sm text-muted-foreground">
+          <p className="mb-3 text-[0.8125rem] text-muted-foreground">
             Transactions on this key without a Payslip memo. Listed so nothing is hidden; not in the totals.
           </p>
           <table className="w-full text-[0.9375rem]">
@@ -441,7 +447,7 @@ function Figure({ label, children }: { label: string; children: React.ReactNode 
   return (
     <div className="min-w-0">
       <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-[1.1875rem] font-[380]">{children}</dd>
+      <dd className={cn(TYPE.heading, "mt-1")}>{children}</dd>
     </div>
   );
 }
@@ -492,7 +498,7 @@ function LinesTable({
                 </Link>
                 <span className="block truncate text-[0.8125rem] text-muted-foreground">
                   {l.invoice_ref}
-                  {l.settlement === "converted" ? " · Converted to USDC" : ""}
+                  {l.settlement === "converted" ? ", converted to USDC" : ""}
                 </span>
               </td>
               <td className="hidden pr-3 md:table-cell print:table-cell">

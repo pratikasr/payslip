@@ -3,41 +3,37 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import {
-  CalendarDays,
-  Check,
-  CircleDollarSign,
-  Download,
-  ExternalLink,
-  LoaderCircle,
-  MessageSquareText,
-  RotateCw,
-  ShieldCheck,
-  SquareStack,
-} from "lucide-react";
+import { Check, Download, LoaderCircle, RotateCw } from "lucide-react";
 import { Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
 import { Tag } from "@/components/ds/tag";
+import {
+  ChainFacts,
+  PaperView,
+  Redacted,
+  Thread,
+  TwoViews,
+  TxidLines,
+  VaultView,
+  ViewField,
+  ViewTitle,
+} from "@/components/ds/two-views";
+import { TYPE } from "@/components/ds/type";
 import { useDocumentTitle } from "@/components/portal/document-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, UNREACHABLE_CODE, api, toDisplayError, type VerifiedProof } from "@/lib/api";
 import { companyMark, companyName } from "@/lib/company";
-import {
-  formatDate,
-  formatDateTime,
-  formatPeriodLabel,
-  formatUsd,
-  formatZec,
-  networkLabel,
-  truncateMiddle,
-} from "@/lib/format";
+import { formatDateTime, formatHeight, formatPeriodLabel, networkLabel, truncateMiddle } from "@/lib/format";
 import { classifyKey } from "@/lib/keys";
 import { cn } from "cn";
 import styles from "./public-payslip.module.css";
 
 const QrCode = dynamic(() => import("@/components/app/qr-code"), { ssr: false });
+
+/** The two views sit side by side from 1024px; this page has no sidebar. */
+const SPLIT = "lg" as const;
 
 /** A4 paper, and the dark theme's surfaces back to paper colours when printing. */
 const PRINT_CSS = `@media print {
@@ -142,7 +138,8 @@ function explain(e: ApiError): { title: string; body: string; retry: boolean } {
 
 /**
  * The public payslip: what a landlord, bank or visa office opens from a contractor's proof link.
- * One card on a soft grid, after Mercury's public invoice page.
+ * A checked proof opens in the identity's two views: what the world sees on the explorer beside
+ * what the proof shows. Asking for a proof, checking it and its errors sit in one narrow sheet.
  */
 export function PublicPayslip() {
   /** null until the fragment has been read in the browser. */
@@ -257,7 +254,7 @@ export function PublicPayslip() {
         <Title>We could not check this payslip</Title>
         <div role="alert" className="rounded-[10px] bg-danger-bg px-4 py-3.5">
           <p className="text-[0.9375rem] text-foreground">{plain.title}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{plain.body}</p>
+          <p className="mt-1 text-[0.8125rem] text-muted-foreground">{plain.body}</p>
         </div>
         {plain.retry ? (
           <Button
@@ -293,13 +290,13 @@ export function PublicPayslip() {
   return (
     <div className={styles.page}>
       <style>{PRINT_CSS}</style>
-      <div className={styles.card}>
+      <div className={proof ? styles.wide : styles.card}>
         {/* The masthead names the issuer and the company it was issued for, on screen and on paper. */}
         <p className="mb-5 flex items-start gap-2 text-[0.8125rem] text-muted-foreground" data-testid="verify-issuer">
           <Mark className="mt-px size-5 shrink-0 text-foreground" />
           <span className="text-pretty">
             Payment proof issued through <span className="text-foreground">Payslip</span> for{" "}
-            <span className="text-foreground">{companyName()}</span>
+            <span className="font-display font-[600] text-foreground">{companyName()}</span>
           </span>
         </p>
         {body}
@@ -316,9 +313,10 @@ export function PublicPayslip() {
           </Link>
           {token ? (
             <>
-              <span aria-hidden="true"> · </span>
+              {" "}
+              or{" "}
               <button type="button" onClick={reset} className="rounded-sm text-link underline underline-offset-4">
-                Check another payslip
+                check another payslip
               </button>
             </>
           ) : null}
@@ -329,11 +327,7 @@ export function PublicPayslip() {
 }
 
 function Title({ children }: { children: ReactNode }) {
-  return (
-    <h1 className="mb-6 text-[1.75rem] leading-[1.15] font-[380] tracking-[-0.015em] text-balance sm:text-[1.875rem]">
-      {children}
-    </h1>
-  );
+  return <h1 className={cn(TYPE.title, "mb-6 text-balance")}>{children}</h1>;
 }
 
 function PasteForm({
@@ -418,6 +412,7 @@ function ProofView({
   const net = `Zcash${testnet ? " testnet" : ""}`;
   // A result belongs to the address it was checked with; editing the field clears it.
   const current = checkedAddress !== "" && checkedAddress === address.trim();
+  const host = explorerHost(proof.explorer_url);
 
   const print = () => {
     const previous = document.title;
@@ -429,213 +424,242 @@ function ProofView({
   return (
     <>
       <Title>{title}</Title>
+      {mined ? (
+        <p
+          className="-mt-3 mb-7 inline-flex items-center gap-1.5 text-[0.9375rem] text-success"
+          data-testid="verify-status"
+        >
+          <Check className="size-4" aria-hidden="true" />
+          Verified on {net}, {n.toLocaleString("en-US")} {n === 1 ? "confirmation" : "confirmations"}
+        </p>
+      ) : (
+        <p
+          className="-mt-3 mb-7 inline-flex items-center gap-1.5 text-[0.9375rem] text-warning"
+          data-testid="verify-status"
+        >
+          <LoaderCircle className="size-4" aria-hidden="true" />
+          Found on {net}, not yet confirmed. Check again once it is in a block.
+        </p>
+      )}
 
-      <section
-        aria-label="Amount"
-        className="overflow-hidden rounded-lg border bg-raised px-5 pt-[22px] pb-0 sm:px-6 dark:pb-5"
+      {/*
+        The payment two ways, joined by its txid: what anyone sees on the explorer, and what this
+        proof opens. Side by side from 1024px; stacked, and printed, the explorer's view first.
+      */}
+      <TwoViews
+        id="proof-views"
+        rows={8}
+        split={SPLIT}
+        columns="aside"
+        caption={`${title} in two views: what the world sees on the Zcash chain, and what this proof shows.`}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[1.625rem] leading-tight font-[380]">
-              {payLine ? <Usd cents={payLine.usd_basis_cents} /> : <Zec zat={proof.amount_zat} />}
+        <VaultView labelledBy="world-title" split={SPLIT}>
+          <ViewTitle id="world-title" title="What the world sees">
+            {mined ? (
+              <>
+                A shielded transaction in block <span className="num">{formatHeight(proof.height)}</span>: no amount, no
+                names.
+              </>
+            ) : (
+              "A shielded transaction waiting for a block: no amount, no names."
+            )}
+          </ViewTitle>
+          <div className="flex items-center pb-5">
+            <p className="font-mono text-[0.8125rem] leading-[1.5] break-all text-ink">
+              <TxidLines txid={proof.txid} />
             </p>
-            {payLine ? (
-              <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-                <Zec zat={proof.amount_zat} />
-                {testnet ? (
-                  <span title="Testnet coins have no market price; testnet payrolls convert dollars at a fixed demo rate.">
-                    {" "}
-                    · Simulated rate
-                  </span>
-                ) : null}
-              </p>
-            ) : null}
+            <Thread side="vault" split={SPLIT} className="ml-4" />
           </div>
-          {payLine ? (
-            <span className="shrink-0 pt-1 font-mono text-[0.8125rem] text-strong">{payLine.invoice_ref}</span>
-          ) : null}
-        </div>
-        {mined ? (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-success" data-testid="verify-status">
-            <Check className="size-4" aria-hidden="true" />
-            Verified on {net} · {n.toLocaleString("en-US")} {n === 1 ? "confirmation" : "confirmations"}
-          </p>
-        ) : (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-warning" data-testid="verify-status">
-            <LoaderCircle className="size-4" aria-hidden="true" />
-            Found on {net}, not yet confirmed. Check again once it is in a block.
-          </p>
-        )}
-        <Thumb proof={proof} title={title} />
-        <div className="hidden h-4 print:block" aria-hidden="true" />
-      </section>
-
-      {note ? (
-        <p className="mt-4 rounded-lg border px-4 py-3 text-sm" data-testid="verify-note">
-          <span className="block text-[0.8125rem] text-muted-foreground">
-            A note from the person who shared this, not checked by Payslip
-          </span>
-          <span className="break-words text-foreground">{note}</span>
-        </p>
-      ) : null}
-
-      <Button type="button" variant="secondary" onClick={print} className="mt-6" data-print="hide">
-        <Download aria-hidden="true" />
-        Download payslip
-      </Button>
-
-      <section aria-labelledby="shows" className="mt-[34px]">
-        <h2 id="shows" className="text-base font-normal">
-          What this proof shows
-        </h2>
-        <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
-          {checkedAt ? `Checked ${formatDateTime(checkedAt)} against the Zcash chain. ` : ""}
-          {proof.proves ?? "Nothing else about the payer or the contractor is revealed."}
-        </p>
-        <ul className="mt-3.5 rounded-lg border">
-          <Shows icon={CircleDollarSign} label="Amount">
-            {payLine ? <Usd cents={payLine.usd_basis_cents} /> : <Zec zat={proof.amount_zat} />}
-          </Shows>
-          <Shows icon={CalendarDays} label="Paid on">
-            {proof.block_time ? formatDateTime(proof.block_time) : "Not yet in a block"}
-          </Shows>
-          <Shows icon={SquareStack} label="Transaction">
+          <ChainFacts height={proof.height} time={proof.block_time} />
+          <ViewField label="Amount">
+            <Redacted className="w-[3.9em] text-[1.875rem] lg:text-[2.75rem]" />
+            <Redacted className="mt-1 w-[9em] text-[0.8125rem]" />
+          </ViewField>
+          <ViewField label="Sender">
+            <Redacted className="w-[8em] text-[0.9375rem]" />
+          </ViewField>
+          <ViewField label="Recipient">
+            <Redacted className="w-[min(100%,19ch)] font-mono text-[0.8125rem]" />
+          </ViewField>
+          <ViewField label="Memo">
+            <Redacted className="w-[min(100%,12em)] text-[0.9375rem]" />
+          </ViewField>
+          <p className="border-t border-mist pt-5 text-[0.9375rem]" data-print="hide">
             <a
               href={proof.explorer_url}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded-sm font-mono text-[0.8125rem] hover:underline"
-              title={`${proof.txid} (opens a block explorer in a new tab)`}
+              data-txid={proof.txid}
+              className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-gold"
             >
-              <span data-print="hide">{truncateMiddle(proof.txid, 8, 4)}</span>
-              <span data-print="only" className="break-all">
-                {proof.txid}
-              </span>
-              <ExternalLink className="size-3.5 text-muted-foreground" aria-hidden="true" data-print="hide" />
+              {host ? `Open it on ${host}` : "Open it on a public block explorer"}
+              <span className="sr-only"> (opens in a new tab)</span>
             </a>
-          </Shows>
-          {memo.kind === "text" ? (
-            <Shows icon={MessageSquareText} label="Memo">
-              <span className="break-words">{memo.text}</span>
-            </Shows>
-          ) : null}
-        </ul>
-        <p className="mt-3 text-[0.8125rem] text-muted-foreground">
-          A block explorer shows this transaction with no amount and no parties. This proof opens only this payment.
-          {payLine ? " The period, invoice and dollar amount are the sender's own statement, written in the memo." : ""}
-        </p>
-      </section>
-
-      <section aria-labelledby="paid-to" className="mt-8 border-t border-hairline pt-6">
-        <h2 id="paid-to" className="flex items-center gap-2 text-base font-normal">
-          <ShieldCheck className="size-4 text-muted-foreground" aria-hidden="true" />
-          Paid to
-        </h2>
-        <p className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1">
-          <code className="font-mono text-[0.8125rem] break-all" title={proof.recipient}>
-            <span data-print="hide">{truncateMiddle(proof.recipient, 14, 8)}</span>
-            <span data-print="only">{proof.recipient}</span>
-          </code>
-          <CopyButton value={proof.recipient} label="address" />
-        </p>
-        <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-          This is one receiver of the person&apos;s Zcash address, so it will not look identical to the full address
-          they gave you. Paste that address below to check it holds this receiver.
-        </p>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onCheckAddress();
-          }}
-          className="mt-4 space-y-2"
-          data-print="hide"
-        >
-          <label htmlFor="expected-address" className="block text-[0.9375rem]">
-            Check the address it was paid to <span className="text-muted-foreground">(optional)</span>
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              id="expected-address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={testnet ? "utest1…" : "u1…"}
-              className="h-10 font-mono"
-              aria-describedby="expected-address-result"
-            />
-            <Button type="submit" variant="secondary" size="lg" disabled={!address.trim() || checking}>
-              {checking ? "Checking" : "Check address"}
-            </Button>
-          </div>
-          <div id="expected-address-result" aria-live="polite">
-            {!current ? null : addressError ? (
-              <p className="text-sm text-destructive">{explain(addressError).title}</p>
-            ) : proof.address_valid === false ? (
-              <AddressResult tone="warning" tag="Could not read the address you entered">
-                That is not a unified address on Zcash {networkLabel(proof.network).toLowerCase()}. Paste the full
-                address, starting with {testnet ? "utest1" : "u1"}.
-              </AddressResult>
-            ) : proof.address_matches === true ? (
-              <AddressResult tone="success" tag="Matches the address you entered">
-                The payment went to a receiver inside {truncateMiddle(checkedAddress, 10, 5)}.
-              </AddressResult>
-            ) : proof.address_matches === false ? (
-              <AddressResult tone="danger" tag="Not the address you entered">
-                The payment went to a different receiver than {truncateMiddle(checkedAddress, 10, 5)} holds.
-              </AddressResult>
-            ) : null}
-          </div>
-        </form>
-      </section>
-
-      <section aria-labelledby="not-proved" className="mt-8 border-t border-hairline pt-6">
-        <h2 id="not-proved" className="text-base font-normal">
-          What it does not prove
-        </h2>
-        <p className="mt-1 text-[0.8125rem] text-muted-foreground">
-          {proof.does_not_prove ??
-            "Who sent it, or that it came from a Payslip payer. The memo was written by the sender and is not checked against any payroll record."}
-        </p>
-      </section>
-
-      <section data-print="only" className="mt-6 border-t pt-4">
-        <div className="flex items-center gap-4">
-          <QrCode
-            value={typeof window === "undefined" ? "" : window.location.href}
-            label="Check this payment"
-            size={96}
-          />
-          <p className="text-xs">
-            Scan to check this payment against the Zcash chain. The check needs no account and shows this payment only.
           </p>
-        </div>
-      </section>
-    </>
-  );
-}
+        </VaultView>
 
-function Shows({
-  icon: Icon,
-  label,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <li className="grid grid-cols-[30px_minmax(0,1fr)] items-center gap-x-2 gap-y-1 border-b border-hairline px-4 py-3.5 text-[0.9375rem] last:border-b-0 sm:grid-cols-[30px_auto_minmax(0,1fr)] sm:px-[18px]">
-      <span
-        aria-hidden="true"
-        className="grid size-[26px] place-items-center rounded-full border text-muted-foreground"
-      >
-        <Icon className="size-3.5" aria-hidden="true" />
-      </span>
-      <span className="text-strong">{label}</span>
-      <span className="col-start-2 min-w-0 text-left text-foreground sm:col-start-3 sm:text-right">{children}</span>
-    </li>
+        <PaperView labelledBy="shows" split={SPLIT} className="print:rounded-none print:border-0 print:px-0 print:pb-0">
+          <div className="pb-5">
+            <h2 id="shows" className="text-[0.9375rem] font-medium">
+              What this proof shows
+            </h2>
+            <p className="mt-1 text-[0.8125rem] leading-[1.45] text-ash">
+              {checkedAt ? `Checked ${formatDateTime(checkedAt)} against the Zcash chain. ` : ""}
+              {proof.proves ?? "Nothing else about the payer or the contractor is revealed."}
+            </p>
+          </div>
+          <div className="flex items-center pb-5">
+            <Thread side="paper" split={SPLIT} />
+            <p className="min-w-0 font-mono text-[0.8125rem] leading-[1.5] break-all text-ink">
+              <span className="sr-only">Transaction </span>
+              <TxidLines txid={proof.txid} />
+            </p>
+          </div>
+          <ChainFacts height={proof.height} time={proof.block_time} timeLabel="Paid" />
+          <ViewField label="Amount">
+            <span className={cn(TYPE.hero, "block")}>
+              {payLine ? <Usd cents={payLine.usd_basis_cents} /> : <Zec zat={proof.amount_zat} />}
+            </span>
+            {payLine ? (
+              <span className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.8125rem] text-ash">
+                <Zec zat={proof.amount_zat} />
+                {testnet ? (
+                  <span title="Testnet coins have no market price; testnet payrolls convert dollars at a fixed demo rate.">
+                    at a simulated rate
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </ViewField>
+          <ViewField label="Sender">
+            <span className="text-[0.9375rem]">Not shown</span>
+            <span className="block text-[0.8125rem] text-ash">A payment proof does not say who sent it.</span>
+          </ViewField>
+          <ViewField label="Recipient">
+            <span className="flex flex-wrap items-center gap-x-1">
+              <code className="font-mono text-[0.8125rem] break-all" title={proof.recipient}>
+                <span data-print="hide">{truncateMiddle(proof.recipient, 14, 8)}</span>
+                <span data-print="only">{proof.recipient}</span>
+              </code>
+              <CopyButton value={proof.recipient} label="address" />
+            </span>
+            <span className="block text-[0.8125rem] text-ash">
+              One receiver of the person&apos;s Zcash address, so it will not look identical to the full address they
+              gave you.
+            </span>
+          </ViewField>
+          <ViewField label="Memo">
+            {payLine ? (
+              <>
+                <span className="text-[0.9375rem]">
+                  {formatPeriodLabel(payLine.period)} pay, invoice{" "}
+                  <span className="whitespace-nowrap">{payLine.invoice_ref}</span>
+                </span>
+                <span className="block text-[0.8125rem] text-ash">
+                  The sender&apos;s own statement, written in the memo.
+                </span>
+              </>
+            ) : memo.kind === "text" ? (
+              <span className="text-[0.9375rem] break-words">{memo.text}</span>
+            ) : (
+              <span className="text-[0.9375rem] text-ash">No memo</span>
+            )}
+          </ViewField>
+          <div className="border-t border-mist pt-5">
+            {note ? (
+              <p className="mb-5 rounded-lg border px-4 py-3 text-[0.9375rem]" data-testid="verify-note">
+                <span className="block text-[0.8125rem] text-muted-foreground">
+                  A note from the person who shared this, not checked by Payslip
+                </span>
+                <span className="break-words text-foreground">{note}</span>
+              </p>
+            ) : null}
+
+            <Button type="button" variant="secondary" onClick={print} data-print="hide">
+              <Download aria-hidden="true" />
+              Download payslip
+            </Button>
+
+            <section aria-labelledby="check-address" className="mt-8 border-t border-mist pt-6" data-print="hide">
+              <h2 id="check-address" className="text-[0.9375rem] font-medium">
+                Check the address
+              </h2>
+              <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+                Paste the address the person gave you to check it holds the receiver this payment went to.
+              </p>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  onCheckAddress();
+                }}
+                className="mt-4 space-y-2"
+              >
+                <label htmlFor="expected-address" className="block text-[0.9375rem]">
+                  Check the address it was paid to <span className="text-muted-foreground">(optional)</span>
+                </label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    id="expected-address"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    placeholder={testnet ? "utest1…" : "u1…"}
+                    className="h-10 font-mono"
+                    aria-describedby="expected-address-result"
+                  />
+                  <Button type="submit" variant="secondary" size="lg" disabled={!address.trim() || checking}>
+                    {checking ? "Checking" : "Check address"}
+                  </Button>
+                </div>
+                <div id="expected-address-result" aria-live="polite">
+                  {!current ? null : addressError ? (
+                    <p className="text-[0.8125rem] text-destructive">{explain(addressError).title}</p>
+                  ) : proof.address_valid === false ? (
+                    <AddressResult tone="warning" tag="Could not read the address you entered">
+                      That is not a unified address on Zcash {networkLabel(proof.network).toLowerCase()}. Paste the full
+                      address, starting with {testnet ? "utest1" : "u1"}.
+                    </AddressResult>
+                  ) : proof.address_matches === true ? (
+                    <AddressResult tone="success" tag="Matches the address you entered">
+                      The payment went to a receiver inside {truncateMiddle(checkedAddress, 10, 5)}.
+                    </AddressResult>
+                  ) : proof.address_matches === false ? (
+                    <AddressResult tone="danger" tag="Not the address you entered">
+                      The payment went to a different receiver than {truncateMiddle(checkedAddress, 10, 5)} holds.
+                    </AddressResult>
+                  ) : null}
+                </div>
+              </form>
+            </section>
+
+            <section aria-labelledby="not-proved" className="mt-8 border-t border-mist pt-6">
+              <h2 id="not-proved" className="text-[0.9375rem] font-medium">
+                What it does not prove
+              </h2>
+              <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+                {proof.does_not_prove ??
+                  "Who sent it, or that it came from a Payslip payer. The memo was written by the sender and is not checked against any payroll record."}
+              </p>
+            </section>
+
+            <section data-print="only" className="mt-6 border-t pt-4">
+              <div className="flex items-center gap-4">
+                <QrCode
+                  value={typeof window === "undefined" ? "" : window.location.href}
+                  label="Check this payment"
+                  size={96}
+                />
+                <p className="text-[0.8125rem]">
+                  Scan to check this payment against the Zcash chain. The check needs no account and shows this payment
+                  only.
+                </p>
+              </div>
+            </section>
+          </div>
+        </PaperView>
+      </TwoViews>
+    </>
   );
 }
 
@@ -651,36 +675,16 @@ function AddressResult({
   return (
     <div className="mt-1 space-y-1.5" role="status">
       <Tag tone={tone}>{tag}</Tag>
-      <p className="text-sm text-muted-foreground">{children}</p>
+      <p className="text-[0.8125rem] text-muted-foreground">{children}</p>
     </div>
   );
 }
 
-/** A small paper payslip under the amount, like Mercury's invoice thumbnail. Decorative; light theme only. */
-function Thumb({ proof, title }: { proof: VerifiedProof; title: string }) {
-  const memo = proof.memo.kind === "pay_line" ? proof.memo : null;
-  return (
-    <div className={styles.thumb} aria-hidden="true" data-print="hide">
-      <p className="text-[10px] font-medium">{memo ? "Payslip" : title}</p>
-      <div className={styles.thumbLine} style={{ width: "55%" }} />
-      <div className={styles.thumbLine} />
-      <div className={styles.thumbLine} style={{ width: "40%", height: 4, background: "#F4B728" }} />
-      {memo ? (
-        <div className={styles.thumbRow}>
-          <span>Period</span>
-          <span>{formatPeriodLabel(memo.period)}</span>
-        </div>
-      ) : null}
-      <div className={styles.thumbRow}>
-        <span>Amount</span>
-        <span>{memo ? formatUsd(memo.usd_basis_cents) : formatZec(proof.amount_zat)}</span>
-      </div>
-      <div className={styles.thumbRow}>
-        <span>Paid</span>
-        <span>{proof.block_time ? formatDate(proof.block_time) : "Pending"}</span>
-      </div>
-      <div className={styles.thumbLine} />
-      <div className={styles.thumbLine} style={{ width: "55%" }} />
-    </div>
-  );
+/** The explorer's host name from a transaction link, for "Open it on testnet.zecblock.com". */
+function explorerHost(url: string): string | null {
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
 }

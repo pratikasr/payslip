@@ -28,11 +28,11 @@ export function Field({
       </Label>
       {children}
       {error ? (
-        <p id={`${id}-error`} className="text-sm text-danger">
+        <p id={`${id}-error`} className="text-[0.8125rem] text-danger">
           {error}
         </p>
       ) : help ? (
-        <p id={`${id}-help`} className="text-xs text-muted-foreground">
+        <p id={`${id}-help`} className="text-[0.8125rem] text-muted-foreground">
           {help}
         </p>
       ) : null}

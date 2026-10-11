@@ -24,16 +24,10 @@ export function initials(name: string | null | undefined): string {
   return (first + last).toUpperCase();
 }
 
-/** Calm hues, so a list of people reads like Mercury's row of counterparty logos. */
-const HUES = [205, 160, 28, 265, 340, 45, 185, 120];
-
-function hueFor(seed: string): number {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return HUES[h % HUES.length];
-}
-
-/** A soft initials avatar, its colour fixed per name. Decorative: the name is always written next to it. */
+/**
+ * Initials on Mist, in ink: the same for every person, so a list of people stays within the five
+ * identity colours. Decorative: the name is always written next to it.
+ */
 export function Initials({
   name,
   text,
@@ -45,18 +39,14 @@ export function Initials({
   className?: string;
   size?: "sm" | "md" | "lg";
 }) {
-  const seed = name ?? text ?? "";
   return (
     <span
       aria-hidden="true"
-      style={seed ? ({ "--av-h": hueFor(seed) } as React.CSSProperties) : undefined}
       className={cn(
-        "inline-grid shrink-0 place-items-center rounded-full bg-avatar font-medium tracking-wide text-strong",
-        seed &&
-          "bg-[hsl(var(--av-h)_55%_92%)] text-[hsl(var(--av-h)_38%_30%)] dark:bg-[hsl(var(--av-h)_28%_24%)] dark:text-[hsl(var(--av-h)_50%_82%)]",
-        // Initials never go below 11px, so two letters stay legible on any screen.
-        size === "sm" && "size-6 text-[11px] tracking-normal",
-        size === "md" && "size-7 text-[11px]",
+        "inline-grid shrink-0 place-items-center rounded-full bg-avatar font-medium text-strong",
+        // Initials stay at the caption size, so two letters are legible on any screen.
+        size === "sm" && "size-6 text-[0.8125rem] tracking-[-0.02em]",
+        size === "md" && "size-7 text-[0.8125rem]",
         size === "lg" && "size-10 text-[0.8125rem]",
         className,
       )}

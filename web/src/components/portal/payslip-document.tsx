@@ -4,13 +4,25 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronLeft, Download, ExternalLink, Share } from "lucide-react";
+import { ChevronLeft, Download, Share } from "lucide-react";
 import { Fiat, Rate, Usd, Zec } from "@/components/app/amount";
 import { useCoinUnit } from "@/components/app/health-provider";
 import { CopyButton } from "@/components/app/copy-button";
 import { ErrorState } from "@/components/app/states";
 import { Initials } from "@/components/ds/avatar";
 import { PageTitle } from "@/components/ds/page";
+import {
+  ChainFacts,
+  PaperView,
+  Redacted,
+  Thread,
+  TwoViews,
+  TxidLines,
+  VaultView,
+  ViewField,
+  ViewTitle,
+} from "@/components/ds/two-views";
+import { TYPE } from "@/components/ds/type";
 import { useDocumentTitle } from "@/components/portal/document-title";
 import { fetchStatement, payslipTitle, proofLink, statementRequest } from "@/components/portal/portal-data";
 import { usePersonName, usePortal } from "@/components/portal/portal-provider";
@@ -32,17 +44,21 @@ import {
   truncateMiddle,
 } from "@/lib/format";
 import { isValidRange } from "@/lib/period";
+import { cn } from "cn";
 
 const QrCode = dynamic(() => import("@/components/app/qr-code"), { ssr: false });
 
 /** A4 paper for Download PDF; the rest of the print rules live in globals.css. */
 const PRINT_CSS = "@media print { @page { size: A4; margin: 16mm 15mm; } }";
 
+/** The views sit side by side from 1280px, where the content column leaves the payslip room. */
+const SPLIT = "xl" as const;
+
 function Back() {
   return (
     <Link
       href="/portal/payslips"
-      className="mb-3 inline-flex items-center gap-1 rounded-sm text-sm text-muted-foreground hover:text-foreground"
+      className="mb-3 inline-flex items-center gap-1 rounded-sm text-[0.8125rem] text-muted-foreground hover:text-foreground"
       data-print="hide"
     >
       <ChevronLeft className="size-4" aria-hidden="true" />
@@ -157,11 +173,6 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
   };
 
   const rows: { label: string; value: ReactNode; hint?: ReactNode }[] = [
-    {
-      label: "Paid on",
-      value: mined ? formatDateTime(line.block_time ?? line.date) : "Sent, waiting to be mined",
-    },
-    { label: "Invoice", value: line.invoice_ref },
     testnet
       ? {
           // On testnet the rate is a fixed demo figure; it stays in a tooltip, not on the page.
@@ -195,76 +206,16 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           value: "Sent to be converted to USDC",
           hint: `Paid in ${coin} to a swap venue that sends USDC to your payout address. This payslip shows the ${coin} payment; the conversion is the venue's.`,
         }
-      : {
-          label: "Settlement",
-          value: `Held in shielded ${coin}`,
-          hint: line.to_address ? (
-            <span>
-              Paid to{" "}
-              <code className="font-mono text-[0.8125rem]" title={line.to_address}>
-                <span data-print="hide">{truncateMiddle(line.to_address, 12, 8)}</span>
-                <span data-print="only" className="break-all">
-                  {line.to_address}
-                </span>
-              </code>
-              , one receiver of your Zcash address. A payment proof shows this same receiver; it will not look identical
-              to the full address you gave your payer, and the proof page can check that it is yours.
-            </span>
-          ) : undefined,
-        },
-    {
-      label: "Transaction",
-      value: (
-        <span className="flex min-w-0 items-start gap-1">
-          <code className="min-w-0 font-mono text-[0.8125rem] leading-6 break-all">{line.txid}</code>
-          <span className="flex shrink-0 items-center" data-print="hide">
-            <CopyButton value={line.txid} label="transaction id" />
-            {line.explorer_url ? (
-              <a
-                href={line.explorer_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
-                aria-label="Open the transaction in a block explorer (opens in a new tab)"
-                title="Open in block explorer"
-              >
-                <ExternalLink className="size-3.5" aria-hidden="true" />
-              </a>
-            ) : null}
-          </span>
-        </span>
-      ),
-    },
-    { label: "Block height", value: <span className="num">{formatHeight(line.height)}</span> },
-    {
-      label: "What the world sees",
-      value: mined ? (
-        <span>
-          A shielded transaction in block <span className="num">{formatHeight(line.height)}</span>: no amount, no names.
-        </span>
-      ) : (
-        "Nothing yet: the transaction is waiting for a block."
-      ),
-      hint: line.explorer_url ? (
-        <a
-          href={line.explorer_url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 rounded-sm text-link underline underline-offset-4"
-          data-print="hide"
-        >
-          See it on a public block explorer
-          <ExternalLink className="size-3.5" aria-hidden="true" />
-          <span className="sr-only"> (opens in a new tab)</span>
-        </a>
-      ) : undefined,
-    },
+      : { label: "Settlement", value: `Held in shielded ${coin}` },
   ];
+
+  const host = explorerHost(line.explorer_url);
+  const paidAt = mined ? (line.block_time ?? line.date) : null;
 
   return (
     <>
       <style>{PRINT_CSS}</style>
-      <div className="max-w-[760px] print:max-w-none">
+      <div className="print:max-w-none">
         <Back />
         <PageTitle
           title={title}
@@ -282,95 +233,191 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
           }
         />
 
-        <article
-          aria-label={title}
-          className="rounded-xl border bg-card px-5 py-6 text-card-foreground sm:px-10 sm:py-9 print:max-w-none print:rounded-none print:border-0 print:p-0"
+        {/*
+          The payment two ways, joined by its txid: what anyone sees on the explorer, and this
+          payslip, which is what the contractor's key reads. Eight rows a side, so each bar on the
+          explorer's side sits level with the value it hides. Both print, the explorer's view first.
+        */}
+        <TwoViews
+          id="payslip-views"
+          rows={8}
+          split={SPLIT}
+          columns="aside"
+          caption={`${title} in two views: what the world sees on the Zcash chain, and what your viewing key shows.`}
         >
-          <header className="flex items-start justify-between gap-4 border-b border-hairline pb-5">
-            {/* The employer first, as on any payslip; the product and the network under it. */}
-            <div className="flex min-w-0 items-center gap-2.5">
-              <Mark className="size-7 shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[0.9375rem] font-medium tracking-tight" data-testid="payslip-paid-by">
-                  Paid by {companyName()}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Payslip, private payroll on Zcash {networkLabel(s.network).toLowerCase()}
-                </p>
-              </div>
-            </div>
-            <SettlementTag line={line} />
-          </header>
-
-          <div className="grid gap-5 border-b border-hairline py-6 sm:grid-cols-2">
-            <div className="min-w-0">
-              <p className="text-[0.8125rem] text-muted-foreground">Paid to</p>
-              <p className="mt-1.5 flex items-center gap-2.5 text-[0.9375rem]">
-                <Initials name={name} />
-                <span className="truncate">{name ?? "The holder of this viewing key"}</span>
+          <VaultView labelledBy="world-title" split={SPLIT}>
+            <ViewTitle id="world-title" title="What the world sees">
+              {mined ? (
+                <>
+                  A shielded transaction in block <span className="num">{formatHeight(line.height)}</span>: no amount,
+                  no names.
+                </>
+              ) : (
+                "Nothing yet: the transaction is waiting for a block."
+              )}
+            </ViewTitle>
+            <div className="flex items-center pb-5">
+              <p className="font-mono text-[0.8125rem] leading-[1.5] break-all text-ink">
+                <TxidLines txid={line.txid} />
               </p>
+              <Thread side="vault" split={SPLIT} className="ml-4" />
             </div>
-            <div className="min-w-0">
-              <p className="text-[0.8125rem] text-muted-foreground">Period</p>
-              <p className="mt-1.5 text-[0.9375rem]">{formatPeriodLabel(line.period)}</p>
+            <ChainFacts height={mined ? line.height : null} time={paidAt} />
+            <ViewField label="Amount">
+              <Redacted className="w-[3.9em] text-[1.875rem] lg:text-[2.75rem]" />
+              <Redacted className="mt-2 w-[9em] text-[0.8125rem]" />
+            </ViewField>
+            <ViewField label="Sender">
+              <Redacted className="w-[7em] text-[0.9375rem]" />
+            </ViewField>
+            <ViewField label="Recipient">
+              <Redacted className="w-[7em] text-[0.9375rem]" />
+              <Redacted className="mt-0.5 w-[min(100%,19ch)] font-mono text-[0.8125rem]" />
+            </ViewField>
+            <ViewField label="Memo">
+              <Redacted className="w-[min(100%,12em)] text-[0.9375rem]" />
+            </ViewField>
+            <p className="border-t border-mist pt-5 text-[0.9375rem]">
+              {line.explorer_url ? (
+                <a
+                  href={line.explorer_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  data-txid={line.txid}
+                  data-print="hide"
+                  className="rounded-[3px] text-ink underline decoration-ink/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-gold"
+                >
+                  {host ? `Open it on ${host}` : "Open it on a public block explorer"}
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : null}
+            </p>
+          </VaultView>
+
+          <PaperView
+            as="article"
+            label={title}
+            split={SPLIT}
+            className="print:rounded-none print:border-0 print:px-0 print:pt-6 print:pb-0"
+          >
+            {/* The employer first, as on any payslip; the product and the network under it. */}
+            <header className="flex items-start justify-between gap-4 pb-5">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <Mark className="size-7 shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-display text-[1.0625rem] leading-snug font-[600]" data-testid="payslip-paid-by">
+                    Paid by {companyName()}
+                  </p>
+                  <p className="text-[0.8125rem] text-ash">
+                    Payslip, private payroll on Zcash {networkLabel(s.network).toLowerCase()}
+                  </p>
+                </div>
+              </div>
+              <SettlementTag line={line} />
+            </header>
+
+            <div className="flex items-center pb-5">
+              <Thread side="paper" split={SPLIT} />
+              <p className="min-w-0 font-mono text-[0.8125rem] leading-[1.5] break-all text-ink">
+                <span className="sr-only">Transaction </span>
+                <TxidLines txid={line.txid} />
+              </p>
+              <span className="ml-1 shrink-0 self-start" data-print="hide">
+                <CopyButton value={line.txid} label="transaction id" />
+              </span>
+            </div>
+
+            <ChainFacts height={mined ? line.height : null} time={paidAt} timeLabel="Paid" />
+
+            <ViewField label="Amount">
+              <span className={cn(TYPE.hero, "block")}>
+                <Usd cents={line.usd_basis_cents} />
+              </span>
+              <span className="mt-2 block text-[0.8125rem] text-ash">
+                <Zec zat={line.amount_zat} />
+              </span>
+              {line.settlement === "converted" ? (
+                <span className="mt-3 block text-[0.9375rem]">
+                  You chose to be paid in USDC, so this payment was sent to a swap venue to be converted to USDC.
+                </span>
+              ) : null}
+            </ViewField>
+            <ViewField label="Sender">
+              <span className="text-[0.9375rem]">{companyName()}</span>
+              <span className="block text-[0.8125rem] text-ash">From the payroll account it keeps for you</span>
+            </ViewField>
+            <ViewField label="Recipient">
+              <span className="flex min-w-0 items-center gap-2.5 text-[0.9375rem]">
+                <Initials name={name} size="sm" />
+                <span className="truncate">{name ?? "The holder of this viewing key"}</span>
+              </span>
+              {line.to_address ? (
+                <>
+                  <code className="mt-1 block font-mono text-[0.8125rem] text-ash" title={line.to_address}>
+                    <span data-print="hide">{truncateMiddle(line.to_address, 12, 8)}</span>
+                    <span data-print="only" className="break-all">
+                      {line.to_address}
+                    </span>
+                  </code>
+                  <span className="mt-1 block text-[0.8125rem] text-ash">
+                    One receiver of your Zcash address. A payment proof shows this same receiver; it will not look
+                    identical to the full address you gave your payer, and the proof page can check that it is yours.
+                  </span>
+                </>
+              ) : null}
+            </ViewField>
+            <ViewField label="Memo">
+              <span className="text-[0.9375rem]">
+                {formatPeriodLabel(line.period)} pay, invoice{" "}
+                <span className="whitespace-nowrap">{line.invoice_ref}</span>
+              </span>
               {run ? (
-                <p className="text-sm text-muted-foreground">{formatRange(run.period_start, run.period_end)}</p>
+                <span className="block text-[0.8125rem] text-ash">
+                  For {formatRange(run.period_start, run.period_end)}
+                </span>
+              ) : null}
+            </ViewField>
+
+            <div className="border-t border-mist pt-5">
+              <dl className="grid gap-x-3 gap-y-1 text-[0.9375rem] sm:grid-cols-[5.5rem_minmax(0,1fr)] sm:gap-y-4 xl:grid-cols-[6.5rem_minmax(0,1fr)]">
+                {rows.map((r) => (
+                  <div key={r.label} className="contents">
+                    <dt className="text-[0.8125rem] text-ash sm:pt-0.5">{r.label}</dt>
+                    <dd className="mb-3 min-w-0 sm:mb-0">
+                      <div className="text-foreground">{r.value}</div>
+                      {r.hint ? <div className="mt-0.5 text-[0.8125rem] text-ash">{r.hint}</div> : null}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              <footer className="mt-6 border-t border-mist pt-5 text-[0.8125rem] text-ash">
+                <p>
+                  Read from the Zcash chain with your viewing key on {formatDate(s.generated_at)}, scanned to block{" "}
+                  <span className="num">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are
+                  hidden on the public chain.
+                </p>
+                {sample ? (
+                  <p className="mt-1.5" data-testid="payslip-sample-line">
+                    {SAMPLE_COMPANY_LINE}. Testnet coins have no value.
+                  </p>
+                ) : null}
+              </footer>
+
+              {proof ? (
+                <section data-print="only" className="mt-6 border-t border-mist pt-5">
+                  <div className="flex items-center gap-4">
+                    <QrCode value={proofLink(proof.token)} label="Check this payment" size={96} />
+                    <p className="text-[0.8125rem]">
+                      Scan to check this payment against the Zcash chain. The check needs no account and shows this
+                      payment only.
+                    </p>
+                  </div>
+                </section>
               ) : null}
             </div>
-          </div>
-
-          <div className="border-b border-hairline py-6">
-            <p className="text-[0.8125rem] text-muted-foreground">Amount</p>
-            <p className="mt-1 text-[2.125rem] leading-tight font-[380]">
-              <Usd cents={line.usd_basis_cents} />
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              <Zec zat={line.amount_zat} />
-            </p>
-            {line.settlement === "converted" ? (
-              <p className="mt-3 text-[0.9375rem]">
-                You chose to be paid in USDC, so this payment was sent to a swap venue to be converted to USDC.
-              </p>
-            ) : null}
-          </div>
-
-          <dl className="grid gap-x-3 gap-y-4 py-6 text-[0.9375rem] sm:grid-cols-[170px_minmax(0,1fr)]">
-            {rows.map((r) => (
-              <div key={r.label} className="contents">
-                <dt className="text-strong">{r.label}</dt>
-                <dd className="mb-2 min-w-0 sm:mb-0">
-                  <div className="text-foreground">{r.value}</div>
-                  {r.hint ? <div className="mt-0.5 text-sm text-muted-foreground">{r.hint}</div> : null}
-                </dd>
-              </div>
-            ))}
-          </dl>
-
-          <footer className="border-t border-hairline pt-5 text-xs text-muted-foreground">
-            <p>
-              Read from the Zcash chain with your viewing key on {formatDate(s.generated_at)}, scanned to block{" "}
-              <span className="num">{formatHeight(s.scanned_to_height)}</span>. The amount and the parties are hidden on
-              the public chain.
-            </p>
-            {sample ? (
-              <p className="mt-1.5" data-testid="payslip-sample-line">
-                {SAMPLE_COMPANY_LINE}. Testnet coins have no value.
-              </p>
-            ) : null}
-          </footer>
-
-          {proof ? (
-            <section data-print="only" className="mt-6 border-t border-hairline pt-5">
-              <div className="flex items-center gap-4">
-                <QrCode value={proofLink(proof.token)} label="Check this payment" size={96} />
-                <p className="text-xs">
-                  Scan to check this payment against the Zcash chain. The check needs no account and shows this payment
-                  only.
-                </p>
-              </div>
-            </section>
-          ) : null}
-        </article>
+          </PaperView>
+        </TwoViews>
 
         <ShareProofDialog
           line={sharing ? line : null}
@@ -380,4 +427,14 @@ function Document({ statement: s, line }: { statement: Statement; line: Statemen
       </div>
     </>
   );
+}
+
+/** The explorer's host name from a transaction link, for "Open it on testnet.zecblock.com". */
+function explorerHost(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return null;
+  }
 }

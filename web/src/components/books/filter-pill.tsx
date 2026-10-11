@@ -29,7 +29,7 @@ export function FilterPill({
         data-testid={testId}
         className={cn(
           "h-8 max-w-[15rem] appearance-none truncate rounded-full border border-transparent bg-secondary py-0 pr-8 pl-3.5 text-[0.8125rem] text-secondary-foreground outline-none hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_6%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid",
-          active && "border-primary-edge bg-primary-soft",
+          active && "border-foreground/40 bg-chip",
         )}
       >
         {children}

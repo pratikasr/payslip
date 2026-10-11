@@ -88,7 +88,7 @@ function CompanyLine() {
   return (
     <span className="inline-flex items-center gap-1.5 text-foreground" data-testid="books-company">
       <Mark className="size-4 shrink-0" />
-      <span className="truncate">{companyName()}</span>
+      <span className="truncate font-display font-[600]">{companyName()}</span>
     </span>
   );
 }
@@ -121,7 +121,7 @@ function ScanMeta() {
     <>
       {read}
       <span className="num mt-0.5 block text-[0.8125rem]" data-testid="books-scan-meta">
-        Zcash {networkLabel(r.network).toLowerCase()} ·{" "}
+        Zcash {networkLabel(r.network).toLowerCase()},{" "}
         {from
           ? `scanned from block ${formatHeight(from)} to ${formatHeight(r.scanned_to_height)} at ${at}`
           : `scanned to block ${formatHeight(r.scanned_to_height)} at ${at}`}
@@ -187,7 +187,7 @@ export function PeriodMenu() {
             <DropdownMenuItem onSelect={() => setPeriod(latestRun.period)}>
               <span className="grid flex-1">
                 <span>Latest run, {formatPeriodLabel(latestRun.label)} payroll</span>
-                <span className="num text-xs text-muted-foreground">{shortRange(latestRun.period)}</span>
+                <span className="num text-[0.8125rem] text-muted-foreground">{shortRange(latestRun.period)}</span>
               </span>
               {same(period, latestRun.period) ? <Check aria-hidden="true" /> : null}
             </DropdownMenuItem>
@@ -196,7 +196,7 @@ export function PeriodMenu() {
             <DropdownMenuItem key={p.id} onSelect={() => setPeriod(p.period)}>
               <span className="grid flex-1">
                 <span>{p.label}</span>
-                <span className="num text-xs text-muted-foreground">{shortRange(p.period)}</span>
+                <span className="num text-[0.8125rem] text-muted-foreground">{shortRange(p.period)}</span>
               </span>
               {same(period, p.period) ? <Check aria-hidden="true" /> : null}
             </DropdownMenuItem>
@@ -276,7 +276,7 @@ function CustomRangeDialog({
             </div>
           </div>
           {!valid ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="text-[0.8125rem] text-destructive">
               Start on or before the end, at most one year apart.
             </p>
           ) : null}
@@ -326,16 +326,16 @@ export function ScanProgress() {
         />
         <div className="grid gap-1">
           <p className="text-[1.0625rem] text-foreground">{title}</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-[0.8125rem] text-muted-foreground">
             The first scan of a key set takes longest while the service builds a view-only wallet for it; after that
             only new blocks are read.
           </p>
-          <p className="num text-sm text-muted-foreground">
-            {period ? `${shortRange(period)} · ` : ""}
+          <p className="num text-[0.8125rem] text-muted-foreground">
+            {period ? `${shortRange(period)}, ` : ""}
             {health
-              ? `reading ${scan.birthday ? `from block ${formatHeight(scan.birthday)} ` : ""}up to block ${formatHeight(health.chain_tip)} · `
+              ? `reading ${scan.birthday ? `from block ${formatHeight(scan.birthday)} ` : ""}up to block ${formatHeight(health.chain_tip)}, `
               : ""}
-            {seconds} s
+            {seconds} s so far
           </p>
         </div>
       </div>
@@ -367,11 +367,11 @@ export function ScanError() {
           <p className="text-[1.0625rem] text-foreground">
             {lwd ? "The Zcash node did not answer, twice" : "The books could not be loaded"}
           </p>
-          <p className="text-sm text-strong">
+          <p className="text-[0.8125rem] text-strong">
             {lwd ? "Payslip retried once on its own. " : ""}
             {e.message}
           </p>
-          {e.hint ? <p className="text-sm text-muted-foreground">{e.hint}</p> : null}
+          {e.hint ? <p className="text-[0.8125rem] text-muted-foreground">{e.hint}</p> : null}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 pl-8">
@@ -385,7 +385,7 @@ export function ScanError() {
             Retry
           </Button>
         )}
-        <details className="text-xs text-muted-foreground">
+        <details className="text-[0.8125rem] text-muted-foreground">
           <summary className="cursor-pointer">Details</summary>
           <p className="mt-1 font-mono">
             {e.code}

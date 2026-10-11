@@ -51,7 +51,7 @@ export function PayslipList() {
       ) : (
         <>
           <PayslipRows lines={lines} pending={pending} onShare={setSharing} />
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="mt-4 text-[0.8125rem] text-muted-foreground">
             Older payments are in{" "}
             <Link href="/portal/tax" className="rounded-sm text-link underline underline-offset-4">
               Tax documents

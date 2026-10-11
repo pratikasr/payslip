@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Logo } from "@/components/app/logo";
 import { DemoLink } from "@/components/marketing/demo-link";
 import { Button } from "@/components/ui/button";
+import { TYPE } from "@/components/ds/type";
 
 export const metadata: Metadata = { title: { absolute: "Page not found | Payslip" } };
 
@@ -12,7 +13,7 @@ export default function NotFound() {
     <main id="main" className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center gap-6 px-4 py-16">
       <Logo />
       <div className="space-y-2">
-        <h1 className="text-[1.75rem] leading-tight font-[380] tracking-[-0.015em]">Page not found</h1>
+        <h1 className={TYPE.title}>Page not found</h1>
         <p className="text-[0.9375rem] text-muted-foreground">
           This page does not exist. Check the address, or go back to your payroll, your payslips or a payment proof.
         </p>

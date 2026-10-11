@@ -48,7 +48,10 @@ test("a contractor proves one payment and anyone can verify it", async ({ page, 
   await expect(verifier.getByText(/^Verified on Zcash/)).toBeVisible({ timeout: 60_000 });
   await expect(verifier.getByRole("heading", { level: 1 })).toHaveText(/^Payslip for /);
   await expect(verifier.getByRole("heading", { name: "What this proof shows" })).toBeVisible();
-  await expect(verifier.getByText("Transaction", { exact: true })).toBeVisible();
+  // Beside the proof, the explorer's view of the same transaction: no amount, no names.
+  const world = verifier.getByRole("group", { name: "What the world sees" });
+  await expect(world).toContainText("no amount, no names");
+  await expect(world.getByText("Hidden on chain")).toHaveCount(5);
   await expect(verifier.getByText(/^Viewing as/)).toHaveCount(0);
   await expect(
     verifier.getByText("Checked by Payslip, private payroll on Zcash, against the public chain."),

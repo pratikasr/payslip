@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Fragment, useState, type ReactNode } from "react";
-import { ArrowRight, ChevronRight, CircleCheck, Info, TriangleAlert } from "lucide-react";
+import { ChevronRight, CircleCheck, Info, TriangleAlert } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
 import { StatusTag as SharedStatusTag } from "@/components/ds/status";
 import { RunDetail } from "@/components/books/run-detail";
@@ -21,6 +21,7 @@ import {
 import { useBooks } from "@/components/books/books-provider";
 import { formatCount, formatDate, formatHeight, formatPeriodLabel, formatUsd } from "@/lib/format";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 const plural = (n: number, one: string, many: string) => `${formatCount(n)} ${n === 1 ? one : many}`;
 
@@ -50,7 +51,10 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
         ) : null}
       </div>
       {runs.length > 0 && !totals.fundingKnown ? (
-        <p role="status" className="rounded-xl border border-warning/30 bg-warning-bg px-4 py-3 text-sm text-strong">
+        <p
+          role="status"
+          className="rounded-xl border border-warning/30 bg-warning-bg px-4 py-3 text-[0.8125rem] text-strong"
+        >
           {hasTreasuryKey(r, keys)
             ? "No funding record was found for these runs in this period, so what was funded cannot be read. A run's record is written the day it starts paying; widen the period to include that day."
             : "No funding record was found, so what was funded cannot be read. Load the Treasury viewing key from Manage in the sidebar."}
@@ -61,7 +65,7 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
         <div className="border-y border-hairline py-10 text-center text-[0.9375rem] text-muted-foreground">
           <p>No runs paid in this period. Choose another period above.</p>
           {from ? (
-            <p className="mx-auto mt-2 max-w-md text-sm">
+            <p className="mx-auto mt-2 max-w-md text-[0.8125rem]">
               These keys were read from block <span className="num">{formatHeight(from)}</span> on. If they were paid
               earlier, import the company&apos;s key file: it names the block to start from.
             </p>
@@ -69,7 +73,7 @@ export function ReconciliationView({ r }: { r: BooksResult }) {
         </div>
       ) : (
         <section aria-labelledby="runs-heading" className="min-w-0">
-          <h2 id="runs-heading" className="mb-2 text-[1.1875rem] font-normal tracking-[-0.01em]">
+          <h2 id="runs-heading" className={cn(TYPE.heading, "mb-2")}>
             Runs
           </h2>
           <RunsTable r={r} runs={runs} t={totals} />
@@ -121,14 +125,13 @@ function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: Boo
     ex.total > 0 ? (
       <Link
         href="/books/exceptions"
-        className="inline-flex shrink-0 items-center gap-1 self-start rounded-sm text-sm text-link underline underline-offset-4 sm:self-center"
+        className="inline-flex shrink-0 items-center gap-1 self-start rounded-sm text-[0.8125rem] text-link underline underline-offset-4 sm:self-center"
       >
         {all
           ? ex.unlabelled.length === 1
             ? "1 unlabelled transaction to review"
             : `${formatCount(ex.unlabelled.length)} unlabelled transactions to review`
           : "Review exceptions"}
-        <ArrowRight className="size-3.5" aria-hidden="true" />
       </Link>
     ) : null;
   return (
@@ -154,8 +157,8 @@ function StatusBanner({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: Boo
           />
         )}
         <div>
-          <p className="text-[1.375rem] leading-tight font-[380] tracking-[-0.01em] text-balance">{headline}</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className={cn(TYPE.heading, "text-balance")}>{headline}</p>
+          <p className="mt-1 text-[0.8125rem] text-muted-foreground">
             {runs.length === 0
               ? "Payments are matched to runs by their memo; none were mined in this period."
               : all
@@ -176,8 +179,8 @@ function Kpi({ label, value, sub, testId }: { label: ReactNode; value: ReactNode
     <div className="min-w-0 px-4 py-4 sm:px-5" data-testid={testId}>
       <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
       <dd className="mt-1">
-        <div className="figure text-[1.375rem] leading-tight font-[380] tracking-[-0.01em]">{value}</div>
-        <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
+        <div className={cn(TYPE.heading, "figure")}>{value}</div>
+        <div className="mt-1 text-[0.8125rem] text-muted-foreground">{sub}</div>
       </dd>
     </div>
   );
@@ -291,7 +294,7 @@ function DiffValue({ run, note = true }: { run: BooksRun; note?: boolean }) {
           run.status === "variance_unexplained" ? "text-destructive" : diff === 0 ? "text-muted-foreground" : "",
         )}
       />
-      {rounding ? <span className="block text-xs text-muted-foreground">rounding</span> : null}
+      {rounding ? <span className="block text-[0.8125rem] text-muted-foreground">rounding</span> : null}
     </>
   );
 }
@@ -306,7 +309,7 @@ function Stack({ top, bottom }: { top: ReactNode; bottom?: ReactNode }) {
   return (
     <>
       <div>{top}</div>
-      {bottom ? <div className="mt-0.5 text-xs text-muted-foreground">{bottom}</div> : null}
+      {bottom ? <div className="mt-0.5 text-[0.8125rem] text-muted-foreground">{bottom}</div> : null}
     </>
   );
 }
@@ -354,7 +357,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
             const detailId = `run-detail-${run.run_id}`;
             const paidOn = paidDateOf(r, run.run_id);
             const toggle = () => setOpen(isOpen ? null : run.run_id);
-            const sub = `${run.lines + (run.pending_lines ?? 0)} paid${paidOn ? ` · ${formatDate(paidOn).replace(/ \d{4}$/, "")}` : ""}`;
+            const sub = `${run.lines + (run.pending_lines ?? 0)} paid${paidOn ? ` on ${formatDate(paidOn).replace(/ \d{4}$/, "")}` : ""}`;
             return (
               <Fragment key={run.run_id}>
                 <tr
@@ -385,7 +388,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
                       />
                       <span>
                         <span className="block">{formatPeriodLabel(run.period)}</span>
-                        <span className="num block text-xs text-muted-foreground">
+                        <span className="num block text-[0.8125rem] text-muted-foreground">
                           {sub}
                           <span className="sr-only">, run {run.run_id.slice(0, 8)}</span>
                         </span>
@@ -393,7 +396,7 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
                     </button>
                     {/* Buttons are not printed; the run's name is. */}
                     <span data-print="text">
-                      {formatPeriodLabel(run.period)} · {run.run_id.slice(0, 8)}
+                      {formatPeriodLabel(run.period)}, run {run.run_id.slice(0, 8)}
                       <span className="block text-[8pt]">{sub}</span>
                     </span>
                   </td>
@@ -444,26 +447,26 @@ function RunsTable({ r, runs, t }: { r: BooksResult; runs: BooksRun[]; t: BooksT
             className="sticky bottom-0 z-10 bg-background shadow-[0_-1px_0_var(--border)]"
             data-testid="books-runs-total"
           >
-            <th scope="row" className={cn(TD, "text-left font-[450]")}>
+            <th scope="row" className={cn(TD, "text-left font-medium")}>
               Total
             </th>
-            <td className={cn(TD, "text-right font-[450]")}>
+            <td className={cn(TD, "text-right font-medium")}>
               {t.fundingKnown ? (
                 <Stack top={<Usd cents={t.funded} />} bottom={<Zec zat={t.zecAcquired} />} />
               ) : (
                 <NotRecorded />
               )}
             </td>
-            <td className={cn(TD, "text-right font-[450]")}>
+            <td className={cn(TD, "text-right font-medium")}>
               <Stack top={<Usd cents={t.paid} />} bottom={<Zec zat={t.paidZat} />} />
             </td>
-            <td className={cn(TD, "text-right font-[450]")}>
+            <td className={cn(TD, "text-right font-medium")}>
               {t.fundingKnown ? <Usd cents={t.variance} /> : <NotRecorded />}
             </td>
-            <td className={cn(TD, "text-right font-[450]")}>
+            <td className={cn(TD, "text-right font-medium")}>
               {t.fundingKnown ? <Usd cents={t.explained} /> : <NotRecorded />}
             </td>
-            <td className={cn(TD, "text-right font-[450]")}>
+            <td className={cn(TD, "text-right font-medium")}>
               {t.fundingKnown ? (
                 <Usd
                   cents={t.unexplained}
@@ -514,15 +517,15 @@ function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
                   />
                   <span>
                     <span className="block text-[0.9375rem]">{formatPeriodLabel(run.period)}</span>
-                    <span className="num block text-xs text-muted-foreground">
+                    <span className="num block text-[0.8125rem] text-muted-foreground">
                       {run.lines + (run.pending_lines ?? 0)} paid
-                      {paidOn ? ` · ${formatDate(paidOn)}` : ""}
+                      {paidOn ? ` on ${formatDate(paidOn)}` : ""}
                     </span>
                   </span>
                 </span>
                 <StatusTag run={run} />
               </span>
-              <span className="grid grid-cols-2 gap-x-4 gap-y-1.5 pl-5 text-sm">
+              <span className="grid grid-cols-2 gap-x-4 gap-y-1.5 pl-5 text-[0.8125rem]">
                 <MiniStat
                   label="Funded"
                   value={run.funded_usd_cents === null ? null : <Usd cents={run.funded_usd_cents} />}
@@ -537,7 +540,7 @@ function RunsList({ r, runs }: { r: BooksResult; runs: BooksRun[] }) {
             </button>
             {/* Buttons are not printed; the run's name and figures are. */}
             <span data-print="text">
-              {formatPeriodLabel(run.period)} · {run.run_id.slice(0, 8)}: funded{" "}
+              {formatPeriodLabel(run.period)}, run {run.run_id.slice(0, 8)}: funded{" "}
               {run.funded_usd_cents === null ? "not recorded" : formatUsd(run.funded_usd_cents)}, paid{" "}
               {formatUsd(run.paid_usd_cents)}, {statusView(run).label.toLowerCase()}
             </span>

@@ -25,6 +25,7 @@ import { formatClock, formatHeight, formatTime } from "@/lib/format";
 import { lineConfirmedAt } from "@/lib/payroll";
 import { logSentence } from "@/lib/run-log";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 import { CancelRun } from "../cancel-run";
 import { Problem } from "../problem";
 import {
@@ -142,7 +143,7 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
           <p className="text-[0.8125rem] text-strong">Total for {plural(n, "contractor")}</p>
           {testnet ? <SimulatedRate rateE6={run.funding?.rate_usd_per_zec_e6} /> : null}
         </div>
-        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
+        <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
         {zat !== null ? (
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             {run.total_zat ? null : "about "}
@@ -167,7 +168,7 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-[1.1875rem] font-normal">
+            <DialogTitle className={TYPE.heading}>
               Pay {plural(n, "contractor")} <Usd cents={run.total_usd_cents} />
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
@@ -238,7 +239,7 @@ function Paying({
 
       <div className="mt-6">
         <p className="flex items-baseline gap-2" aria-live="polite">
-          <span key={confirmed} className="ps-rise text-[2.125rem] leading-none font-[380] tracking-[-0.02em]">
+          <span key={confirmed} className={cn(TYPE.hero, "ps-rise")}>
             {confirmed}
           </span>
           <span className="text-[0.9375rem] text-muted-foreground">of {n} confirmed</span>
@@ -253,7 +254,7 @@ function Paying({
           className="mt-3 h-1.5 overflow-hidden rounded-full bg-chip"
         >
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-700 ease-out"
+            className="h-full rounded-full bg-viz transition-[width] duration-700 ease-out"
             style={{ width: `${n ? Math.max(3, (confirmed / n) * 100) : 0}%` }}
           />
         </div>
@@ -264,7 +265,9 @@ function Paying({
       <div className="mt-5 space-y-2 text-[0.8125rem] text-muted-foreground">
         {latest ? (
           <p className="[overflow-wrap:anywhere]">
-            <span className="text-strong">Latest</span> · <time dateTime={latest.at}>{formatTime(latest.at)}</time> ·{" "}
+            <span className="text-strong">
+              Latest, at <time dateTime={latest.at}>{formatTime(latest.at)}</time>:
+            </span>{" "}
             {logSentence(latest.message, coin)}
           </p>
         ) : null}
@@ -425,7 +428,7 @@ export function DoneStep({ run }: { run: Run }) {
       </p>
       <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
         <p className="text-[0.8125rem] text-strong">Paid to {plural(n, "contractor")}</p>
-        <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
+        <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
         {run.total_zat ? (
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             <Zec zat={run.total_zat} short /> for {runTitle(run)}

@@ -20,6 +20,7 @@ import { formatHeight, formatShortDate, venueLabel } from "@/lib/format";
 import { latestPeriodFirst } from "@/lib/payroll";
 import { TESTNET_FAUCET_URL } from "@/lib/public-url";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 import { fundingSource, isSimulated, latestFillRate, paidRuns, retryOnce, zatToCents } from "@/components/console/lib";
 import { IconChip } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
@@ -111,7 +112,7 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
             Balance
           </h2>
           {/* One balance figure: dollars on mainnet with the coin under it, the coin on testnet. */}
-          <div className="mt-1.5 text-[2.125rem] leading-tight font-[380] tracking-[-0.02em]">
+          <div className={cn(TYPE.hero, "mt-1.5")}>
             {rate ? (
               <Usd cents={zatToCents(t.total_zat, rate)} />
             ) : (
@@ -196,7 +197,7 @@ function ReceiveCard({ wallet }: { wallet: Wallet }) {
           <div className="mt-3 flex items-start gap-1">
             <Sensitive
               block
-              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[11px] leading-relaxed break-all"
+              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[0.8125rem] leading-relaxed break-all"
             >
               {address}
             </Sensitive>
@@ -273,7 +274,7 @@ function FundingHistory({ runs, error, onRetry }: { runs?: Run[]; error?: ApiErr
                     </Link>
                     <span className="block truncate text-[0.8125rem] text-muted-foreground">
                       {fundingSource(run)}
-                      {simulated ? "" : ` · ${venueLabel(f.venue)}`} · {formatShortDate(run.created_at)}
+                      {simulated ? "" : ` through ${venueLabel(f.venue)}`}, {formatShortDate(run.created_at)}
                     </span>
                   </td>
                   <td className="hidden pr-3 lg:table-cell">

@@ -69,7 +69,7 @@ export interface WalletPayProps {
 
 export default function WalletPay(props: WalletPayProps) {
   const { resolvedTheme } = useTheme();
-  const themeOptions = { accentColor: "#f4b728", accentColorForeground: "#1c1503", borderRadius: "medium" as const };
+  const themeOptions = { accentColor: "#f4b728", accentColorForeground: "#1c2230", borderRadius: "medium" as const };
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>

@@ -19,6 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatCount, formatDate, formatHeight, formatPeriodLabel } from "@/lib/format";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 type Status = "all" | "confirmed" | "pending" | "converted";
 
@@ -153,22 +154,22 @@ export function LedgerView({ r }: { r: BooksResult }) {
       <dl className="flex flex-wrap gap-x-10 gap-y-3 border-b border-hairline pb-4" aria-label="Shown lines">
         <div>
           <dt className="text-[0.8125rem] text-muted-foreground">Payments</dt>
-          <dd className="num text-[1.1875rem] font-[380]" data-testid="ledger-count">
+          <dd className={cn(TYPE.heading, "num")} data-testid="ledger-count">
             {formatCount(lines.length)}
           </dd>
         </div>
         <div>
           <dt className="text-[0.8125rem] text-muted-foreground">Paid</dt>
-          <dd className="text-[1.1875rem] font-[380]">
+          <dd className={TYPE.heading}>
             <Usd cents={total} />
-            <span className="ml-2 text-xs text-muted-foreground">
+            <span className="ml-2 text-[0.8125rem] text-muted-foreground">
               <Zec zat={totalZat} />
             </span>
           </dd>
         </div>
         <div>
           <dt className="text-[0.8125rem] text-muted-foreground">Pending</dt>
-          <dd className="num text-[1.1875rem] font-[380]">{formatCount(pending)}</dd>
+          <dd className={cn(TYPE.heading, "num")}>{formatCount(pending)}</dd>
         </div>
       </dl>
 
@@ -248,9 +249,8 @@ function LedgerTable({ groups }: { groups: Group[] }) {
                 <th scope="colgroup" colSpan={6} className="px-2.5 py-2 text-left text-[0.8125rem] font-normal">
                   <span className="text-foreground">{formatPeriodLabel(g.period)} payroll</span>
                   <span className="text-muted-foreground">
-                    {" "}
-                    · run <code className="font-mono">{g.runId.slice(0, 8)}</code> · {formatCount(g.lines.length)}{" "}
-                    {g.lines.length === 1 ? "payment" : "payments"} ·{" "}
+                    , run <code className="font-mono">{g.runId.slice(0, 8)}</code>, {formatCount(g.lines.length)}{" "}
+                    {g.lines.length === 1 ? "payment" : "payments"},{" "}
                   </span>
                   <Usd cents={groupTotal(g)} className="text-foreground" />
                 </th>
@@ -274,7 +274,9 @@ function LedgerTable({ groups }: { groups: Group[] }) {
                       <span className="min-w-0">
                         <span className="block truncate">{payeeOf(l)}</span>
                         {l.label && l.account_index !== null && l.account_index !== undefined ? (
-                          <span className="block text-xs text-muted-foreground">Account {l.account_index}</span>
+                          <span className="block text-[0.8125rem] text-muted-foreground">
+                            Account {l.account_index}
+                          </span>
                         ) : null}
                       </span>
                     </span>
@@ -284,7 +286,7 @@ function LedgerTable({ groups }: { groups: Group[] }) {
                   </td>
                   <td className={cn(TD, "text-right whitespace-nowrap", l.pending && "text-muted-foreground")}>
                     <Usd cents={l.usd_basis_cents} />
-                    <div className="mt-0.5 text-xs text-muted-foreground">
+                    <div className="mt-0.5 text-[0.8125rem] text-muted-foreground">
                       <Zec zat={l.amount_zat} />
                     </div>
                   </td>
@@ -293,7 +295,7 @@ function LedgerTable({ groups }: { groups: Group[] }) {
                   </td>
                   <td className={cn(TD, "whitespace-nowrap")}>
                     <Hash value={l.txid} label="transaction id" explorerUrl={l.explorer_url} head={6} tail={4} />
-                    <span className="num block text-xs text-muted-foreground">
+                    <span className="num block text-[0.8125rem] text-muted-foreground">
                       {l.height ? `Block ${formatHeight(l.height)}` : "Not mined"}
                     </span>
                   </td>
@@ -316,8 +318,7 @@ function LedgerList({ groups }: { groups: Group[] }) {
             <span>
               <span className="text-foreground">{formatPeriodLabel(g.period)} payroll</span>
               <span className="text-muted-foreground">
-                {" "}
-                · {formatCount(g.lines.length)} {g.lines.length === 1 ? "payment" : "payments"}
+                , {formatCount(g.lines.length)} {g.lines.length === 1 ? "payment" : "payments"}
               </span>
             </span>
             <Usd cents={groupTotal(g)} />
@@ -331,9 +332,9 @@ function LedgerList({ groups }: { groups: Group[] }) {
                 <Initials name={l.label ?? payeeOf(l)} className="mt-0.5" />
                 <div className="min-w-0">
                   <span className="block truncate text-[0.9375rem]">{payeeOf(l)}</span>
-                  <span className="num block text-xs text-muted-foreground">
+                  <span className="num block text-[0.8125rem] text-muted-foreground">
                     {l.pending ? "Not mined" : formatDate(l.block_time ?? l.date)}
-                    {l.invoice_ref ? ` · ${l.invoice_ref}` : ""}
+                    {l.invoice_ref ? `, ${l.invoice_ref}` : ""}
                   </span>
                   <span className="mt-1.5 flex flex-wrap items-center gap-2">
                     <StatusTags l={l} />
@@ -342,7 +343,7 @@ function LedgerList({ groups }: { groups: Group[] }) {
                 </div>
                 <div className={cn("text-right", l.pending && "text-muted-foreground")}>
                   <Usd cents={l.usd_basis_cents} className="text-[0.9375rem]" />
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-[0.8125rem] text-muted-foreground">
                     <Zec zat={l.amount_zat} />
                   </div>
                 </div>

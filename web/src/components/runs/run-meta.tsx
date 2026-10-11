@@ -167,7 +167,7 @@ export function LineStatus({
     return (
       <ShieldedMark
         className={className}
-        detail={isConverted(line) ? detail ? <>· USDC · {detail}</> : "· USDC" : detail ? <>· {detail}</> : undefined}
+        detail={isConverted(line) ? detail ? <>, USDC, {detail}</> : ", USDC" : detail ? <>, {detail}</> : undefined}
       />
     );
   }

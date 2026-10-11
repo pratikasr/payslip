@@ -16,7 +16,7 @@ export interface TimelineItem {
 }
 
 /**
- * Mercury's vertical timeline: a dot per step on a thin rail, gold for what happened, a ring for
+ * The vertical timeline: a dot per step on a thin rail, ink for what happened, a gold ring for
  * what is happening, grey for what has not, red for a failure, amber for a retry. The words carry
  * the state, so colour is never the only signal. Used by a payment's drawer and a run's audit
  * trail.
@@ -33,7 +33,7 @@ export function Timeline({ items, className, label }: { items: TimelineItem[]; c
                 aria-hidden="true"
                 className={cn(
                   "absolute top-4 bottom-0 left-[6px] w-0.5 rounded-full",
-                  e.state === "done" ? "bg-primary-edge/70" : "bg-border",
+                  e.state === "done" ? "bg-foreground/35" : "bg-border",
                 )}
               />
             ) : null}
@@ -41,8 +41,8 @@ export function Timeline({ items, className, label }: { items: TimelineItem[]; c
               aria-hidden="true"
               className={cn(
                 "relative mt-1.5 size-2.5 justify-self-center rounded-full",
-                e.state === "done" && "bg-primary-edge",
-                e.state === "current" && "border-2 border-primary-edge bg-card",
+                e.state === "done" && "bg-foreground",
+                e.state === "current" && "border-2 border-gold bg-card",
                 e.state === "upcoming" && "bg-border",
                 e.state === "failed" && "bg-destructive",
                 e.state === "warning" && "bg-warning",

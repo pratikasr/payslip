@@ -15,6 +15,7 @@ import { formatDate, parseUsdToCents, venueLabel } from "@/lib/format";
 import { feeReserveZat } from "@/lib/payroll";
 import { TESTNET_FAUCET_URL } from "@/lib/public-url";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 import { Problem } from "../problem";
 import { estimateZat, periodTitle, plural, runTitle } from "../run-meta";
 import type { Draft, DraftCheck } from "./draft";
@@ -214,7 +215,7 @@ export function ReviewStep({
             aria-controls="review-lines"
             className="inline-flex items-center gap-1 rounded-sm text-link hover:underline"
           >
-            {plural(n, "contractor")} · {title}
+            {plural(n, "contractor")} for {title}
             <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
           </button>
           {open ? (
@@ -249,7 +250,7 @@ export function ReviewStep({
 
       <Card className="mt-5 px-6 py-7 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
         <p className="text-[0.8125rem] text-strong">Total for {plural(n, "contractor")}</p>
-        <Usd cents={check.totalCents} className="mt-2.5 block text-[2.125rem] leading-none font-[380]" />
+        <Usd cents={check.totalCents} className={cn(TYPE.hero, "mt-2.5 block")} />
       </Card>
       <p className="mt-4 text-[0.9375rem] text-muted-foreground">
         Each contractor gets one shielded payment that only they and your accountant can read.

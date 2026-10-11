@@ -259,7 +259,7 @@ export function AmountsFooter({ check, onContinue }: { check: DraftCheck; onCont
   return (
     <>
       <p className="min-w-0 text-[0.9375rem]" aria-live="polite">
-        <span className="text-muted-foreground">{plural(check.included.length, "contractor")} · </span>
+        <span className="text-muted-foreground">{plural(check.included.length, "contractor")}, </span>
         <Usd cents={check.totalCents} />
       </p>
       <Button size="lg" className="ml-auto" onClick={onContinue}>

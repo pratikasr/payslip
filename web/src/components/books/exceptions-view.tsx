@@ -19,6 +19,7 @@ import {
 } from "@/components/books/books-data";
 import { formatCount, formatDate, formatHeight, formatPeriodLabel } from "@/lib/format";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 /** Everything that needs a person: runs that do not reconcile and transactions with no Payslip memo. */
 export function ExceptionsView({ r }: { r: BooksResult }) {
@@ -151,12 +152,12 @@ function Group({
     <section id={id} aria-labelledby={`${id}-title`} className="min-w-0 scroll-mt-20 pt-8">
       <div className="mb-3 grid gap-1">
         <div className="flex flex-wrap items-center gap-2.5">
-          <h2 id={`${id}-title`} className="text-[1.1875rem] font-normal tracking-[-0.01em]">
+          <h2 id={`${id}-title`} className={TYPE.heading}>
             {title}
           </h2>
           <Tag tone={count ? tone : "neutral"}>{formatCount(count)}</Tag>
         </div>
-        <p className="text-sm text-muted-foreground">{count ? todo : "None in this period."}</p>
+        <p className="text-[0.8125rem] text-muted-foreground">{count ? todo : "None in this period."}</p>
       </div>
       {count ? children : null}
     </section>
@@ -187,18 +188,18 @@ function RunRows({
               <span className="block text-[0.9375rem]">
                 {formatPeriodLabel(run.period)} payroll
                 {kind === "unexplained" && run.status !== "variance_unexplained" ? (
-                  <span className="text-muted-foreground"> · {statusView(run).label}</span>
+                  <span className="text-muted-foreground">, {statusView(run).label.toLowerCase()}</span>
                 ) : null}
               </span>
-              <span className="num block text-xs text-muted-foreground">
-                Run <code className="font-mono">{run.run_id.slice(0, 8)}</code> · {run.lines}{" "}
+              <span className="num block text-[0.8125rem] text-muted-foreground">
+                Run <code className="font-mono">{run.run_id.slice(0, 8)}</code>, {run.lines}{" "}
                 {run.lines === 1 ? "payment" : "payments"}
-                {paidOn ? ` · paid ${formatDate(paidOn)}` : ""}
+                {paidOn ? `, paid ${formatDate(paidOn)}` : ""}
               </span>
             </div>
-            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+            <dl className="flex flex-wrap gap-x-6 gap-y-1 text-[0.8125rem]">
               <div className="text-right">
-                <dt className="text-xs text-muted-foreground">Paid</dt>
+                <dt className="text-[0.8125rem] text-muted-foreground">Paid</dt>
                 <dd>
                   <Usd cents={run.paid_usd_cents} />
                 </dd>
@@ -206,11 +207,11 @@ function RunRows({
               {kind === "allocations" ? (
                 <>
                   <div className="text-right">
-                    <dt className="text-xs text-muted-foreground">Accounts paid</dt>
+                    <dt className="text-[0.8125rem] text-muted-foreground">Accounts paid</dt>
                     <dd className="num">{run.allocations ?? "Unknown"}</dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-xs text-muted-foreground">
+                    <dt className="text-[0.8125rem] text-muted-foreground">
                       {run.status === "unpaid" ? "With no payment" : "Keys missing"}
                     </dt>
                     <dd className="num text-destructive">
@@ -221,19 +222,19 @@ function RunRows({
               ) : kind === "unexplained" ? (
                 <>
                   <div className="text-right">
-                    <dt className="text-xs text-muted-foreground">Variance</dt>
+                    <dt className="text-[0.8125rem] text-muted-foreground">Variance</dt>
                     <dd>
                       <Usd cents={run.variance_usd_cents} />
                     </dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-xs text-muted-foreground">Explained</dt>
+                    <dt className="text-[0.8125rem] text-muted-foreground">Explained</dt>
                     <dd>
                       <Usd cents={run.explained_usd_cents} />
                     </dd>
                   </div>
                   <div className="text-right">
-                    <dt className="text-xs text-muted-foreground">Difference</dt>
+                    <dt className="text-[0.8125rem] text-muted-foreground">Difference</dt>
                     <dd className="text-destructive">
                       <Usd cents={diff} />
                     </dd>
@@ -241,7 +242,7 @@ function RunRows({
                 </>
               ) : (
                 <div className="text-right">
-                  <dt className="text-xs text-muted-foreground">Funded</dt>
+                  <dt className="text-[0.8125rem] text-muted-foreground">Funded</dt>
                   <dd className="text-muted-foreground">Not recorded</dd>
                 </div>
               )}
@@ -264,7 +265,7 @@ function reasonOf(u: BooksUnlabelled) {
 
 function MemoText({ text }: { text: string | null }) {
   if (!text) return <span className="text-muted-foreground">No memo</span>;
-  return <code className="font-mono text-xs break-words whitespace-pre-wrap text-strong">{text}</code>;
+  return <code className="font-mono text-[0.8125rem] break-words whitespace-pre-wrap text-strong">{text}</code>;
 }
 
 function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }) {
@@ -275,7 +276,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
   return (
     <>
       <dl
-        className="mb-4 grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-3"
+        className="mb-4 grid gap-x-8 gap-y-2 text-[0.8125rem] sm:grid-cols-2 lg:grid-cols-3"
         aria-label="Why they are unlabelled"
       >
         {reasons.map(([reason, n]) => {
@@ -288,7 +289,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                   {formatCount(n)}
                 </span>
               </dt>
-              <dd className="text-xs text-muted-foreground">{why.detail}</dd>
+              <dd className="text-[0.8125rem] text-muted-foreground">{why.detail}</dd>
             </div>
           );
         })}
@@ -334,7 +335,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                   <td className={cn(TD, "whitespace-nowrap")}>{formatDate(u.date)}</td>
                   <td className={cn(TD, "whitespace-nowrap")}>
                     <span className="block">{u.label ?? unlabelledAccount(u)}</span>
-                    <span className="block text-xs text-muted-foreground">
+                    <span className="block text-[0.8125rem] text-muted-foreground">
                       {u.direction === "in" ? "Received" : "Sent"}
                     </span>
                   </td>
@@ -353,7 +354,7 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                       head={6}
                       tail={4}
                     />
-                    <span className="num block text-xs text-muted-foreground">
+                    <span className="num block text-[0.8125rem] text-muted-foreground">
                       {u.height ? `Block ${formatHeight(u.height)}` : "Not mined"}
                     </span>
                   </td>
@@ -372,10 +373,10 @@ function UnlabelledRows({ r, rows }: { r: BooksResult; rows: BooksUnlabelled[] }
                 <span className="text-[0.9375rem]">
                   {u.direction === "in" ? "Received by" : "Sent from"} {u.label ?? unlabelledAccount(u)}
                 </span>
-                <Zec zat={u.direction === "out" ? -u.amount_zat : u.amount_zat} className="text-sm" />
+                <Zec zat={u.direction === "out" ? -u.amount_zat : u.amount_zat} className="text-[0.8125rem]" />
               </div>
-              <span className="text-xs text-muted-foreground">
-                {formatDate(u.date)} · {why.label}
+              <span className="text-[0.8125rem] text-muted-foreground">
+                {formatDate(u.date)}, {why.label.charAt(0).toLowerCase() + why.label.slice(1)}
               </span>
               {u.memo_text ? <MemoText text={u.memo_text} /> : null}
               <Hash

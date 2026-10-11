@@ -4,6 +4,7 @@ import { useEffect, type ReactNode, type RefObject } from "react";
 import { useDocumentTitle } from "@/components/portal/document-title";
 import { RailStep } from "@/components/shell/focus-shell";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 export const FLOW_STEPS = ["Amounts", "Review and approve", "Fund", "Pay"] as const;
 
@@ -16,11 +17,7 @@ const TITLES = [...FLOW_STEPS, "Paid"] as const;
  */
 export function FlowTitle({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <h1
-      tabIndex={-1}
-      data-flow-title=""
-      className={cn("text-[1.75rem] leading-tight font-[380] tracking-[-0.015em] outline-none", className)}
-    >
+    <h1 tabIndex={-1} data-flow-title="" className={cn(TYPE.title, "outline-none", className)}>
       {children}
     </h1>
   );
@@ -62,7 +59,7 @@ export function FlowRail({ current, done = false }: { current: number; done?: bo
       <div className="lg:hidden">
         <p className="text-[0.8125rem] text-muted-foreground">
           {done ? "All steps done" : `Step ${index + 1} of ${FLOW_STEPS.length}`}
-          <span className="text-foreground"> · {done ? "Paid" : FLOW_STEPS[index]}</span>
+          <span className="text-foreground">: {done ? "Paid" : FLOW_STEPS[index]}</span>
         </p>
         <div className="mt-2 grid grid-cols-4 gap-1" aria-hidden="true">
           {FLOW_STEPS.map((label, i) => (

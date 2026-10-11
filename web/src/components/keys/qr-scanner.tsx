@@ -146,18 +146,18 @@ export default function QrScanner({ onResult }: { onResult: (value: string) => v
           />
         ) : null}
         {status !== "scanning" ? (
-          <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm text-white/85">
+          <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-[0.8125rem] text-white/85">
             {status === "starting" ? "Starting the camera" : "Camera unavailable"}
           </div>
         ) : null}
       </div>
-      <p className="text-sm text-muted-foreground" aria-live="polite">
+      <p className="text-[0.8125rem] text-muted-foreground" aria-live="polite">
         {status === "scanning"
           ? "Point the camera at the viewing key QR code. It is read as soon as it is in focus."
           : null}
       </p>
       {message ? (
-        <p role="alert" className="text-sm text-danger">
+        <p role="alert" className="text-[0.8125rem] text-danger">
           {message}
         </p>
       ) : null}

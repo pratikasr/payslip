@@ -19,6 +19,8 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { checkPayoutAddress, checkUnifiedAddress, normaliseUnifiedAddress, PAYOUT_CHAINS } from "@/lib/addresses";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 import {
   api,
   toDisplayError,
@@ -135,7 +137,7 @@ export function ContractorDialog({
       <DialogContent className="max-h-[calc(100dvh-2rem)] gap-0 overflow-y-auto p-0 sm:max-w-[520px]">
         <form onSubmit={onSubmit} noValidate className="grid">
           <DialogHeader className="gap-1.5 px-6 pt-6 pb-2">
-            <DialogTitle className="text-[1.1875rem] leading-tight font-[380] tracking-[-0.01em] [overflow-wrap:anywhere]">
+            <DialogTitle className={cn(TYPE.heading, "[overflow-wrap:anywhere]")}>
               {contractor ? `Edit ${contractor.name}` : "Add contractor"}
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">

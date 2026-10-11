@@ -117,7 +117,7 @@ export function PaidChart({ points }: { points: PeriodPoint[] }) {
                 x={xy[i][0]}
                 y={HEIGHT - 10}
                 textAnchor="middle"
-                className="fill-muted-foreground text-[11.5px]"
+                className="fill-muted-foreground text-[0.8125rem]"
               >
                 {p.label}
               </text>

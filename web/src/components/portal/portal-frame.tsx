@@ -68,7 +68,7 @@ export function PortalFrame({ children }: { children: ReactNode }) {
           <span className="truncate">
             Read-only access
             {health ? (
-              <span className="hidden sm:inline"> · Zcash {networkLabel(health.network).toLowerCase()}</span>
+              <span className="hidden sm:inline"> on Zcash {networkLabel(health.network).toLowerCase()}</span>
             ) : null}
           </span>
         </span>
@@ -83,7 +83,7 @@ export function PortalFrame({ children }: { children: ReactNode }) {
             <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             Lock
           </button>
-          <p className="px-2 pt-0.5 pb-1 text-xs text-muted-foreground">Forgets your key in this tab.</p>
+          <p className="px-2 pt-0.5 pb-1 text-[0.8125rem] text-muted-foreground">Forgets your key in this tab.</p>
           <button
             type="button"
             onClick={() => void forget()}
@@ -93,7 +93,7 @@ export function PortalFrame({ children }: { children: ReactNode }) {
             <Eraser className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             {forgetting ? "Forgetting" : "Forget on the service"}
           </button>
-          <p className="px-2 pt-0.5 pb-1 text-xs text-muted-foreground">
+          <p className="px-2 pt-0.5 pb-1 text-[0.8125rem] text-muted-foreground">
             Deletes the service&apos;s read-only scan of your key, then locks.
           </p>
         </div>

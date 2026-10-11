@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UNREACHABLE_CODE, type ApiError } from "@/lib/api";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 
 /** Error state: says what went wrong and names the fix (the API's hint). */
 export function ErrorState({
@@ -34,15 +35,15 @@ export function ErrorState({
         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
         <div className="min-w-0 flex-1 space-y-1.5">
           <p className="font-medium">{title ?? (unreachable ? "Payslip service is offline" : error.message)}</p>
-          {title || unreachable ? <p className="text-sm">{error.message}</p> : null}
+          {title || unreachable ? <p className="text-[0.8125rem]">{error.message}</p> : null}
           {error.hint ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[0.8125rem] text-muted-foreground">
               <span className="font-medium text-foreground">Fix: </span>
               <FixText text={error.hint} />
             </p>
           ) : null}
           {!unreachable && error.code && error.status ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[0.8125rem] text-muted-foreground">
               Error code <code className="font-mono">{error.code}</code>, HTTP {error.status}
             </p>
           ) : null}
@@ -90,7 +91,7 @@ export function EmptyState({
       {icon ? <div className="text-muted-foreground [&_svg]:size-5">{icon}</div> : null}
       <div className="space-y-1">
         <p className="font-medium">{title}</p>
-        {children ? <div className="max-w-prose text-sm text-muted-foreground">{children}</div> : null}
+        {children ? <div className="max-w-prose text-[0.8125rem] text-muted-foreground">{children}</div> : null}
       </div>
       {action}
     </div>
@@ -132,12 +133,16 @@ export function PageHeader({
     <div className="flex flex-col gap-4 pb-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0 space-y-1">
         {back ? (
-          <Link href={back.href} className="text-sm text-muted-foreground hover:text-foreground" data-print="hide">
+          <Link
+            href={back.href}
+            className="text-[0.8125rem] text-muted-foreground hover:text-foreground"
+            data-print="hide"
+          >
             {back.label}
           </Link>
         ) : null}
-        <h1 className="text-2xl font-semibold tracking-tight text-balance">{title}</h1>
-        {description ? <div className="max-w-2xl text-sm text-muted-foreground">{description}</div> : null}
+        <h1 className={cn(TYPE.title, "text-balance")}>{title}</h1>
+        {description ? <div className="max-w-2xl text-[0.8125rem] text-muted-foreground">{description}</div> : null}
       </div>
       {actions ? (
         <div className="flex flex-wrap items-center gap-2" data-print="hide">
@@ -167,17 +172,20 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0 space-y-1", className)}>
-      <dt className={cn("text-xs text-muted-foreground", size === "lg" && "text-sm")}>{label}</dt>
+      <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
       <dd
         className={cn(
           size === "lg"
-            ? "figure text-[1.75rem] leading-9 font-semibold tracking-[-0.02em] sm:text-[2rem] sm:leading-10 [&_[data-unit]]:text-base [&_[data-unit]]:font-medium [&_[data-unit]]:tracking-normal"
-            : "text-lg font-medium tracking-tight",
+            ? cn(
+                TYPE.title,
+                "figure [&_[data-unit]]:text-[0.9375rem] [&_[data-unit]]:font-medium [&_[data-unit]]:tracking-normal",
+              )
+            : TYPE.heading,
         )}
       >
         {children}
       </dd>
-      {hint ? <dd className="text-xs text-muted-foreground">{hint}</dd> : null}
+      {hint ? <dd className="text-[0.8125rem] text-muted-foreground">{hint}</dd> : null}
     </div>
   );
 }
@@ -212,12 +220,12 @@ export function Panel({
         <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
           <div className="min-w-0 space-y-0.5">
             {title ? (
-              <h2 id={headingId} className="text-sm font-semibold">
+              <h2 id={headingId} className="text-[0.8125rem] font-medium">
                 {title}
               </h2>
             ) : null}
             {description ? (
-              <div className="text-sm text-muted-foreground" data-secondary="">
+              <div className="text-[0.8125rem] text-muted-foreground" data-secondary="">
                 {description}
               </div>
             ) : null}

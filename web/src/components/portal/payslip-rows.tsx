@@ -58,10 +58,11 @@ function Row({
         </Link>
         <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[0.8125rem] text-muted-foreground">
           <span className="truncate">
-            {pending ? "Sent, waiting to be mined" : `Paid ${monthDay(line.block_time ?? line.date)}`} ·{" "}
+            {pending ? "Sent, waiting to be mined" : `Paid ${monthDay(line.block_time ?? line.date)}`}, invoice{" "}
             {line.invoice_ref}
+            {converted ? "," : null}
           </span>
-          {converted ? <span className="text-foreground">· Converted to USDC</span> : null}
+          {converted ? <span className="text-foreground">converted to USDC</span> : null}
         </span>
       </div>
       <div className="text-right">

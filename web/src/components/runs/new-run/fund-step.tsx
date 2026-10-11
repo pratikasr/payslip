@@ -56,6 +56,8 @@ import {
 import { OverlapNote } from "./overlap";
 import { FlowTitle } from "./rail";
 import { RatePill } from "./review-step";
+import { TYPE } from "@/components/ds/type";
+import { cn } from "cn";
 
 const WalletPay = dynamic(() => import("./wallet-pay"), {
   ssr: false,
@@ -305,7 +307,7 @@ function TestnetFund({
           <p className="text-[0.8125rem] text-strong">Payroll to fund</p>
           <SimulatedRate rateE6={simulatedRate} />
         </div>
-        <Usd cents={run.total_usd_cents} className="mt-2 mb-4 block text-[2.125rem] leading-none font-[380]" />
+        <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 mb-4 block")} />
         <QuoteRow label="Contractors get" sub={`${plural(n, "shielded payment")} at the simulated rate`}>
           {estimate !== null ? (
             <>
@@ -363,7 +365,7 @@ function TestnetFund({
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-[1.1875rem] font-normal">
+            <DialogTitle className={TYPE.heading}>
               Fund <Usd cents={run.total_usd_cents} /> from the treasury?
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
@@ -455,7 +457,7 @@ function TopUp({ wallet, need, onWallet }: { wallet: Wallet; need: number | null
           <div className="mt-1 flex items-start gap-1">
             <Sensitive
               block
-              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[11px] leading-relaxed break-all"
+              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[0.8125rem] leading-relaxed break-all"
             >
               {t.unified_address}
             </Sensitive>
@@ -586,7 +588,7 @@ function QuoteForm({
       <Card className="mt-6 space-y-5 px-6 py-6 sm:px-6">
         <div>
           <p className="text-[0.8125rem] text-strong">Payroll total</p>
-          <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
+          <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
         </div>
         <div className="border-t border-hairline pt-5">
           <UsdcFields q={q} />
@@ -684,7 +686,7 @@ function MethodChoice({
           <h2 id="fund-zec-title" className="text-[0.9375rem] text-strong">
             Fund with ZEC
           </h2>
-          <Usd cents={run.total_usd_cents} className="mt-2 block text-[2.125rem] leading-none font-[380]" />
+          <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">
             From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another chain.
           </p>
@@ -888,9 +890,7 @@ function ZecDeposit({
           ) : null}
         </div>
         <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
-          <span className="money text-[2.125rem] leading-none font-[380]">
-            {required !== null ? formatZec(required) : "ZEC"}
-          </span>
+          <span className={cn(TYPE.hero, "money")}>{required !== null ? formatZec(required) : "ZEC"}</span>
           {required !== null ? <span className="text-[0.9375rem] text-strong">ZEC</span> : null}
         </p>
         {funding.deadline && !closed ? (
@@ -1092,7 +1092,7 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
           ) : null}
         </div>
         <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
-          <span className="money text-[2.125rem] leading-none font-[380]">{groupAmount(funding.amount_in)}</span>
+          <span className={cn(TYPE.hero, "money")}>{groupAmount(funding.amount_in)}</span>
           <span className="text-[0.9375rem] text-strong">
             {funding.origin_asset}
             {chainName ? ` on ${chainName}` : ""}
@@ -1258,7 +1258,7 @@ function DiscardRun({ run }: { run: Run }) {
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-[1.1875rem] font-normal">Discard the {runTitle(run)} run?</DialogTitle>
+            <DialogTitle className={TYPE.heading}>Discard the {runTitle(run)} run?</DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
               Nothing has been funded or paid. The run and its {plural(run.lines.length, "line")} are removed.
             </DialogDescription>

@@ -7,7 +7,6 @@ import {
   ArrowUpRight,
   BarChart3,
   Check,
-  ChevronRight,
   FileKey2,
   KeyRound,
   Landmark,
@@ -18,6 +17,7 @@ import {
 import { compactUsd, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { Card, CardHeader } from "@/components/ds/card";
+import { TYPE } from "@/components/ds/type";
 import { Button } from "@/components/ui/button";
 import type { Contractor, Run, Wallet } from "@/lib/api";
 import { formatCount, formatPeriodLabel, formatShortDate, formatUsd, MINUS } from "@/lib/format";
@@ -43,9 +43,10 @@ import { periodTitle, plural, runTitle } from "@/components/runs/run-meta";
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**
- * The hero: everything paid to contractors this year, and the year month by month (Mercury's
- * balance card), with how the latest payroll compares with the one before. Months without a
- * payroll show as faint stubs, so a gap reads as a gap; a table twin shows the same figures.
+ * The hero: everything paid to contractors this year in the display face, and the year month by
+ * month, with how the latest payroll compares with the one before. It sits on the page, not in a
+ * card. Months without a payroll show as faint stubs, so a gap reads as a gap; a table twin shows
+ * the same figures.
  */
 export function PayrollHero({ runs }: { runs: Run[] }) {
   // The year of the latest paid payroll; the total, the counts and the bars all cover that year.
@@ -63,13 +64,13 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
   const months = yearMonths(year, paid);
   const [asTable, setAsTable] = useState(false);
   return (
-    <Card className="flex flex-col" aria-labelledby="hero-title">
+    <section className="flex flex-col pt-2" aria-labelledby="hero-title">
       <CardHeader
         id="hero-title"
         title={
           <span className="inline-flex items-center gap-1.5">
             Paid to contractors in {year}
-            <ShieldCheck className="size-4 text-primary-edge" aria-label="Every payment shielded" />
+            <ShieldCheck className="size-4 text-gold-ink" aria-label="Every payment shielded" />
           </span>
         }
         actions={
@@ -86,12 +87,12 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
           </Button>
         }
       />
-      <div className="mt-1 text-[2.125rem] leading-tight font-[380] tracking-[-0.02em]">
+      <div className={cn(TYPE.hero, "mt-2")}>
         <Usd cents={totals.cents} />
       </div>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[0.8125rem] text-strong">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[0.8125rem] text-strong">
         <span>
-          {plural(totals.payrolls, "payroll")} · {plural(totals.payments, "payment")}
+          {plural(totals.payrolls, "payroll")} and {plural(totals.payments, "payment")}
         </span>
         {latest ? (
           <span className="inline-flex items-center gap-2 whitespace-nowrap">
@@ -124,7 +125,7 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
         ) : null}
       </div>
       {asTable ? <MonthTable year={year} points={months} /> : <YearBars year={year} points={months} />}
-    </Card>
+    </section>
   );
 }
 
@@ -146,7 +147,7 @@ function yearMonths(year: string, paid: PeriodPoint[]): MonthPoint[] {
 }
 
 /**
- * Twelve columns, January to December: gold for the latest paid month, a softer gold before it,
+ * Twelve columns, January to December: ink for the latest paid month, a softer tone before it,
  * faint stubs for months with no payroll, nothing for months still ahead. Values sit over paid
  * months and in each column's tooltip; the caption reads them all for screen readers.
  */
@@ -154,7 +155,7 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.cents));
   const lastPaid = points.reduce((l, p, i) => (p.cents > 0 ? i : l), -1);
   return (
-    <figure className="mt-5 flex min-h-[188px] flex-1 flex-col">
+    <figure className="mt-6 flex h-[200px] flex-col">
       <div className="flex flex-1 items-end gap-1 border-b border-hairline sm:gap-2" aria-hidden="true">
         {points.map((p, i) => (
           <div
@@ -168,14 +169,14 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
           >
             {/* Twelve columns leave no room for every value: the latest paid month carries its
                 figure; the others show theirs in the tooltip, the caption and the table view. */}
-            <span className="money text-[11px] text-foreground">
+            <span className="money text-[0.8125rem] text-foreground">
               {i === lastPaid && p.cents > 0 ? compactUsd(p.cents) : ""}
             </span>
             {p.future ? null : (
               <span
                 className={cn(
                   "w-full max-w-[40px] rounded-t-[5px]",
-                  p.cents === 0 ? "h-[3px] bg-chip" : i === lastPaid ? "bg-primary" : "bg-viz-soft",
+                  p.cents === 0 ? "h-[3px] bg-chip" : i === lastPaid ? "bg-viz" : "bg-viz-soft",
                 )}
                 style={p.cents > 0 ? { height: `${Math.max(4, (p.cents / max) * 100) * 0.78}%` } : undefined}
               />
@@ -185,10 +186,7 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
       </div>
       <div className="mt-2 flex gap-1 sm:gap-2" aria-hidden="true">
         {points.map((p) => (
-          <span
-            key={p.period}
-            className={cn("min-w-0 flex-1 text-center text-[11px] sm:text-[0.8125rem]", "text-muted-foreground")}
-          >
+          <span key={p.period} className="min-w-0 flex-1 text-center text-[0.8125rem] text-muted-foreground">
             <span className="sm:hidden">{p.label.charAt(0)}</span>
             <span className="hidden sm:inline">{p.label}</span>
           </span>
@@ -269,7 +267,7 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
         title="Treasury"
         actions={<IconChip icon={Landmark} href="/console/treasury" label="Open treasury" />}
       />
-      <div className="mt-1 text-[1.1875rem]">
+      <div className="mt-1 text-[1.0625rem] font-medium">
         {!wallet ? (
           <span className="text-muted-foreground">Unavailable</span>
         ) : rate ? (
@@ -290,7 +288,7 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
             role="img"
             aria-label={`Covers ${cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`}
           >
-            <span className="block h-full rounded-full bg-primary" style={{ width: `${Math.min(1, cover) * 100}%` }} />
+            <span className="block h-full rounded-full bg-viz" style={{ width: `${Math.min(1, cover) * 100}%` }} />
           </div>
           <p className="mt-2 text-[0.8125rem] text-muted-foreground">
             {cover >= 1
@@ -361,17 +359,17 @@ export function NextPayrollCard({ runs, contractors }: { runs: Run[]; contractor
       <CardHeader id="next-title" title="Next payroll" />
       <div className="mt-3 flex items-center gap-4">
         <div className="grid w-14 shrink-0 overflow-hidden rounded-lg border text-center" aria-hidden="true">
-          <span className="bg-primary py-0.5 text-[0.6875rem] font-medium text-primary-foreground">
+          <span className="identity-vault bg-vault py-0.5 text-[0.8125rem] font-medium text-ink">
             {MONTHS[end.getUTCMonth()]}
           </span>
-          <span className="py-1 text-[0.9375rem] leading-tight font-[380]">{end.getUTCFullYear()}</span>
+          <span className="py-1 text-[0.9375rem] leading-tight">{end.getUTCFullYear()}</span>
         </div>
         <div className="min-w-0">
           <div className="text-[0.9375rem]">{title} payroll</div>
           <div className="text-[0.8125rem] text-muted-foreground">
             {open
-              ? `${runStateLabel(open)} · ${people}`
-              : `${ended ? "Period ended" : "Period ends"} ${formatShortDate(period.to)} · ${people}`}
+              ? `${runStateLabel(open)}, ${people}`
+              : `${ended ? "Period ended" : "Period ends"} ${formatShortDate(period.to)}, ${people}`}
           </div>
         </div>
       </div>
@@ -436,7 +434,7 @@ export function TodoCard({
       icon: ListChecks,
       text: (
         <>
-          Finish the <b className="font-[450]">{runTitle(open)}</b> payroll
+          Finish the <b className="font-medium">{runTitle(open)}</b> payroll
         </>
       ),
       href: `/console/runs/new?run=${open.id}`,
@@ -448,7 +446,7 @@ export function TodoCard({
       text: (
         <>
           Share payslip access with{" "}
-          <b className="font-[450]">
+          <b className="font-medium">
             {formatCount(unshared.length)} {unshared.length === 1 ? "person" : "people"}
           </b>
         </>
@@ -462,7 +460,7 @@ export function TodoCard({
       icon: FileKey2,
       text: (
         <>
-          Send the <b className="font-[450]">auditor package</b> to your accountant
+          Send the <b className="font-medium">auditor package</b> to your accountant
         </>
       ),
       href: "/console/access#auditor-package",
@@ -473,7 +471,7 @@ export function TodoCard({
       icon: ListChecks,
       text: (
         <>
-          Start the <b className="font-[450]">{nextPeriodTitle(runs)}</b> payroll
+          Start the <b className="font-medium">{nextPeriodTitle(runs)}</b> payroll
         </>
       ),
       href: "/console/runs/new",
@@ -509,7 +507,6 @@ export function TodoCard({
                   <t.icon className="size-3.5" aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">{t.text}</span>
-                <ChevronRight className="size-4 shrink-0 text-faint" aria-hidden="true" />
               </Link>
             </li>
           ))}

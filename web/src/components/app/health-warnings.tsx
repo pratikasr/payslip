@@ -13,7 +13,10 @@ export function HealthWarnings({ className }: { className?: string }) {
   }
   if (warnings.length === 0 && health.status !== "degraded") return null;
   return (
-    <div role="status" className={`rounded-lg border border-warning/40 bg-warning-bg p-3 text-sm ${className ?? ""}`}>
+    <div
+      role="status"
+      className={`rounded-lg border border-warning/40 bg-warning-bg p-3 text-[0.8125rem] ${className ?? ""}`}
+    >
       <div className="flex items-start gap-2">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="space-y-1">

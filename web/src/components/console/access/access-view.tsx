@@ -28,6 +28,7 @@ import { saveText } from "@/lib/download";
 import { configuredPortalOrigin, isPrivateOrigin, publicOrigin } from "@/lib/public-url";
 import { formatCount, formatDate, formatHeight, formatShortDate, networkLabel, todayIso } from "@/lib/format";
 import { cn } from "cn";
+import { TYPE } from "@/components/ds/type";
 import { AUDITOR_DOWNLOAD_KEY, inviteLink } from "@/components/console/lib";
 import { ArrowLink, Bar, IconChip, MiniStats } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
@@ -138,7 +139,7 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
               <CardHeader id="invites-title" title="Contractor invites" actions={<IconChip icon={FileKey2} />} />
               {contractors.data ? (
                 <>
-                  <div className="mt-1 text-[1.1875rem] font-[380]">
+                  <div className={cn(TYPE.heading, "mt-1")}>
                     {formatCount(shared.length)} of {formatCount(list.length)} shared
                   </div>
                   <Bar value={list.length ? shared.length / list.length : 0} label="Invites shared" className="mt-4" />
@@ -459,9 +460,7 @@ function InviteDialog({
         }}
       >
         <DialogHeader className="gap-1.5 px-6 pt-6 pb-4">
-          <DialogTitle className="text-[1.1875rem] leading-tight font-[380] tracking-[-0.01em] [overflow-wrap:anywhere]">
-            Invite {contractor?.name}
-          </DialogTitle>
+          <DialogTitle className={cn(TYPE.heading, "[overflow-wrap:anywhere]")}>Invite {contractor?.name}</DialogTitle>
           <DialogDescription className="text-[0.9375rem]">
             This link opens {contractor?.name}&apos;s payslips. Anyone holding it can read their payments, so send it
             privately.
@@ -556,7 +555,7 @@ function KeyField({ label, value, copyLabel }: { label: string; value: string; c
       </div>
       <code
         className={cn(
-          "block max-h-24 overflow-y-auto rounded-md bg-raised p-2 font-mono text-[11px] break-all",
+          "block max-h-24 overflow-y-auto rounded-md bg-raised p-2 font-mono text-[0.8125rem] break-all",
           SENSITIVE,
         )}
       >
@@ -626,7 +625,7 @@ function HowInvitesWork() {
           <li key={step} className="flex gap-2">
             <span
               aria-hidden="true"
-              className="grid size-5 shrink-0 place-items-center rounded-full bg-chip text-[11px] text-muted-foreground"
+              className="grid size-5 shrink-0 place-items-center rounded-full bg-chip text-[0.8125rem] text-muted-foreground"
             >
               {i + 1}
             </span>

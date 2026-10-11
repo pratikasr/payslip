@@ -23,9 +23,9 @@ function RunsCovering({ runs }: { runs: Run[] }) {
             {runTitle(r)} run
           </Link>
           <span className="text-strong">
-            {runTag(r).label} · <Usd cents={r.total_usd_cents} /> to {plural(r.lines.length, "person", "people")}
+            {runTag(r).label}, <Usd cents={r.total_usd_cents} /> to {plural(r.lines.length, "person", "people")}
           </span>
-          <span className="text-muted-foreground">· created {formatDate(r.created_at)}</span>
+          <span className="text-muted-foreground">created {formatDate(r.created_at)}</span>
         </li>
       ))}
     </ul>

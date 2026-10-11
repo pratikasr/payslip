@@ -69,15 +69,17 @@ test("the demo key opens the judge kit's contractor with her name, on any testne
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Welcome, Amara", { timeout: SCAN });
   // The sidebar names her: the name comes from the key file, so it shows on any deployment.
   await expect(page.locator("aside").filter({ hasText: "Amara Okafor" }).first()).toBeVisible();
-  // A payslip names her and says what the world sees.
+  // A payslip names her, and beside it the explorer's view says what the world sees.
   await page
     .getByRole("region", { name: "Last payment" })
     .getByRole("link", { name: /^Open the payslip for / })
     .click();
   const doc = page.getByRole("article");
   await expect(doc).toContainText("Amara Okafor");
-  await expect(doc).toContainText("What the world sees");
-  await expect(doc).toContainText("no amount, no names");
+  const world = page.getByRole("group", { name: "What the world sees" });
+  await expect(world).toContainText("no amount, no names");
+  await expect(world).not.toContainText("Amara");
+  await expect(world.getByText("Hidden on chain")).toHaveCount(6);
   await expect(page).toHaveTitle(/^Payslip for [A-Z][a-z]{2} \d{4} \| Payslip$/);
 });
 
