@@ -32,7 +32,14 @@
 	reverse_proxy app-web:3000
 }
 
+# The distribution sends /api/* here. Two of those paths belong to the web app, not the service:
+# /api/auth/* (sign-in, Better Auth) and /api/svc/* (the same-origin proxy that attaches the
+# signed-in member's token; ADR-026). The matched directive keeps its place and the one without a
+# matcher is sorted last (caddyserver.com/docs/caddyfile/directives, "Sorting algorithm", checked
+# 11 Oct 2026). With sign-in off nothing calls either path; the web app answers 404 on the first.
 :8082 {
 	import gate
+	@web path /api/auth/* /api/svc/*
+	reverse_proxy @web app-web:3000
 	reverse_proxy app-service:8080
 }

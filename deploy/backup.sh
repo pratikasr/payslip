@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Encrypted backup of both Payslip data volumes to S3. Each volume (the encrypted seed, wallet.db,
-# payslip.db and the viewer scan caches) is archived while its service is paused, encrypted with
-# age to the public key in payslip.env, and uploaded to s3://BACKUP_BUCKET/<stamp>/. The upload
-# uses the instance role (deploy/aws/provision.sh), so no AWS keys live on the host.
+# Encrypted backup of the Payslip data volumes to S3. Each volume (the encrypted seed, wallet.db,
+# payslip.db and the viewer scan caches of the two services; the console's auth.db with its
+# sign-in sessions and token signing keys) is archived while its container is paused, encrypted
+# with age to the public key in payslip.env, and uploaded to s3://BACKUP_BUCKET/<stamp>/. The
+# upload uses the instance role (deploy/aws/provision.sh), so no AWS keys live on the host.
 #
 #   sudo deploy/backup.sh              # once, by hand
 #   /etc/cron.d/payslip-backup         # nightly, written by install.sh
@@ -43,13 +44,14 @@ WORK=$(mktemp -d)
 compose() { docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"; }
 cleanup() {
   rm -rf "$WORK"
-  # Never leave a service paused, whatever happened above.
-  compose unpause app-service books-service >/dev/null 2>&1 || true
+  # Never leave a container paused, whatever happened above.
+  compose unpause app-service books-service app-web >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
-# Compose names volumes <project>_<volume>; the project is "payslip" (compose.yml: name).
-for pair in app-service:payslip_app-data books-service:payslip_books-data; do
+# Compose names volumes <project>_<volume>; the project is "payslip" (compose.yml: name). The
+# auth volume is empty with sign-in off; its archive is a few hundred bytes then.
+for pair in app-service:payslip_app-data books-service:payslip_books-data app-web:payslip_app-auth; do
   service=${pair%%:*}
   volume=${pair#*:}
   if ! docker volume inspect "$volume" >/dev/null 2>&1; then
@@ -57,7 +59,7 @@ for pair in app-service:payslip_app-data books-service:payslip_books-data; do
     continue
   fi
   out="$WORK/${volume}-${STAMP}.tar.gz.age"
-  # Pausing the service for the few seconds of the copy makes the SQLite files (db, wal, shm)
+  # Pausing the container for the few seconds of the copy makes the SQLite files (db, wal, shm)
   # a consistent set; a running container is paused, a stopped one is simply not running.
   compose pause "$service" >/dev/null 2>&1 || true
   docker run --rm -v "$volume:/data:ro" alpine:3.20 tar -C /data -czf - . \

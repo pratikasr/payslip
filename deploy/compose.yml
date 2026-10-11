@@ -10,6 +10,11 @@
 # Only caddy publishes ports (3001, 8081, 3002, 8082). The four application containers are reachable
 # on the compose network alone. Memory limits add up above a t3.small's 2 GB on purpose: they are
 # ceilings, and install.sh adds swap; measured use is about 1.4 GB.
+#
+# Sign-in on the company console (deploy/README.md "Turn on sign-in") is the "Sign-in" block of
+# payslip.env: with PAYSLIP_AUTH empty every value below that mentions it is empty or unread and
+# the stack behaves as without it. What the web app and the service need beyond that block is
+# derived here from APP_HOST and the compose names, so nothing is typed twice.
 name: payslip
 
 x-service: &service
@@ -90,6 +95,8 @@ services:
         NEXT_PUBLIC_PAYSLIP_PORTAL_URL: https://${BOOKS_HOST}
         NEXT_PUBLIC_PAYSLIP_DEMO: ""
         NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ""
+        # The public page never has sign-in: statements and proofs are key-based.
+        PAYSLIP_AUTH: ""
     environment:
       <<: *web-env
       PAYSLIP_API_INTERNAL_URL: http://books-service:8080
@@ -126,6 +133,16 @@ services:
       PAYSLIP_APP_FEE_BPS: ${PAYSLIP_APP_FEE_BPS:-}
       PAYSLIP_APP_FEE_RECIPIENT: ${PAYSLIP_APP_FEE_RECIPIENT:-}
       PAYSLIP_PRICE_API_KEY: ${PAYSLIP_PRICE_API_KEY:-}
+      # Sign-in (ADR-026). The three fixed values are only read with PAYSLIP_AUTH=required: the
+      # web app publishes its token signing keys on the compose network (no CloudFront round
+      # trip), and tokens name the console's public address as issuer (the web app's
+      # BETTER_AUTH_URL below) and payslip-service as audience (web/src/lib/auth.ts).
+      PAYSLIP_AUTH: ${PAYSLIP_AUTH:-}
+      PAYSLIP_AUTH_JWKS_URL: http://app-web:3000/api/auth/jwks
+      PAYSLIP_AUTH_ISSUER: https://${APP_HOST}
+      PAYSLIP_AUTH_AUDIENCE: payslip-service
+      PAYSLIP_BOOTSTRAP_ADMIN_EMAIL: ${PAYSLIP_BOOTSTRAP_ADMIN_EMAIL:-}
+      PAYSLIP_APPROVALS_REQUIRED: ${PAYSLIP_APPROVALS_REQUIRED:-}
     volumes:
       - app-data:/var/lib/payslip
     deploy:
@@ -145,9 +162,25 @@ services:
         NEXT_PUBLIC_PAYSLIP_PORTAL_URL: https://${BOOKS_HOST}
         NEXT_PUBLIC_PAYSLIP_DEMO: ${NEXT_PUBLIC_PAYSLIP_DEMO:-}
         NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:-}
+        # Read while pages are prerendered (the root layout turns the same-origin proxy on and
+        # the demo bar off), so the image is built for one setting. Nothing secret is a build
+        # argument: the rest of the sign-in block is read when the container starts.
+        PAYSLIP_AUTH: ${PAYSLIP_AUTH:-}
     environment:
       <<: *web-env
       PAYSLIP_API_INTERNAL_URL: http://app-service:8080
+      # Sign-in (ADR-026): Google redirects back to BETTER_AUTH_URL/api/auth/callback/google, which
+      # is the console's own address; auth.db (sessions, accounts, signing keys) is on its own
+      # volume, writable by the image's uid 1000 (deploy/Dockerfile.web).
+      PAYSLIP_AUTH: ${PAYSLIP_AUTH:-}
+      BETTER_AUTH_URL: https://${APP_HOST}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      PAYSLIP_GOOGLE_WORKSPACE_DOMAIN: ${PAYSLIP_GOOGLE_WORKSPACE_DOMAIN:-}
+      PAYSLIP_AUTH_DB: /var/lib/payslip-auth/auth.db
+    volumes:
+      - app-auth:/var/lib/payslip-auth
     depends_on:
       - app-service
     deploy:
@@ -156,6 +189,8 @@ services:
           memory: 384M
 
 volumes:
-  # Persistent data directories. backup.sh archives both; see deploy/README.md for restore.
+  # Persistent data directories. backup.sh archives all three; see deploy/README.md for restore.
   books-data:
   app-data:
+  # The console's auth.db (sign-in sessions, accounts and token signing keys); empty with sign-in off.
+  app-auth:

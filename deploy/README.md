@@ -3,20 +3,23 @@
 One EC2 instance runs the whole thing with Docker Compose; two CloudFront distributions put TLS
 and a public address in front of it. The public statements page (`books`) serves judges,
 contractors and accountants with the judge kit; the company console (`app`) is behind HTTP Basic
-auth until the sign-in layer lands. Every AWS resource is created by a script you run on your own
-machine with your own credentials, and removed by its twin.
+auth, with Google sign-in and roles on top once you turn it on ("Turn on sign-in" below). Every
+AWS resource is created by a script you run on your own machine with your own credentials, and
+removed by its twin.
 
 | Address | What | On the instance |
 | --- | --- | --- |
 | `https://<books>.cloudfront.net` | landing page, `/books`, `/portal`, `/verify` | `books-web` (Next.js) on port 3001 |
 | `https://<books>.cloudfront.net/api/*` | statements, reconciliation, payment proofs | `books-service` (`PAYSLIP_MODE=statements`, no seed) on port 8081 |
 | `https://<app>.cloudfront.net` | company console, basic auth | `app-web` on port 3002 |
-| `https://<app>.cloudfront.net/api/*` | full service: wallet, contractors, runs | `app-service` (seed and spending keys) on port 8082 |
+| `https://<app>.cloudfront.net/api/*` | full service: wallet, contractors, runs; with sign-in on, `/api/auth/*` and `/api/svc/*` are the web app's own routes | `app-service` (seed and spending keys) on port 8082; `caddy` sends the two web paths to `app-web` |
 
 The four ports belong to `caddy`, a plain HTTP front that passes each request to the right
 container after checking the origin secret (below). The application containers publish nothing.
 Both services keep their data in named Docker volumes (`payslip_books-data`, `payslip_app-data`):
-the age-encrypted seed, `wallet.db`, `payslip.db` and the viewer scan caches.
+the age-encrypted seed, `wallet.db`, `payslip.db` and the viewer scan caches. A third volume,
+`payslip_app-auth`, holds the console's `auth.db` (sign-in sessions, accounts and token signing
+keys; empty with sign-in off).
 
 Files in this directory:
 
@@ -32,8 +35,8 @@ Files in this directory:
 
 ## What protects the company service
 
-The full-mode service has no login of its own, so the layers in front of it are the security
-model. From the outside in:
+Until sign-in is turned on (below), the full-mode service has no login of its own, so the layers
+in front of it are the security model. From the outside in:
 
 1. **CloudFront with HTTP Basic auth.** A CloudFront Function on the `app` distribution answers
    401 unless the request carries the credentials `provision.sh` embedded in it (base64 of
@@ -59,10 +62,11 @@ model. From the outside in:
 6. **The host.** UFW allows 22 and the four ports, fail2ban watches sshd, security updates
    install themselves, IMDSv2 is required, the instance role can only write to the backup bucket.
 
-What this does not give you: per-user accounts, roles or an audit trail (the sign-in increment
-in `docs/superpowers/specs/2026-10-11-launch-plan-design.md` adds those), and the basic-auth
-comparison in the CloudFront Function is a plain string comparison. Keep the custody rule from the
-README: the treasury holds what one run needs, for minutes.
+What this does not give you: per-user accounts, roles, approvals or an audit trail. Those come
+with sign-in ("Turn on sign-in" below), which adds a seventh layer: the service then refuses every
+payer request that carries no signed-in member's token. The basic-auth comparison in the
+CloudFront Function is a plain string comparison. Keep the custody rule from the README: the
+treasury holds what one run needs, for minutes.
 
 ## What stays private
 
@@ -70,8 +74,10 @@ Never in the repository, never in a chat, never on a shared screen:
 
 - `PAYSLIP_SEED_PASSPHRASE` and the seed file `payer.seed.age` (inside `payslip_app-data`). The
   two together are the only way back to the treasury; `init` shows no recovery phrase.
-- The data volumes and their backups (they hold the seed and every viewing key ever pasted).
-- `deploy/payslip.env` and `deploy/aws/outputs.env` (the origin secret). Both are git-ignored.
+- The data volumes and their backups (they hold the seed, every viewing key ever pasted and,
+  with sign-in on, the sessions and token signing keys in `payslip_app-auth`).
+- `deploy/payslip.env` and `deploy/aws/outputs.env` (the origin secret; with sign-in on, the
+  Google client secret and `BETTER_AUTH_SECRET` too). Both are git-ignored.
 - The age private key for backups (`payslip-backup.key`), kept on your machine and in a password
   manager; only the public key goes on the server.
 - The SSH private key and the console password.
@@ -207,6 +213,110 @@ mainnet kit goes the same way once it exists: copy `docs/judge/judge-kit-mainnet
 
 Logs: `docker compose --env-file payslip.env logs -f app-service`.
 
+## Turn on sign-in
+
+Optional, and off until you do this. With it, people sign in with Google, the first admin invites
+the others with a link, every member is an admin, approver, accountant or viewer, every change is
+on the audit log, and a run is paid only after the set number of approvals (README "Sign-in",
+ADR-026 and ADR-029). The web app signs people in and mints short tokens; the service checks them
+against the signing keys the web app publishes on the compose network. The statements page
+(`books`) has no sign-in: it stays key-based. All of it is the "Sign-in" block of `payslip.env`;
+the rest `compose.yml` derives.
+
+1. Create the Google OAuth client, as in the README's Sign-in section, step 1: a Google Cloud
+   project, the consent screen (External, app name "Payslip", your support email, no extra
+   scopes), then **Credentials**, **Create Credentials**, **OAuth client ID**, application type
+   **Web application**. Under **Authorized redirect URIs** add exactly
+
+   ```
+   https://<APP_HOST>/api/auth/callback/google
+   ```
+
+   with `APP_HOST` as in `payslip.env`, for example
+   `https://d1a2b3c4d5e6f7.cloudfront.net/api/auth/callback/google`. Google requires HTTPS and an
+   exact match (developers.google.com/identity/protocols/oauth2/web-server, "Redirect URI
+   validation rules"), which the CloudFront address satisfies. Copy the client ID and the client
+   secret.
+
+2. On the instance, fill the Sign-in block of `payslip.env`:
+
+   ```
+   PAYSLIP_AUTH=required
+   GOOGLE_CLIENT_ID=<the client ID from step 1>
+   GOOGLE_CLIENT_SECRET=<the client secret from step 1>
+   BETTER_AUTH_SECRET=<the output of: openssl rand -base64 32>
+   PAYSLIP_BOOTSTRAP_ADMIN_EMAIL=<the Google account that becomes the first admin>
+   PAYSLIP_GOOGLE_WORKSPACE_DOMAIN=        # optional: a Workspace domain, or * for any Workspace; empty allows any Google account
+   PAYSLIP_APPROVALS_REQUIRED=             # optional: empty is one approval per run
+   ```
+
+   `compose.yml` derives the rest: `BETTER_AUTH_URL` and the token issuer are
+   `https://$APP_HOST`, the service reads the signing keys at
+   `http://app-web:3000/api/auth/jwks`, the audience is `payslip-service`, and `auth.db`
+   (sessions, accounts, signing keys) lives on the `payslip_app-auth` volume, which `backup.sh`
+   archives with the other two. Check that nothing is empty, then the rendered file:
+
+   ```
+   for v in GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET BETTER_AUTH_SECRET PAYSLIP_BOOTSTRAP_ADMIN_EMAIL; do grep -q "^$v=." payslip.env || echo "$v is empty"; done
+   docker compose --env-file payslip.env config >/dev/null && echo ok
+   ```
+
+3. Rebuild the console's web image and restart the two app containers:
+
+   ```
+   docker compose --env-file payslip.env build app-web && docker compose --env-file payslip.env up -d app-web app-service
+   ```
+
+   The build is needed because `PAYSLIP_AUTH` is read while the pages are prerendered (the
+   sign-in page, and the layout that sends the browser's service calls through the token proxy);
+   the service only needs the restart. It refuses to start with `PAYSLIP_APPROVALS_REQUIRED`
+   above 0 and sign-in off (`logs app-service` says so).
+
+4. The first admin. Open `https://$APP_HOST` (the console password first, as before), click
+   Sign in and use the Google account named in `PAYSLIP_BOOTSTRAP_ADMIN_EMAIL`: that first
+   sign-in creates the organisation and makes the account its admin. From then on membership is
+   invite-only: **Settings** names the organisation, **Invitations** makes a link per colleague
+   (send it yourself; no email goes out), **Members** sets roles, **Audit log** shows who did
+   what.
+
+Checks, from your machine:
+
+```
+. deploy/aws/outputs.env
+curl -s -u payslip "https://$APP_HOST/api/auth/jwks"                                       # {"keys":[...]}: the web app signs tokens
+curl -s -o /dev/null -w '%{http_code}\n' -u payslip "https://$APP_HOST/api/contractors"    # 401: the service wants a member's token now
+```
+
+If the sign-in page says "No sign-in here" after step 3, the image was built with `PAYSLIP_AUTH`
+empty; set it in `payslip.env` and run step 3 again. To turn sign-in off again, empty the block
+and run step 3 again (`auth.db` stays on its volume).
+
+**CloudFront's basic auth stays in front** as a second layer: the browser asks for the console
+password once, then Google for the account, and Google's redirect back to the callback passes the
+gate with the credentials the browser holds for the host. To run on Google sign-in alone, take the
+function off the app distribution (from your machine; the change deploys in a few minutes, and
+`provision.sh` leaves an existing distribution as it is, so it holds across reruns):
+
+```
+. deploy/aws/outputs.env
+aws cloudfront get-distribution-config --id "$APP_DISTRIBUTION_ID" > dist-app.json
+etag=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["ETag"])' dist-app.json)
+python3 - dist-app.json "" <<'PY'
+import json, sys
+path, arn = sys.argv[1:]
+d = json.load(open(path))["DistributionConfig"]
+assoc = {"Quantity": 1, "Items": [{"FunctionARN": arn, "EventType": "viewer-request"}]} if arn else {"Quantity": 0}
+d["DefaultCacheBehavior"]["FunctionAssociations"] = assoc
+for b in d["CacheBehaviors"].get("Items", []):
+    b["FunctionAssociations"] = assoc
+json.dump(d, open(path + ".update", "w"))
+PY
+aws cloudfront update-distribution --id "$APP_DISTRIBUTION_ID" --if-match "$etag" --distribution-config file://dist-app.json.update >/dev/null
+```
+
+To put it back, run the same with `"$AUTH_FUNCTION_ARN"` (in `outputs.env`) in place of `""`.
+Without the function, drop `-u payslip` from the checks above.
+
 ## Two networks
 
 One stack serves one network (the data volumes and the fixed-rate testnet venue are per network).
@@ -228,11 +338,14 @@ cd ~/payslip/deploy
 for i in payslip-service payslip-web-books payslip-web-app; do docker tag "$i:local" "$i:previous"; done
 docker compose --env-file payslip.env build books-service     # only the images whose sources changed
 docker compose --env-file payslip.env build books-web app-web
+docker compose --env-file payslip.env run --no-deps --rm caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 docker compose --env-file payslip.env up -d
 ```
 
-Service migrations run on start (sqlx). A change to `BOOKS_HOST`, `APP_HOST` or
-`NEXT_PUBLIC_*` needs the web images rebuilt, because those values are inlined at build time.
+The `validate` line checks a changed `Caddyfile` before `caddy` restarts on it (a bad one would
+leave the front down). Service migrations run on start (sqlx). A change to `BOOKS_HOST`,
+`APP_HOST`, `NEXT_PUBLIC_*` or `PAYSLIP_AUTH` needs the web images rebuilt, because those values
+are read at build time.
 
 ## Roll back
 
@@ -247,9 +360,10 @@ is the one case to check first: `docker compose --env-file payslip.env logs app-
 ## Backups and restore
 
 `install.sh` runs `backup.sh` every night at 03:17 UTC (`/etc/cron.d/payslip-backup`, log in
-`/var/log/payslip-backup.log`); run it by hand with `sudo ./backup.sh`. Each run pauses a service
-for the seconds its volume takes to archive, encrypts the archive to `BACKUP_AGE_RECIPIENT`, and
-uploads it to the bucket under a UTC time stamp, for example
+`/var/log/payslip-backup.log`); run it by hand with `sudo ./backup.sh`. Each run pauses a
+container for the seconds its volume takes to archive (`payslip_app-data`, `payslip_books-data`
+and `payslip_app-auth`), encrypts the archive to `BACKUP_AGE_RECIPIENT`, and uploads it to the
+bucket under a UTC time stamp, for example
 `20261011T031700Z/payslip_app-data-20261011T031700Z.tar.gz.age`, with the instance role (no AWS keys on the host). Public access to the bucket is blocked.
 
 List, fetch the newest archive of the company volume and decrypt it, on your machine:
@@ -272,9 +386,12 @@ docker compose --env-file payslip.env start app-service
 rm payslip_app-data.tar.gz
 ```
 
-The same with `books-service` and `payslip_books-data`. An older `wallet.db` is fine: the service
-rescans from its birthday. What cannot be rebuilt is `payer.seed.age`, so keep more than one copy
-of the archives and of the passphrase.
+The same with `books-service` and `payslip_books-data`, and with `app-web` and
+`payslip_app-auth` when sign-in is on (without that archive everyone signs in again; the
+organisation and its members are in `payslip.db`, and the service matches a returning person by
+their Google account). An older `wallet.db` is fine: the service rescans from its birthday. What
+cannot be rebuilt is `payer.seed.age`, so keep more than one copy of the archives and of the
+passphrase.
 
 ## Attach a real domain later
 
@@ -326,7 +443,9 @@ accepts certificates from ACM in `us-east-1`), with `payslip.cash` as the exampl
    ```
 5. On the instance: `BOOKS_HOST=books.payslip.cash` and `APP_HOST=app.payslip.cash` in
    `payslip.env`, the two `*.cloudfront.net` names in `EXTRA_ALLOWED_HOSTS` if they should keep
-   working, then rebuild both web images (the portal address is inlined) and `up -d`.
+   working, then rebuild both web images (the portal address is inlined) and `up -d`. With
+   sign-in on, add `https://app.payslip.cash/api/auth/callback/google` to the Google client's
+   redirect URIs first: `BETTER_AUTH_URL` follows `APP_HOST`.
 
 ## Destroy
 
