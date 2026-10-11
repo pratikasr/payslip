@@ -22,7 +22,7 @@ export function SiteHeader() {
       <Container className="flex h-16 items-center gap-6">
         <Link href="/" className="inline-flex items-center gap-2.5 rounded-md text-ink">
           <LogoMark className="size-[26px]" />
-          <span className="font-display text-[22px] leading-none font-[600] tracking-[-0.01em]">Payslip</span>
+          <span className="font-display text-[22px] leading-none font-semibold tracking-[-0.01em]">Payslip</span>
         </Link>
 
         <nav aria-label="Main" className="ml-auto hidden lg:block">
