@@ -53,6 +53,8 @@ Private to the world, transparent to your accountant.
 
 **Technical stack.** Rust service: axum, sqlx on SQLite, `zcash_client_backend` 0.25.0-pre.0 and `zcash_client_sqlite` over lightwalletd gRPC, the seed encrypted at rest with age, `jsonwebtoken` checking the web app's EdDSA sign-in tokens. Next.js 15 web app: React 19, TypeScript, Tailwind CSS 4, shadcn/ui on Radix, Better Auth 1.7.7 for Google sign-in, wagmi, viem and RainbowKit for the USDC deposit. NEAR Intents 1Click for USDC to ZEC, CoinGecko for market prices. Hosting: Docker compose on one AWS EC2 instance behind two CloudFront distributions, encrypted backups to S3. Tests: cargo test and Playwright.
 
+**Live product link.** https://dkg1ye1jxb6hs.cloudfront.net: the public statements page (Books with the judge kit, the contractor portal with the demo key, payment proofs). The company console is https://d3oq3i7c2bwb9p.cloudfront.net, behind a password.
+
 **Proof.** Mainnet run: VERIFY: after RUN-DAY.md item 7, the run page `https://<app hostname>/console/runs/<run id>` lists the run id, the three txids and their heights; when `scripts/mainnet-demo.sh scripts/demo/mainnet.env --yes` drives the run instead, it writes them to `scripts/demo/out/proof-mainnet-<run>.md`. The same figures go into the README's Proof section. Testnet runs with txids and heights are in the README and docs/DEMO.md.
 
 **Demo video.** VERIFY: the video's link from https://studio.youtube.com (Content) once the recording made per docs/DEMO.md, Demo video, is uploaded as Unlisted or Public.

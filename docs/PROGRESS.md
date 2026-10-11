@@ -4,6 +4,8 @@ Newest entry first. One entry per session: what moved, commit hashes, what is ne
 
 ## 11 Oct 2026, launch day minus one
 
+- Hosted: deploy/aws/provision.sh run by the owner (EC2 i-04ae135fca593129a, us-east-1), the server installed and started from deploy/README.md; the public statements page answers at https://dkg1ye1jxb6hs.cloudfront.net and the company console at https://d3oq3i7c2bwb9p.cloudfront.net (basic auth). Books loaded the judge kit there and reconciled the three testnet payrolls in 68 seconds on the first scan; the portal demo key opened Amara Okafor's payslips.
+
 The day followed the launch plan agreed with the owner on 11 Oct (`docs/superpowers/specs/2026-10-11-launch-plan-design.md`, kept out of the repo until the owner reviews it). Several engineers worked on branches in parallel and merged to main; this entry replaces their separate notes. Main is at 99604de, 28 commits ahead of origin, every one unsigned because the signing key needs the owner's passphrase.
 
 What moved, with commits:
