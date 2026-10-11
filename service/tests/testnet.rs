@@ -69,6 +69,7 @@ fn config(url: &str, dir: PathBuf) -> Config {
         app_fee_recipient: None,
         allowed_hosts: vec![],
         allow_remote_payer: false,
+        auth: payslip::config::AuthConfig::off(),
     }
 }
 

@@ -6,6 +6,25 @@
 
 export const API_URL = (process.env.NEXT_PUBLIC_PAYSLIP_API_URL?.trim() || "http://127.0.0.1:8080").replace(/\/+$/, "");
 
+/** The same-origin proxy that attaches the signed-in member's token (ADR-026). */
+export const PROXY_BASE = "/api/svc";
+
+/**
+ * Where the browser sends service calls: through the proxy when sign-in is on (the root layout
+ * sets the flag before hydration), else straight to the service as before.
+ */
+export function apiBase(): string {
+  if (typeof window !== "undefined" && window.__payslipProxy) return PROXY_BASE;
+  return API_URL;
+}
+
+/** Called when the service answers 401: the session is gone, so the console sends people to sign in. */
+let onUnauthenticated: (() => void) | null = null;
+
+export function setUnauthenticatedHandler(handler: (() => void) | null): void {
+  onUnauthenticated = handler;
+}
+
 export type Network = "mainnet" | "testnet";
 export type VenueId = "near-intents-1click" | "maya" | "testnet-fixed-rate";
 
@@ -44,6 +63,59 @@ export interface Health {
    * mode; absent on older services.
    */
   simulated_rate_usd_per_zec?: number | string | null;
+  /** "required" when payer routes need a signed-in member (ADR-026); absent on older services. */
+  auth?: "off" | "required";
+}
+
+/** The signed-in person and their membership (GET /api/me). */
+export interface Me {
+  auth: "required";
+  user: { id: string; email: string; name: string | null; picture_url: string | null };
+  membership: Membership | null;
+}
+
+export interface Organisation {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  created_at: string;
+}
+
+export interface Membership {
+  role: "admin" | "approver" | "accountant" | "viewer";
+  org: Organisation;
+  since: string;
+}
+
+export interface OrgMember {
+  user_id: string;
+  email: string;
+  name: string | null;
+  picture_url: string | null;
+  role: Membership["role"];
+  created_at: string;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: Membership["role"];
+  status: "pending" | "accepted" | "expired" | "revoked";
+  expires_at: string;
+  accepted_at: string | null;
+  created_at: string;
+  /** Only in the answer to the request that created it: the invite link's token. */
+  token?: string;
+}
+
+export interface AuditEntry {
+  id: number;
+  at: string;
+  user: { id: string; email: string | null; name: string | null } | null;
+  role: string;
+  action: string;
+  target: string | null;
+  details: Record<string, unknown> | null;
 }
 
 export interface Treasury {
@@ -598,7 +670,7 @@ interface RequestOptions {
 async function send(path: string, { method = "GET", body, signal }: RequestOptions): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(`${API_URL}${path}`, {
+    res = await fetch(`${apiBase()}${path}`, {
       method,
       signal,
       // Every write is JSON, even with no body: the service refuses non-JSON writes so a
@@ -614,6 +686,7 @@ async function send(path: string, { method = "GET", body, signal }: RequestOptio
     if (err instanceof DOMException && err.name === "AbortError") throw err;
     throw unreachable();
   }
+  if (res.status === 401 && onUnauthenticated) onUnauthenticated();
   if (!res.ok) throw await toApiError(res);
   return res;
 }
@@ -675,7 +748,33 @@ export const api = {
   cancelRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/cancel`, { method: "POST", body: {} }),
   runLog: (runId: string, signal?: AbortSignal) =>
     json<{ events: RunLogEvent[] }>(`/api/runs/${id(runId)}/log`, { signal }).then((r) => r.events),
-  runEventsUrl: (runId: string) => `${API_URL}/api/runs/${id(runId)}/events`,
+  runEventsUrl: (runId: string) => `${apiBase()}/api/runs/${id(runId)}/events`,
+
+  /** Who is signed in and their role; 404 when sign-in is off. */
+  me: (signal?: AbortSignal) => json<Me>("/api/me", { signal }),
+  org: (signal?: AbortSignal) => json<Organisation>("/api/org", { signal }),
+  updateOrg: (input: { name?: string; logo_url?: string | null }) =>
+    json<Organisation>("/api/org", { method: "PATCH", body: input }),
+  members: (signal?: AbortSignal) =>
+    json<{ members: OrgMember[] }>("/api/org/members", { signal }).then((r) => r.members),
+  setMemberRole: (userId: string, role: Membership["role"]) =>
+    json<OrgMember>("/api/org/members", { method: "POST", body: { user_id: userId, role } }),
+  removeMember: (userId: string) => json<void>(`/api/org/members/${id(userId)}`, { method: "DELETE" }),
+  invitations: (signal?: AbortSignal) =>
+    json<{ invitations: Invitation[] }>("/api/org/invitations", { signal }).then((r) => r.invitations),
+  invite: (email: string, role: Membership["role"]) =>
+    json<Invitation>("/api/org/invitations", { method: "POST", body: { email, role } }),
+  revokeInvitation: (invitationId: string) =>
+    json<void>(`/api/org/invitations/${id(invitationId)}`, { method: "DELETE" }),
+  acceptInvitation: (token: string) =>
+    json<{ membership: Membership }>(`/api/org/invitations/${id(token)}/accept`, { method: "POST", body: {} }),
+  audit: (opts: { limit?: number; before?: number } = {}, signal?: AbortSignal) => {
+    const q = new URLSearchParams();
+    if (opts.limit) q.set("limit", String(opts.limit));
+    if (opts.before) q.set("before", String(opts.before));
+    const qs = q.toString();
+    return json<{ entries: AuditEntry[] }>(`/api/org/audit${qs ? `?${qs}` : ""}`, { signal }).then((r) => r.entries);
+  },
 
   contractorStatement: (body: ContractorStatementRequest, signal?: AbortSignal) =>
     json<Statement>("/api/statements/contractor", { method: "POST", body, signal }),

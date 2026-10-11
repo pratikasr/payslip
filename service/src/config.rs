@@ -76,6 +76,87 @@ impl VenueKind {
     }
 }
 
+/// Whether payer routes need a signed-in member (ADR-026).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthMode {
+    /// No sign-in: today's behaviour, for the testnet demo and the judge path.
+    Off,
+    /// Every payer route needs a bearer token minted by the web app for a signed-in member.
+    Required,
+}
+
+impl AuthMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AuthMode::Off => "off",
+            AuthMode::Required => "required",
+        }
+    }
+}
+
+/// Sign-in settings (ADR-026). The web app signs people in and mints short EdDSA tokens; the
+/// service checks them against the web app's published keys and decides what each role may do.
+#[derive(Clone, Debug)]
+pub struct AuthConfig {
+    pub mode: AuthMode,
+    /// PAYSLIP_AUTH_JWKS_URL: where the web app publishes the public keys that sign its tokens.
+    pub jwks_url: String,
+    /// PAYSLIP_AUTH_ISSUER: the `iss` claim tokens must carry (the web app's BETTER_AUTH_URL).
+    pub issuer: String,
+    /// PAYSLIP_AUTH_AUDIENCE: the `aud` claim tokens must carry.
+    pub audience: String,
+    /// PAYSLIP_BOOTSTRAP_ADMIN_EMAIL, lower case: the first sign-in with this verified email
+    /// creates the organisation and becomes its admin. After that membership is invite-only.
+    pub bootstrap_admin_email: Option<String>,
+}
+
+/// The audience the web app's JWT plugin is configured with (web/src/lib/auth.ts).
+pub const DEFAULT_AUTH_AUDIENCE: &str = "payslip-service";
+
+impl AuthConfig {
+    /// No sign-in.
+    pub fn off() -> Self {
+        AuthConfig {
+            mode: AuthMode::Off,
+            jwks_url: String::new(),
+            issuer: String::new(),
+            audience: DEFAULT_AUTH_AUDIENCE.into(),
+            bootstrap_admin_email: None,
+        }
+    }
+
+    pub fn required(&self) -> bool {
+        self.mode == AuthMode::Required
+    }
+
+    fn from_env() -> anyhow::Result<Self> {
+        let mode = match var("PAYSLIP_AUTH").as_deref() {
+            None | Some("off") => AuthMode::Off,
+            Some("required") => AuthMode::Required,
+            Some(other) => bail!("PAYSLIP_AUTH must be off or required, got {other:?}"),
+        };
+        let jwks_url = var("PAYSLIP_AUTH_JWKS_URL").unwrap_or_else(|| "http://127.0.0.1:3000/api/auth/jwks".into());
+        if mode == AuthMode::Required && !(jwks_url.starts_with("http://") || jwks_url.starts_with("https://")) {
+            bail!("PAYSLIP_AUTH_JWKS_URL must be an http or https URL, got {jwks_url:?}");
+        }
+        // Better Auth's default issuer is its base URL, which is the JWKS URL without the
+        // /api/auth/jwks part (web/src/lib/auth.ts sets both explicitly to the same values).
+        let issuer = var("PAYSLIP_AUTH_ISSUER").unwrap_or_else(|| {
+            jwks_url
+                .split_once("/api/")
+                .map(|(base, _)| base.to_string())
+                .unwrap_or_else(|| jwks_url.trim_end_matches('/').to_string())
+        });
+        Ok(AuthConfig {
+            mode,
+            jwks_url,
+            issuer,
+            audience: var("PAYSLIP_AUTH_AUDIENCE").unwrap_or_else(|| DEFAULT_AUTH_AUDIENCE.into()),
+            bootstrap_admin_email: var("PAYSLIP_BOOTSTRAP_ADMIN_EMAIL").map(|e| e.to_ascii_lowercase()),
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub network: ZcashNetwork,
@@ -114,6 +195,8 @@ pub struct Config {
     pub app_fee_bps: u32,
     /// NEAR account that receives the fee (required when `app_fee_bps` > 0).
     pub app_fee_recipient: Option<String>,
+    /// Sign-in (ADR-026): off keeps today's behaviour, required gates every payer route.
+    pub auth: AuthConfig,
 }
 
 fn var(name: &str) -> Option<String> {
@@ -217,6 +300,7 @@ impl Config {
                 .map(|s| s.parse())
                 .transpose()
                 .context("PAYSLIP_BIRTHDAY_HEIGHT must be a block height")?,
+            auth: AuthConfig::from_env()?,
         })
     }
 
@@ -297,6 +381,7 @@ mod tests {
             allow_remote_payer: false,
             app_fee_bps: 0,
             app_fee_recipient: None,
+            auth: AuthConfig::off(),
         }
     }
 
