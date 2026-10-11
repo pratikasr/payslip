@@ -1,6 +1,7 @@
 //! Payslip service library: wallet core, runs, statements and the HTTP API.
 
 pub mod api;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod devseed;

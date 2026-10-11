@@ -1,6 +1,7 @@
 //! HTTP API (docs/API.md).
 
 mod contractors;
+mod org;
 mod proofs;
 mod runs;
 mod statements;
@@ -50,6 +51,8 @@ pub struct AppState {
     pub scan_slots: tokio::sync::Semaphore,
     /// Open run progress streams (SSE); each holds a connection until the client leaves.
     pub sse_slots: Arc<tokio::sync::Semaphore>,
+    /// Checks sign-in tokens (ADR-026); None when PAYSLIP_AUTH=off.
+    pub auth: Option<Arc<crate::auth::Verifier>>,
 }
 
 pub type AppStateRef = Arc<AppState>;
@@ -132,7 +135,12 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         (Some(payer), Some(executor))
     };
     let lightwalletd_url = cfg.lightwalletd_url.clone();
+    let auth = cfg
+        .auth
+        .required()
+        .then(|| Arc::new(crate::auth::Verifier::new(&cfg.auth)));
     Ok(Arc::new(AppState {
+        auth,
         prices,
         scan_slots: tokio::sync::Semaphore::new(MAX_CONCURRENT_SCANS),
         sse_slots: Arc::new(tokio::sync::Semaphore::new(MAX_EVENT_STREAMS)),
@@ -166,11 +174,19 @@ pub fn router(state: AppStateRef) -> Router {
     let mut app = Router::new().route("/api/health", get(health));
     // A statements-only deployment is meant to be public: it does not even mount the payer routes.
     if !statements_only {
-        app = app
+        let mut payer = Router::new()
             .route("/api/wallet", get(wallet))
             .route("/api/wallet/sync", post(wallet_sync))
             .merge(contractors::routes())
             .merge(runs::routes());
+        // With sign-in required, every payer route and the organisation routes sit behind the
+        // guard: token, membership, role, audit row. Statements and proofs stay key-based.
+        if state.auth.is_some() {
+            payer = payer
+                .merge(org::routes())
+                .layer(middleware::from_fn_with_state(state.clone(), crate::auth::guard));
+        }
+        app = app.merge(payer);
     }
     app.merge(statements::routes())
         .merge(proofs::routes())
@@ -342,11 +358,17 @@ fn not_found(statements_only: bool, path: &str) -> Response {
 
 pub async fn serve(cfg: Config) -> anyhow::Result<()> {
     let bind = cfg.bind;
-    if !cfg.statements_only && !bind.ip().is_loopback() && !cfg.allow_remote_payer {
+    if !cfg.statements_only && !bind.ip().is_loopback() && !cfg.allow_remote_payer && !cfg.auth.required() {
         bail!(
             "PAYSLIP_BIND={bind} would expose the payer wallet to the network, and the API has no login. \
              Bind full mode to 127.0.0.1 (or run PAYSLIP_MODE=statements for a public host). Set \
-             PAYSLIP_ALLOW_REMOTE_PAYER=1 only behind your own authentication."
+             PAYSLIP_AUTH=required to put sign-in in front of it, or PAYSLIP_ALLOW_REMOTE_PAYER=1 \
+             only behind your own authentication."
+        );
+    }
+    if cfg.auth.required() && cfg.auth.bootstrap_admin_email.is_none() {
+        tracing::warn!(
+            "PAYSLIP_AUTH=required without PAYSLIP_BOOTSTRAP_ADMIN_EMAIL: nobody can become the first admin until it is set"
         );
     }
     // The data folder holds the wallet databases and the scan caches of every viewing key
@@ -386,13 +408,14 @@ pub async fn serve(cfg: Config) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {bind}"))?;
     tracing::info!(
-        "Payslip service on http://{bind} ({}, {})",
+        "Payslip service on http://{bind} ({}, {}, sign-in {})",
         state.cfg.network.as_str(),
         if state.cfg.statements_only {
             "statements only".to_string()
         } else {
             format!("venue {}", state.venue.kind().as_str())
-        }
+        },
+        state.cfg.auth.mode.as_str()
     );
     axum::serve(listener, router(state))
         .with_graceful_shutdown(shutdown())
@@ -428,6 +451,8 @@ struct Health {
     /// The testnet venue's fixed rate in USD per ZEC, which runs are funded at; None on
     /// mainnet and whenever that venue is not in use.
     simulated_rate_usd_per_zec: Option<f64>,
+    /// off, or required: payer routes need a signed-in member (ADR-026).
+    auth: &'static str,
     /// Whether `POST /api/runs/{id}/fund` accepts `method: "zec"` (ADR-025): true in full mode.
     fund_with_zec: bool,
     /// PAYSLIP_MAX_RUN_USD_CENTS, the largest payroll one run may carry; None when no cap.
@@ -507,6 +532,7 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         },
         market_prices: s.prices.enabled(),
         simulated_rate_usd_per_zec: s.cfg.simulated_rate_usd_per_zec(),
+        auth: s.cfg.auth.mode.as_str(),
         fund_with_zec: s.cfg.fund_with_zec(),
         max_run_usd_cents: s.cfg.max_run_usd_cents,
         version: env!("CARGO_PKG_VERSION"),

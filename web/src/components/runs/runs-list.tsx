@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ListChecks, Send, UsersRound } from "lucide-react";
 import { Usd } from "@/components/app/amount";
+import { useAuth } from "@/components/auth/auth-provider";
 import { PageTitle } from "@/components/ds/page";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +31,8 @@ export function RunsList({ initial }: { initial?: Run[] }) {
   const runs = useResource((s) => api.runs(s), "console-runs", initial);
   const contractors = useResource((s) => api.contractors(s), "console-runs-contractors");
   const [filter, setFilter] = useState<RunFilterId>("all");
+  // With sign-in on, only admins and approvers run payroll; others see the list alone.
+  const mayRun = useAuth().can("manage_runs");
 
   const all = useMemo(() => latestPeriodFirst(runs.data ?? []), [runs.data]);
   const counts = useMemo(
@@ -50,7 +53,7 @@ export function RunsList({ initial }: { initial?: Run[] }) {
       <PageTitle
         title="Payroll runs"
         actions={
-          empty ? undefined : (
+          empty || !mayRun ? undefined : (
             <Button asChild>
               <Link href="/console/runs/new">
                 <Send aria-hidden="true" />
@@ -185,6 +188,7 @@ function TableLoading() {
 }
 
 function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
+  const mayRun = useAuth().can("manage_runs");
   return (
     <div className="flex flex-col items-start gap-4 border-t border-hairline py-12 sm:items-center sm:text-center">
       <span className="grid size-11 place-items-center rounded-full bg-chip text-strong">
@@ -209,14 +213,14 @@ function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
             Add people
           </Link>
         </Button>
-      ) : (
+      ) : mayRun ? (
         <Button asChild>
           <Link href="/console/runs/new">
             <Send aria-hidden="true" />
             Run payroll
           </Link>
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

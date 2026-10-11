@@ -4,6 +4,7 @@ import { LucideProvider } from "lucide-react";
 import { PresenterMode } from "@/components/app/presenter-mode";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { authRequired } from "@/lib/auth-config";
 import { presenterBootScript } from "@/lib/presenter";
 import "./globals.css";
 
@@ -56,6 +57,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         {/* Presenter mode before first paint; see src/lib/presenter.ts. */}
         <script dangerouslySetInnerHTML={{ __html: presenterBootScript }} />
+        {/* With sign-in on, every service call goes through the same-origin proxy (src/lib/api.ts). */}
+        {authRequired() ? <script dangerouslySetInnerHTML={{ __html: "window.__payslipProxy=true" }} /> : null}
       </head>
       <body className="min-h-dvh">
         <a

@@ -207,6 +207,8 @@ test("every focus stop on the page shows focus", async ({ page }) => {
     const stop = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;
       if (!el || el === document.body) return null;
+      // Next's dev-mode tools mount a custom element after the page; it is not part of the design.
+      if (el.tagName.startsWith("NEXTJS")) return { path: "nextjs-dev-tools", visible: true };
       const s = getComputedStyle(el);
       const visible = s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0;
       const index = [...document.querySelectorAll("a[href], button, [tabindex]")].indexOf(el);

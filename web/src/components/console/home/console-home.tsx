@@ -5,6 +5,7 @@ import { Check, Coins, Plus, Send, Share } from "lucide-react";
 import { Usd, Zec } from "@/components/app/amount";
 import { useCoinUnit, useHealth } from "@/components/app/health-provider";
 import { HealthWarnings } from "@/components/app/health-warnings";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card, CardHeader } from "@/components/ds/card";
 import { ActionRow, PageTitle } from "@/components/ds/page";
@@ -70,6 +71,8 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
   const stage = stageOf(network, wallet.data, contractors.data, runs.data);
   const hasPeople = (contractors.data?.length ?? 0) > 0;
   const returning = !!runs.data?.some((r) => r.status === "paid");
+  // With sign-in on, the quick actions follow the role; the service refuses the rest anyway.
+  const auth = useAuth();
   // The title is the employer, as a payroll product shows it; the welcome moves to the quieter line.
   const welcome = returning || stage === "unknown" ? "Welcome back." : "Welcome to Payslip.";
   const hint =
@@ -93,7 +96,7 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
       />
       {/* One gold action: the next step for this company. Actions that cannot work yet are hidden. */}
       <ActionRow>
-        {hasPeople ? (
+        {hasPeople && auth.can("manage_runs") ? (
           <Button asChild variant={stage === "run" ? "default" : "secondary"}>
             <Link href="/console/runs/new">
               <Send aria-hidden="true" />
@@ -101,12 +104,14 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
             </Link>
           </Button>
         ) : null}
-        <Button asChild variant={stage === "add-people" ? "default" : "secondary"}>
-          <Link href="/console/people?add=1">
-            <Plus aria-hidden="true" />
-            {stage === "add-people" ? "Add your first contractor" : "Add contractor"}
-          </Link>
-        </Button>
+        {auth.can("manage_contractors") ? (
+          <Button asChild variant={stage === "add-people" ? "default" : "secondary"}>
+            <Link href="/console/people?add=1">
+              <Plus aria-hidden="true" />
+              {stage === "add-people" ? "Add your first contractor" : "Add contractor"}
+            </Link>
+          </Button>
+        ) : null}
         <Button asChild variant={stage === "fund" ? "default" : "secondary"}>
           <Link href="/console/treasury">
             <Coins aria-hidden="true" />

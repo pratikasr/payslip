@@ -1,6 +1,6 @@
 # Payslip service API
 
-REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web app calls it directly with CORS (origin from `PAYSLIP_WEB_ORIGIN`). Run progress streams over Server-Sent Events.
+REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web app calls it directly with CORS (origin from `PAYSLIP_WEB_ORIGIN`), or, with sign-in on, through its own same-origin proxy at `/api/svc`, which attaches the signed-in member's token (see Sign-in and roles). Run progress streams over Server-Sent Events.
 
 ## Conventions
 
@@ -13,6 +13,8 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | --- | --- | --- |
   | 400 | `invalid_json` | the body is not well-formed JSON |
   | 400 | `invalid_query` | a query parameter cannot be read |
+  | 401 | `unauthenticated` | sign-in is required and the request carries no valid token (missing, expired, signed by an unknown key, for another issuer or audience); the message says which |
+  | 403 | `forbidden` | the signed-in person is not a member, or their role cannot do this; the message names the role and the hint says who can change it |
   | 404 | `not_found` | no such endpoint |
   | 404 | `statements_only` | a payer endpoint on a statements-only deployment |
   | 405 | `method_not_allowed` | the endpoint exists but not with this method (the `Allow` header lists the methods) |
@@ -20,9 +22,71 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | 415 | `json_required` | a POST, PATCH, PUT or DELETE without `Content-Type: application/json` (a bodyless request still sends the header) |
   | 421 | `host_not_allowed` | the `Host` header is not the service's own address or one in `PAYSLIP_ALLOWED_HOSTS` |
   | 422 | `invalid_body` | a field is missing or has the wrong type; the message names the field |
+  | 503 | `auth_unavailable` | sign-in is required and the service cannot fetch the web app's signing keys (`PAYSLIP_AUTH_JWKS_URL`) |
 
 - An error about particular runs also names them in `error.runs`, a list of run ids (`period_overlap`, `idempotency_mismatch`); other errors have no `runs` field.
-- The payer endpoints (wallet, contractors, runs) are meant for the payer's own host. The statement endpoints take viewing keys only and never accept a spending key.
+- The payer endpoints (wallet, contractors, runs) are meant for the payer's own host, or for signed-in members when sign-in is on. The statement endpoints take viewing keys only and never accept a spending key.
+
+## Sign-in and roles
+
+Off by default (`PAYSLIP_AUTH=off`): every payer endpoint is open on the payer's own host, as in the testnet demo. With `PAYSLIP_AUTH=required` (ADR-026):
+
+- Every payer endpoint (wallet, contractors, viewing keys, runs, run progress) and every endpoint below needs `Authorization: Bearer <token>`. The token is a short EdDSA JWT minted by the web app for a signed-in person (Google sign-in through Better Auth); the service checks it against the web app's published keys (`PAYSLIP_AUTH_JWKS_URL`, cached, fetched again on an unknown key id), its issuer (`PAYSLIP_AUTH_ISSUER`), audience (`PAYSLIP_AUTH_AUDIENCE`, `payslip-service`) and expiry, 30 seconds of leeway. The web app's proxy at `/api/svc/api/...` attaches it; the browser never holds it.
+- Health, statements, exports and payment proofs stay public: they are key-based.
+- The token's person becomes a `user` on first sight (matched by Google account id, then token subject, then verified email). The first verified sign-in with `PAYSLIP_BOOTSTRAP_ADMIN_EMAIL`, while the organisation has no admin, creates the organisation (named after the email's domain until renamed) and makes that person its admin. Every later membership comes from an invitation.
+- Roles. A signed-in person who is not a member gets `403 forbidden` everywhere but `GET /api/me` and invitation acceptance.
+
+  | Endpoint | admin | approver | accountant | viewer |
+  | --- | --- | --- | --- | --- |
+  | `GET` wallet, contractors, runs, run funding, progress, log, `/api/org`, `/api/org/members`, `/api/me` | yes | yes | yes | yes |
+  | `GET /api/contractors/{id}/viewing-key`, `GET /api/viewing-keys` | yes | | yes | |
+  | `POST /api/wallet/sync` | yes | | | |
+  | `POST`, `PATCH`, `DELETE` contractors; mark a key shared or not | yes | | | |
+  | `POST /api/runs`, discard, fund, deposit-tx, execute, cancel | yes | yes | | |
+  | `PATCH /api/org`, members (role, remove), invitations (list, create, revoke) | yes | | | |
+  | `GET /api/org/audit` | yes | | yes | |
+
+- Audit log. Every successful write under sign-in adds a row (who, their role, the action, the target id, the time, details), and so do the two viewing-key reads (`contractor.key_view`, `keys.export`). Actions: `org.bootstrap`, `org.update`, `member.role`, `member.remove`, `invitation.create`, `invitation.revoke`, `invitation.accept`, `wallet.sync`, `contractor.create|update|archive|key_view|key_shared|key_unshared`, `keys.export`, `run.create|discard|fund|deposit_tx|execute|cancel`. The target of a create is the new id; an invitation's target is its id, never its token.
+
+### GET /api/me
+
+```json
+{"auth": "required",
+ "user": {"id": "...", "email": "amara@acme.test", "name": "Amara", "picture_url": "https://..." | null},
+ "membership": {"role": "admin" | "approver" | "accountant" | "viewer",
+                "org": {"id": "uuid", "name": "Acme Robotics", "logo_url": "https://..." | null, "created_at": "..."},
+                "since": "2026-10-11T09:00:00Z"} | null}
+```
+
+### GET /api/org, PATCH /api/org
+
+`GET` returns the organisation (`id`, `name`, `logo_url`, `created_at`). `PATCH` (admin) with `{name?, logo_url?}` returns it updated: `name` 1 to 120 characters (`400 invalid_name`); `logo_url` an http or https URL of at most 2,048 characters, or `null` to remove it (`400 invalid_logo_url`).
+
+### Members
+
+- `GET /api/org/members` returns `{"members": [{"user_id", "email", "name", "picture_url", "role", "created_at"}]}`.
+- `POST /api/org/members` (admin) with `{"user_id", "role"}` changes a member's role and returns the member. `400 invalid_role`, `404 not_found` (not a member), `409 last_admin` (the only admin cannot be demoted).
+- `DELETE /api/org/members/{user_id}` (admin) removes a member: `204`. `409 last_admin` for the only admin.
+
+### Invitations
+
+Invitations are copy-paste links; the service keeps only the SHA-256 of the token.
+
+- `POST /api/org/invitations` (admin) with `{"email", "role"}` returns `201` and `{"id", "email", "role", "status": "pending", "expires_at", "accepted_at": null, "created_at", "token"}`. The token appears only here: the web app turns it into `<web origin>/invite/<token>`. A link lasts 7 days. An earlier open invitation for the same email is revoked. `400 invalid_email`, `400 invalid_role`, `409 already_a_member`.
+- `GET /api/org/invitations` (admin) returns `{"invitations": [...]}` without tokens, newest first, each with `status` `pending`, `accepted` or `expired` (revoked ones are left out).
+- `DELETE /api/org/invitations/{id}` (admin) revokes an open invitation: `204`. `409 invitation_closed` if it was already accepted or revoked.
+- `POST /api/org/invitations/{token}/accept` needs a signed-in person (any token, no membership) whose verified email is the invited one. Returns `{"membership": {...}}` as in `/api/me`. `404 not_found` (unknown or revoked link), `409 invitation_used`, `409 invitation_expired`, `403 forbidden` (signed in with another email; the message names both), `409 already_a_member`.
+
+### GET /api/org/audit
+
+Admin and accountant. `?limit=` (1 to 500, default 100) and `?before=<id>` for older pages.
+
+```json
+{"entries": [{"id": 42, "at": "2026-10-11T09:05:12Z",
+              "user": {"id": "...", "email": "owner@acme.test", "name": "Owner"} | null,
+              "role": "admin", "action": "invitation.create", "target": "uuid",
+              "details": {"email": "amara@acme.test", "role": "viewer", "expires_at": "..."} | null}]}
+```
 
 ## Health and wallet
 
@@ -33,8 +97,10 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
  "chain_tip": 4465100, "wallet_synced_height": 4465100, "venue": "testnet-fixed-rate",
  "birthday_height": 4460000, "version": "0.1.0", "mode": "full" | "statements",
  "app_fee_bps": 0, "market_prices": true, "simulated_rate_usd_per_zec": 1350000.0 | null,
- "fund_with_zec": true, "max_run_usd_cents": 2500000 | null}
+ "fund_with_zec": true, "max_run_usd_cents": 2500000 | null, "auth": "off" | "required"}
 ```
+
+`auth` is `required` when payer endpoints need a signed-in member (Sign-in and roles above).
 
 `mode` is `statements` when the service runs with `PAYSLIP_MODE=statements`: it holds no wallet, answers statements, payment proofs and health, and every payer endpoint (wallet, contractors, viewing keys and runs, reads included) returns 404 `statements_only`. Such a deployment is safe to host publicly for contractors, accountants and judges. `app_fee_bps` is Payslip's own fee on the USDC to ZEC funding swap (0 when none; ADR-020). `market_prices` says whether statements carry the market value of each payment at receipt (ADR-022). `simulated_rate_usd_per_zec` is the testnet venue's fixed rate in USD per ZEC (`PAYSLIP_TESTNET_RATE_USD`, default 1,350,000), the same value the run executor's venue funds every testnet run at, so a client can estimate a run's ZEC before any fill: `amount_usd_cents / 100 / simulated_rate_usd_per_zec` ZEC. It is `null` on mainnet, with any other venue, and in statements mode. `fund_with_zec` is true when `POST /api/runs/{id}/fund` accepts `"method": "zec"` (ADR-025; every full-mode service, on any network; false in statements mode). `max_run_usd_cents` is `PAYSLIP_MAX_RUN_USD_CENTS`, the largest payroll one run may carry, or `null` when there is no cap.
 

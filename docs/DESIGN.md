@@ -589,7 +589,8 @@ The owner judged the first build too basic: default Next.js and shadcn styling, 
 | Product | Route | Shell | Pages |
 | --- | --- | --- | --- |
 | Landing | `/` | marketing header, dark hero and product section | hero with sealed payroll, product accordion, proof strip, how it works, who sees what, security, pricing, FAQ, footer |
-| Company console | `/console` | ConsoleShell (sidebar) | Home, Payroll runs, run page (Pay lines, Privacy view, Audit trail), People with drawer, Payslip access, Treasury |
+| Company console | `/console` | ConsoleShell (sidebar) | Home, Payroll runs, run page (Pay lines, Privacy view, Audit trail), People with drawer, Payslip access, Treasury; with sign-in on (ADR-026) also Members, Invitations, Audit log and Settings, the organisation's name and logo in the sidebar brand, who is signed in at its foot, and no demo bar |
+| Sign-in | `/sign-in`, `/invite/[token]` | none | one centred card: Continue with Google (and the test login for browser tests); the invitation link's welcome |
 | Run payroll | `/console/runs/new` | FocusShell (full screen) | Amounts, Review and approve, Fund, Pay |
 | Contractor portal | `/portal` | PortalShell | Unlock, Home, Payslips, payslip document, Tax documents |
 | Accountant books | `/books` | BooksShell (Books side of the switch) | Reconciliation, Ledger, Exceptions, Exports |

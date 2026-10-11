@@ -2,22 +2,42 @@
   Server-side reads for the first paint. A page that renders its data on the server shows it
   without waiting for client JavaScript, and nothing moves when it arrives. Any failure returns
   undefined and the client fetch (with its error states) takes over.
+
+  With sign-in required (ADR-026) the server attaches the signed-in member's token, exactly as
+  the browser's calls get one through /api/svc; without a session the payer routes answer 401
+  and the page renders without its first-paint data.
 */
+import { headers } from "next/headers";
 import { API_URL, type Network } from "@/lib/api";
+import { authRequired } from "@/lib/auth-config";
+import { serviceToken } from "@/lib/service-session";
 
 /*
   Where the server-side reads go. A hosted deployment gives the browser the page's own origin
   (NEXT_PUBLIC_PAYSLIP_API_URL=/), which the Next server cannot use, so PAYSLIP_API_INTERNAL_URL
   names the service directly (deploy/compose.yml). Read when the server starts, never inlined into
-  the browser bundle; empty falls back to API_URL, which is right for a local run.
+  the browser bundle; empty falls back to API_URL, which is right for a local run. The sign-in
+  proxy (/api/svc) reaches the service the same way (lib/auth-config.ts serviceUrl()).
 */
 const SERVER_API_URL = (process.env.PAYSLIP_API_INTERNAL_URL?.trim() || API_URL).replace(/\/+$/, "");
+
+async function requestHeaders(): Promise<Record<string, string>> {
+  const h: Record<string, string> = { Accept: "application/json" };
+  if (!authRequired()) return h;
+  try {
+    const token = await serviceToken(await headers());
+    if (token) h.Authorization = `Bearer ${token}`;
+  } catch {
+    // No session or sign-in not configured: the request goes without a token.
+  }
+  return h;
+}
 
 export async function serverGet<T>(path: string, timeoutMs = 2500): Promise<T | undefined> {
   try {
     const res = await fetch(`${SERVER_API_URL}${path}`, {
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: await requestHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });
     return res.ok ? ((await res.json()) as T) : undefined;
@@ -35,7 +55,7 @@ async function probe(path: string, timeoutMs: number): Promise<{ ok: boolean; st
   try {
     const res = await fetch(`${SERVER_API_URL}${path}`, {
       cache: "no-store",
-      headers: { Accept: "application/json" },
+      headers: await requestHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
