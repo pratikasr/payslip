@@ -68,13 +68,21 @@ impl SeedFile {
         Ok(())
     }
 
-    /// Decrypts the mnemonic and returns the 64-byte BIP-39 seed.
-    pub fn unlock(&self, passphrase: &str) -> anyhow::Result<SecretVec<u8>> {
+    /// Decrypts the 24-word mnemonic itself, for the operator to write down or type into
+    /// another wallet. Only `seed-phrase` on the command line calls this; the API never does.
+    pub fn phrase(&self, passphrase: &str) -> anyhow::Result<SecretString> {
         let ciphertext = fs::read(&self.path).with_context(|| format!("reading {}", self.path.display()))?;
         let identity = age::scrypt::Identity::new(SecretString::from(passphrase.to_string()));
         let plaintext = age::decrypt(&identity, &ciphertext)
             .map_err(|_| anyhow::anyhow!("could not decrypt the seed file: wrong PAYSLIP_SEED_PASSPHRASE?"))?;
         let phrase = SecretString::from(String::from_utf8(plaintext).context("seed file is not UTF-8")?);
+        <Mnemonic<English>>::from_phrase(phrase.expose_secret()).context("seed file holds an invalid mnemonic")?;
+        Ok(phrase)
+    }
+
+    /// Decrypts the mnemonic and returns the 64-byte BIP-39 seed.
+    pub fn unlock(&self, passphrase: &str) -> anyhow::Result<SecretVec<u8>> {
+        let phrase = self.phrase(passphrase)?;
         let mnemonic =
             <Mnemonic<English>>::from_phrase(phrase.expose_secret()).context("seed file holds an invalid mnemonic")?;
         Ok(SecretVec::new(mnemonic.to_seed("").to_vec()))
@@ -97,6 +105,16 @@ mod tests {
         assert!(f.create("correct horse battery").is_err());
         let raw = fs::read_to_string(f.path()).unwrap();
         assert!(raw.starts_with("-----BEGIN AGE ENCRYPTED FILE-----"));
+    }
+
+    #[test]
+    fn the_phrase_comes_back_as_written() {
+        let phrase = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+        let dir = tempfile::tempdir().unwrap();
+        let f = SeedFile::new(dir.path().join("s.age"));
+        f.import(phrase, "correct horse battery").unwrap();
+        assert_eq!(f.phrase("correct horse battery").unwrap().expose_secret(), phrase);
+        assert!(f.phrase("wrong passphrase!!").is_err());
     }
 
     #[test]

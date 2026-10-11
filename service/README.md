@@ -18,6 +18,7 @@ Every command (`./target/release/payslip-service --help` prints the same list):
 | `serve` | The HTTP API (the default). `PAYSLIP_MODE=statements` serves statements and payment proofs only, with no seed |
 | `init [--import]` | Creates the encrypted payer seed and the treasury account; `--import` reads a 24-word mnemonic from stdin |
 | `address` | Prints the treasury's unified address |
+| `seed-phrase` | Prints the treasury seed's 24-word recovery phrase (needs `PAYSLIP_SEED_PASSPHRASE`); write it down and keep it off the machine |
 | `sync` | Syncs the payer wallet to the chain tip and prints balances |
 | `fvk --account N` | Prints the unified full viewing key of ZIP-32 account N |
 | `account-address --account N` | Prints the payer-side unified address of account N |

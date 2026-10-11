@@ -23,6 +23,10 @@ enum Command {
     },
     /// Print the treasury's unified address (for funding on testnet).
     Address,
+    /// Print the treasury seed's 24-word recovery phrase (needs PAYSLIP_SEED_PASSPHRASE). Write it
+    /// down and keep it off this machine: with it, any Zcash wallet can recover the treasury and
+    /// every contractor account, with or without Payslip.
+    SeedPhrase,
     /// Sync the payer wallet to the chain tip and print balances.
     Sync,
     /// Print the unified full viewing key of ZIP-32 account N.
@@ -118,6 +122,22 @@ async fn main() -> anyhow::Result<()> {
         Command::Address => {
             let payer = Payer::open(&cfg).await?;
             println!("{}", payer.wallet_info().await?.treasury.unified_address);
+            Ok(())
+        }
+        Command::SeedPhrase => {
+            use secrecy::ExposeSecret as _;
+            let passphrase = cfg
+                .seed_passphrase
+                .clone()
+                .ok_or_else(|| anyhow!("set PAYSLIP_SEED_PASSPHRASE first"))?;
+            let seed = SeedFile::new(cfg.seed_path());
+            let phrase = seed.phrase(&passphrase)?;
+            eprintln!(
+                "Recovery phrase for the {} treasury in {}. Anyone with these 24 words can spend it.",
+                cfg.network.as_str(),
+                seed.path().display()
+            );
+            println!("{}", phrase.expose_secret());
             Ok(())
         }
         Command::Sync => {
