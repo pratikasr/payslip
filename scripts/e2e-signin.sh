@@ -44,6 +44,8 @@ export PAYSLIP_WEB_ORIGIN="$WEB_URL"
 export PAYSLIP_AUTH=required
 export PAYSLIP_AUTH_JWKS_URL="$WEB_URL/api/auth/jwks"
 export PAYSLIP_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
+# Two approvals per run, so the suite covers the creator rule and a second approver (auth.spec.ts).
+export PAYSLIP_APPROVALS_REQUIRED=2
 export PAYSLIP_PRICE_API_URL=off
 export PAYSLIP_MIN_CONFIRMATIONS=1
 PAYSLIP_SEED_PASSPHRASE="$(cat "$DIR/passphrase")"

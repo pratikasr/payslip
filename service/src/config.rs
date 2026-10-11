@@ -113,10 +113,44 @@ pub struct AuthConfig {
     /// PAYSLIP_BOOTSTRAP_ADMIN_EMAIL, lower case: the first sign-in with this verified email
     /// creates the organisation and becomes its admin. After that membership is invite-only.
     pub bootstrap_admin_email: Option<String>,
+    /// PAYSLIP_APPROVALS_REQUIRED: how many admins or approvers must approve a run before it is
+    /// executed and its swap recorded (migration 0007). 1 by default with sign-in required, 0
+    /// with sign-in off (nothing to approve with), so the testnet demo is unchanged. At 2 or
+    /// more the run's creator cannot be one of its approvers.
+    pub approvals_required: u32,
 }
 
 /// The audience the web app's JWT plugin is configured with (web/src/lib/auth.ts).
 pub const DEFAULT_AUTH_AUDIENCE: &str = "payslip-service";
+
+/// More approvals than this is a typo, not a policy: it would stop every run from being paid.
+pub const MAX_APPROVALS_REQUIRED: u32 = 10;
+
+/// PAYSLIP_APPROVALS_REQUIRED for a sign-in mode: the variable when set, else 1 with sign-in
+/// required and 0 without. A policy without sign-in is refused: there is nobody to approve.
+pub fn parse_approvals_required(raw: Option<&str>, mode: AuthMode) -> anyhow::Result<u32> {
+    let n = match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        None => {
+            return Ok(match mode {
+                AuthMode::Required => 1,
+                AuthMode::Off => 0,
+            })
+        }
+        Some(s) => s
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n <= MAX_APPROVALS_REQUIRED)
+            .with_context(|| {
+                format!(
+                    "PAYSLIP_APPROVALS_REQUIRED must be a whole number from 0 to {MAX_APPROVALS_REQUIRED}, got {s:?}"
+                )
+            })?,
+    };
+    if n > 0 && mode == AuthMode::Off {
+        bail!("PAYSLIP_APPROVALS_REQUIRED={n} needs PAYSLIP_AUTH=required: without sign-in there is nobody to approve a run");
+    }
+    Ok(n)
+}
 
 impl AuthConfig {
     /// No sign-in.
@@ -127,6 +161,7 @@ impl AuthConfig {
             issuer: String::new(),
             audience: DEFAULT_AUTH_AUDIENCE.into(),
             bootstrap_admin_email: None,
+            approvals_required: 0,
         }
     }
 
@@ -140,6 +175,7 @@ impl AuthConfig {
             Some("required") => AuthMode::Required,
             Some(other) => bail!("PAYSLIP_AUTH must be off or required, got {other:?}"),
         };
+        let approvals_required = parse_approvals_required(var("PAYSLIP_APPROVALS_REQUIRED").as_deref(), mode)?;
         let jwks_url = var("PAYSLIP_AUTH_JWKS_URL").unwrap_or_else(|| "http://127.0.0.1:3000/api/auth/jwks".into());
         if mode == AuthMode::Required && !(jwks_url.starts_with("http://") || jwks_url.starts_with("https://")) {
             bail!("PAYSLIP_AUTH_JWKS_URL must be an http or https URL, got {jwks_url:?}");
@@ -158,6 +194,7 @@ impl AuthConfig {
             issuer,
             audience: var("PAYSLIP_AUTH_AUDIENCE").unwrap_or_else(|| DEFAULT_AUTH_AUDIENCE.into()),
             bootstrap_admin_email: var("PAYSLIP_BOOTSTRAP_ADMIN_EMAIL").map(|e| e.to_ascii_lowercase()),
+            approvals_required,
         })
     }
 }
@@ -420,6 +457,28 @@ mod tests {
         assert_eq!(cfg.viewer_scan_start(Some(4_466_858)), 4_466_000);
         assert_eq!(cfg.viewer_scan_start(Some(4_465_600)), 4_465_600);
         assert_eq!(cfg.viewer_birthday(), 4_466_000);
+    }
+
+    /// PAYSLIP_APPROVALS_REQUIRED: 1 with sign-in required, 0 with sign-in off, a number when
+    /// set; a policy without sign-in, a word, or an absurd count is refused with the fix.
+    #[test]
+    fn approvals_required_follows_the_sign_in_mode() {
+        assert_eq!(parse_approvals_required(None, AuthMode::Required).unwrap(), 1);
+        assert_eq!(parse_approvals_required(None, AuthMode::Off).unwrap(), 0);
+        assert_eq!(parse_approvals_required(Some(" "), AuthMode::Off).unwrap(), 0);
+        assert_eq!(parse_approvals_required(Some("2"), AuthMode::Required).unwrap(), 2);
+        assert_eq!(parse_approvals_required(Some("0"), AuthMode::Required).unwrap(), 0);
+        assert_eq!(parse_approvals_required(Some("0"), AuthMode::Off).unwrap(), 0);
+        let e = parse_approvals_required(Some("2"), AuthMode::Off)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("PAYSLIP_AUTH=required"), "{e}");
+        let e = parse_approvals_required(Some("two"), AuthMode::Required)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("0 to 10"), "{e}");
+        assert!(parse_approvals_required(Some("11"), AuthMode::Required).is_err());
+        assert!(parse_approvals_required(Some("-1"), AuthMode::Required).is_err());
     }
 
     /// GET /api/health reports the testnet venue's fixed rate where that venue funds runs.

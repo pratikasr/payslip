@@ -11,6 +11,7 @@ import { Timeline, type TimelineItem } from "@/components/ds/timeline";
 import type { Run, RunLogEvent } from "@/lib/api";
 import { formatHeight, formatShortDate, formatTime, venueLabel } from "@/lib/format";
 import { runCoin } from "@/lib/payroll";
+import { roleLabel } from "@/lib/roles";
 import { auditTimeline, chainName, type LogEvent, type TimelineEntry } from "@/lib/run-log";
 import { Problem } from "./problem";
 import { fundingTag, plural, runTitle } from "./run-meta";
@@ -56,7 +57,25 @@ function eventItem(event: LogEvent, at: string, run: Run, testnet: boolean): Omi
   const coin = runCoin(run);
   switch (event.type) {
     case "created":
-      return { ...base, state: "done", title: `Approved: ${plural(event.count, "payment")} for ${runTitle(run)}` };
+      // With approvals recorded by name, creating the run is not the approval.
+      return {
+        ...base,
+        state: "done",
+        title: `${(run.approvals_required ?? 0) > 0 ? "Created" : "Approved"}: ${plural(event.count, "payment")} for ${runTitle(run)}`,
+      };
+    case "approved":
+      return {
+        ...base,
+        state: "done",
+        title: `Approved by ${event.name} (${roleLabel(event.role).toLowerCase()})`,
+        detail: `Approval ${event.have} of ${event.required}.`,
+      };
+    case "awaiting_approvals":
+      return {
+        ...base,
+        state: "warning",
+        title: `Waiting for ${event.missing === 1 ? "one more approval" : `${event.missing} more approvals`} before the swap is recorded`,
+      };
     case "set_aside":
       return {
         ...base,

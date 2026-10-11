@@ -76,6 +76,12 @@ export interface Health {
   max_run_usd_cents?: number | null;
   /** "required" when payer routes need a signed-in member (ADR-026); absent on older services. */
   auth?: "off" | "required";
+  /**
+   * PAYSLIP_APPROVALS_REQUIRED: approvals (by admins or approvers, one each) a run needs before
+   * it is paid; 0 when none. With two or more, the run's creator cannot be one of them. Absent
+   * on older services.
+   */
+  approvals_required?: number;
 }
 
 /** The signed-in person and their membership (GET /api/me). */
@@ -351,6 +357,21 @@ export interface Run {
   executing?: boolean;
   /** For a failed run, the status it failed in. */
   failed_from?: RunStatus | null;
+  /** The signed-in user who created the run; null with sign-in off. Absent on older services. */
+  created_by?: string | null;
+  /** Who approved the run, oldest first (POST /api/runs/{id}/approve). Absent on older services. */
+  approvals?: RunApproval[];
+  /** Approvals the run needs before it is paid; 0 when none. Absent on older services. */
+  approvals_required?: number;
+}
+
+/** One member's approval of a run: who, as which role, when. */
+export interface RunApproval {
+  user_id: string;
+  name: string | null;
+  email: string;
+  role: "admin" | "approver";
+  at: string;
 }
 
 export interface NewRunLine {
@@ -877,6 +898,11 @@ export const api = {
     json<Run>(`/api/runs/${id(runId)}/funding/deposit-tx`, { method: "POST", body: { tx_hash: txHash } }),
   pollFunding: (runId: string, signal?: AbortSignal) => json<Run>(`/api/runs/${id(runId)}/funding`, { signal }),
   executeRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/execute`, { method: "POST" }),
+  /**
+   * Records the signed-in member's approval and answers the Run. 409 already_approved on a
+   * repeat, 403 creator_cannot_approve when two or more are required and they created it.
+   */
+  approveRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/approve`, { method: "POST", body: {} }),
   discardRun: (runId: string) => json<void>(`/api/runs/${id(runId)}`, { method: "DELETE" }),
   /** Closes a run that received no money (status `cancelled`); 409 run_has_funds or deposit_in_progress otherwise. */
   cancelRun: (runId: string) => json<Run>(`/api/runs/${id(runId)}/cancel`, { method: "POST", body: {} }),

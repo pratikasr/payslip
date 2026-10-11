@@ -38,6 +38,10 @@ const height = (text: string) => Number(text.replace(/,/g, ""));
 
 export type LogEvent =
   | { type: "created"; count: number }
+  /** A recorded approval: who, as which role, and the count so far. */
+  | { type: "approved"; name: string; role: string; have: number; required: number }
+  /** The executor holds the swap until the approvals are in. */
+  | { type: "awaiting_approvals"; missing: number }
   | { type: "set_aside" }
   | { type: "quote"; amount: string; chain: string; address: string }
   | { type: "deposit_reported"; tx: string }
@@ -69,6 +73,14 @@ export type LogEvent =
 
 const RULES: [RegExp, (m: RegExpExecArray) => LogEvent | null][] = [
   [/^Run created with (\d+) lines?$/, (m) => ({ type: "created", count: Number(m[1]) })],
+  [
+    /^Approved by (.+) \((admin|approver)\), approval (\d+) of (\d+)$/,
+    (m) => ({ type: "approved", name: m[1], role: m[2], have: Number(m[3]), required: Number(m[4]) }),
+  ],
+  [
+    /^Waiting for (\d+) more approvals? before the swap is recorded$/,
+    (m) => ({ type: "awaiting_approvals", missing: Number(m[1]) }),
+  ],
   [/^Funded from the testnet treasury at the fixed rate [\d.]+ USD per TAZ$/, () => ({ type: "set_aside" })],
   [
     /^Fund with ZEC: send ([\d.]+) ZEC to the treasury address (\S+) before (\S+) \(1 ZEC = ([\d.]+) USD\)$/,
@@ -306,6 +318,10 @@ export function logSentence(message: string, coin: "ZEC" | "TAZ"): string {
   switch (e.type) {
     case "created":
       return `Approved: ${e.count} ${e.count === 1 ? "payment" : "payments"}`;
+    case "approved":
+      return `Approved by ${e.name}, approval ${e.have} of ${e.required}`;
+    case "awaiting_approvals":
+      return `Waiting for ${e.missing} more ${e.missing === 1 ? "approval" : "approvals"} before the swap is recorded`;
     case "set_aside":
       return "Set aside from the treasury at the simulated rate";
     case "zec_request":

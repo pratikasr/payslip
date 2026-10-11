@@ -305,6 +305,66 @@ pub struct RunRow {
     /// SHA-256 of the canonical create request sent with `idempotency_key`; None for runs
     /// created without a key or before it was recorded.
     pub idempotency_hash: Option<String>,
+    /// The signed-in user who created the run (ADR-026); None with sign-in off. With two or
+    /// more approvals required, the creator cannot approve their own run.
+    pub created_by: Option<String>,
+}
+
+/// One member's approval of a run (migration 0007), with who they are as the API shows it.
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct Approval {
+    pub user_id: String,
+    pub name: Option<String>,
+    pub email: String,
+    /// The approver's role when they approved: admin or approver.
+    pub role: String,
+    pub at: String,
+}
+
+/// A run's approvals, oldest first.
+pub async fn approvals(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<Approval>> {
+    Ok(sqlx::query_as(
+        "SELECT a.user_id, u.name, u.email, a.role, a.at
+         FROM run_approvals a JOIN users u ON u.id = a.user_id
+         WHERE a.run_id = ? ORDER BY a.at, a.user_id",
+    )
+    .bind(run_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn approval_count(pool: &Pool, run_id: &str) -> anyhow::Result<u32> {
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM run_approvals WHERE run_id = ?")
+        .bind(run_id)
+        .fetch_one(pool)
+        .await?;
+    Ok(u32::try_from(n).unwrap_or(u32::MAX))
+}
+
+/// Records `user_id`'s approval of a run. False when that person already approved it: one
+/// approval per member per run, whichever request got there first. The run's `updated_at`
+/// moves with it, so clients holding an older copy take the one that carries the approval.
+pub async fn add_approval(pool: &Pool, run_id: &str, user_id: &str, role: &str) -> anyhow::Result<bool> {
+    let ts = now();
+    let mut tx = pool.begin().await?;
+    let r = sqlx::query("INSERT OR IGNORE INTO run_approvals (run_id, user_id, role, at) VALUES (?, ?, ?, ?)")
+        .bind(run_id)
+        .bind(user_id)
+        .bind(role)
+        .bind(&ts)
+        .execute(&mut *tx)
+        .await?;
+    if r.rows_affected() != 1 {
+        tx.rollback().await?;
+        return Ok(false);
+    }
+    sqlx::query("UPDATE runs SET updated_at = ? WHERE id = ?")
+        .bind(&ts)
+        .bind(run_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(true)
 }
 
 #[derive(Clone, Debug, FromRow)]
@@ -427,6 +487,7 @@ pub async fn insert_run(
         period_start,
         period_end,
         allow_overlap: true,
+        created_by: None,
     };
     Ok(match create_run(pool, &run, new_lines).await? {
         RunInsert::Created(id) => Some(id),
@@ -442,6 +503,8 @@ pub struct NewRun<'a> {
     pub period_end: &'a str,
     /// Create the run even when a run that is not cancelled covers part of its period.
     pub allow_overlap: bool,
+    /// The signed-in user creating it; None with sign-in off.
+    pub created_by: Option<&'a str>,
 }
 
 #[derive(Debug)]
@@ -489,8 +552,8 @@ pub async fn create_run(pool: &Pool, run: &NewRun<'_>, new_lines: &[NewLine]) ->
         let mut tx = pool.begin().await?;
         let inserted = sqlx::query(
             "INSERT INTO runs (id, idempotency_key, idempotency_hash, period_start, period_end, status, created_at,
-                               updated_at)
-             SELECT ?, ?, ?, ?, ?, 'draft', ?, ?
+                               updated_at, created_by)
+             SELECT ?, ?, ?, ?, ?, 'draft', ?, ?, ?
              WHERE ? OR NOT EXISTS (
                  SELECT 1 FROM runs o WHERE o.status <> 'cancelled' AND o.period_start <= ? AND o.period_end >= ?
                    AND (? IS NULL OR o.idempotency_key IS NULL OR o.idempotency_key <> ?))
@@ -503,6 +566,7 @@ pub async fn create_run(pool: &Pool, run: &NewRun<'_>, new_lines: &[NewLine]) ->
         .bind(run.period_end)
         .bind(&ts)
         .bind(&ts)
+        .bind(run.created_by)
         .bind(run.allow_overlap)
         .bind(run.period_end)
         .bind(run.period_start)
@@ -565,6 +629,10 @@ pub async fn delete_draft_run(pool: &Pool, id: &str) -> anyhow::Result<bool> {
         .await?;
     // Requests the draft had taken go back to waiting for the next run for their period.
     sqlx::query("UPDATE payment_requests SET run_id = NULL, line_id = NULL WHERE run_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM run_approvals WHERE run_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;

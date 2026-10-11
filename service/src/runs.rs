@@ -16,6 +16,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use axum::http::StatusCode;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, Date, OffsetDateTime};
@@ -23,6 +24,7 @@ use tokio::sync::broadcast;
 use uuid::Uuid;
 
 use crate::{
+    auth::{Role, User},
     config::{Config, VenueKind, ZcashNetwork},
     db::{self, LineRow, Pool, RunRow},
     error::ApiError,
@@ -339,7 +341,40 @@ pub fn line_json(network: ZcashNetwork, l: &LineRow) -> Value {
     })
 }
 
-pub fn run_json(network: ZcashNetwork, r: &RunRow, lines: &[LineRow]) -> Value {
+/// Whether a run can still be approved: it has not passed its swap (`draft`, `awaiting_funds`,
+/// `funded`), a `failed` run counting by where it stopped. Once the swap is recorded the money is
+/// moving and the approvals that let it move stand.
+pub fn approvable(run: &RunRow) -> bool {
+    match run.status.as_str() {
+        "draft" | "awaiting_funds" | "funded" => true,
+        "failed" => matches!(
+            run.failed_from.as_deref(),
+            None | Some("draft" | "awaiting_funds" | "funded")
+        ),
+        _ => false,
+    }
+}
+
+/// 409 `approvals_required`: the run cannot be paid until `missing` more members approve it.
+pub fn approvals_required_error(missing: u32, required: u32) -> ApiError {
+    ApiError::conflict(
+        "approvals_required",
+        format!(
+            "This run needs {missing} more {} before it is paid ({} of {required} recorded).",
+            if missing == 1 { "approval" } else { "approvals" },
+            required.saturating_sub(missing)
+        ),
+        "An admin or approver approves it on the run page (POST /api/runs/{id}/approve). The run is paid once every required approval is in.",
+    )
+}
+
+pub fn run_json(
+    network: ZcashNetwork,
+    r: &RunRow,
+    lines: &[LineRow],
+    approvals: &[db::Approval],
+    approvals_required: u32,
+) -> Value {
     let funding: Option<Value> = r
         .venue_state
         .as_deref()
@@ -386,6 +421,9 @@ pub fn run_json(network: ZcashNetwork, r: &RunRow, lines: &[LineRow]) -> Value {
         "error": error,
         "created_at": r.created_at,
         "updated_at": r.updated_at,
+        "created_by": r.created_by,
+        "approvals": approvals,
+        "approvals_required": approvals_required,
     })
 }
 
@@ -447,6 +485,11 @@ struct Inner {
     treasury: Arc<TreasuryVenue>,
     /// PAYSLIP_MAX_RUN_USD_CENTS: a run's payroll above it is refused at funding.
     run_cap: Option<u64>,
+    /// PAYSLIP_APPROVALS_REQUIRED: approvals a run needs before it is executed and its swap
+    /// recorded; 0 means none.
+    approvals_required: u32,
+    /// Runs told to the log that they wait for approvals, so the wait is logged once.
+    approval_waits: Mutex<HashSet<String>>,
     running: Mutex<HashSet<String>>,
     changes: broadcast::Sender<String>,
     poll: Duration,
@@ -524,6 +567,7 @@ impl Executor {
             cfg.min_confirmations,
         )
         .with_run_cap(cfg.max_run_usd_cents)
+        .with_approvals_required(cfg.auth.approvals_required)
     }
 
     pub fn with_chain(
@@ -544,6 +588,8 @@ impl Executor {
                 venue,
                 treasury,
                 run_cap: None,
+                approvals_required: 0,
+                approval_waits: Mutex::new(HashSet::new()),
                 running: Mutex::new(HashSet::new()),
                 changes,
                 poll,
@@ -562,6 +608,19 @@ impl Executor {
             .expect("with_run_cap is called right after with_chain, before the executor is shared")
             .run_cap = cap;
         self
+    }
+
+    /// Requires `n` approvals before a run is executed and its swap recorded
+    /// (PAYSLIP_APPROVALS_REQUIRED); 0 requires none.
+    pub fn with_approvals_required(mut self, n: u32) -> Self {
+        Arc::get_mut(&mut self.inner)
+            .expect("with_approvals_required is called right after with_chain, before the executor is shared")
+            .approvals_required = n;
+        self
+    }
+
+    pub fn approvals_required(&self) -> u32 {
+        self.inner.approvals_required
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<String> {
@@ -608,7 +667,115 @@ impl Executor {
                 Err(e) => tracing::warn!(run = run_id, "could not record pay line block times: {e:#}"),
             }
         }
-        Ok(run_json(self.inner.network, &r, &lines))
+        let approvals = db::approvals(&self.inner.db, run_id).await?;
+        Ok(run_json(
+            self.inner.network,
+            &r,
+            &lines,
+            &approvals,
+            self.inner.approvals_required,
+        ))
+    }
+
+    /// Records `user`'s approval of a run that has not passed its swap ([`approvable`]). With
+    /// two or more approvals required, the run's creator cannot be one of them.
+    pub async fn approve(&self, run_id: &str, user: &User, role: Role) -> Result<(), ApiError> {
+        let db = &self.inner.db;
+        let required = self.inner.approvals_required;
+        if required == 0 {
+            return Err(ApiError::conflict(
+                "approvals_off",
+                "This deployment records no approvals: PAYSLIP_APPROVALS_REQUIRED is 0.",
+                "Set PAYSLIP_APPROVALS_REQUIRED on the service to 1 or more to require approvals before a run is paid.",
+            ));
+        }
+        let run = db::get_run(db, run_id)
+            .await?
+            .ok_or_else(|| ApiError::not_found("Run"))?;
+        if run.status == "cancelled" {
+            return Err(ApiError::conflict(
+                "run_cancelled",
+                "This run was cancelled.",
+                "Create a new run to pay these contractors.",
+            ));
+        }
+        if !approvable(&run) {
+            return Err(ApiError::conflict(
+                "run_not_approvable",
+                format!(
+                    "This run is {}; approvals are recorded before a run is paid.",
+                    run.status
+                ),
+                "A run is approved while it is a draft, awaiting funds or funded.",
+            ));
+        }
+        if required >= 2 && run.created_by.as_deref() == Some(user.id.as_str()) {
+            return Err(ApiError::new(
+                StatusCode::FORBIDDEN,
+                "creator_cannot_approve",
+                format!("You created this run, and its {required} approvals must come from other members."),
+                "Ask another admin or approver to approve it; the run page offers them Approve.",
+            ));
+        }
+        if !db::add_approval(db, run_id, &user.id, role.as_str()).await? {
+            return Err(ApiError::conflict(
+                "already_approved",
+                "You already approved this run.",
+                "Each member approves a run once; another admin or approver gives the next approval.",
+            ));
+        }
+        let have = db::approval_count(db, run_id).await?;
+        let who = user
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .unwrap_or(&user.email);
+        self.log(
+            run_id,
+            format!("Approved by {who} ({}), approval {have} of {required}", role.as_str()),
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Approvals the run still needs before it is paid; 0 when none are required.
+    async fn approvals_missing(&self, run_id: &str) -> anyhow::Result<u32> {
+        let required = self.inner.approvals_required;
+        if required == 0 {
+            return Ok(0);
+        }
+        Ok(required.saturating_sub(db::approval_count(&self.inner.db, run_id).await?))
+    }
+
+    /// Before a run's swap is recorded: None when every required approval is in, else the wait,
+    /// told to the log once per run. The executor never moves money on a run short of approvals,
+    /// whoever started it (a restart resumes runs the payer executed under an earlier policy).
+    async fn wait_for_approvals(&self, run: &RunRow) -> Result<Option<Outcome>, StepError> {
+        let missing = self.approvals_missing(&run.id).await?;
+        if missing == 0 {
+            if let Ok(mut w) = self.inner.approval_waits.lock() {
+                w.remove(&run.id);
+            }
+            return Ok(None);
+        }
+        let first = self
+            .inner
+            .approval_waits
+            .lock()
+            .map(|mut w| w.insert(run.id.clone()))
+            .unwrap_or(true);
+        if first {
+            self.log(
+                &run.id,
+                format!(
+                    "Waiting for {missing} more {} before the swap is recorded",
+                    if missing == 1 { "approval" } else { "approvals" }
+                ),
+            )
+            .await;
+        }
+        Ok(Some(Outcome::Wait(self.inner.poll)))
     }
 
     /// Records `confirmed_at` on confirmed lines that have none, of one run or of every run.
@@ -1124,19 +1291,30 @@ impl Executor {
             .await?
             .ok_or_else(|| ApiError::not_found("Run"))?;
         match run.status.as_str() {
-            "draft" => {
-                return Err(ApiError::conflict(
-                    "not_funded",
-                    "The run has not been funded.",
-                    "Fund the run first, then execute it.",
-                ))
-            }
             "paid" => return Ok(()),
             "cancelled" => {
                 return Err(ApiError::conflict(
                     "run_cancelled",
                     "This run was cancelled.",
                     "Create a new run to pay these contractors.",
+                ))
+            }
+            _ => {}
+        }
+        // Approvals come before money: a run that has not passed its swap waits for them, whatever
+        // else it still needs. Past the swap the money is moving and the run goes on.
+        if approvable(&run) {
+            let missing = self.approvals_missing(run_id).await?;
+            if missing > 0 {
+                return Err(approvals_required_error(missing, self.inner.approvals_required));
+            }
+        }
+        match run.status.as_str() {
+            "draft" => {
+                return Err(ApiError::conflict(
+                    "not_funded",
+                    "The run has not been funded.",
+                    "Fund the run first, then execute it.",
                 ))
             }
             "failed" => {
@@ -1282,6 +1460,11 @@ impl Executor {
                 Ok(Outcome::Wait(poll))
             }
             "processing" => {
+                if run.status != "swapping" {
+                    if let Some(wait) = self.wait_for_approvals(run).await? {
+                        return Ok(wait);
+                    }
+                }
                 if db::transition(db, &run.id, &["awaiting_funds", "funded"], "swapping").await? {
                     self.log(&run.id, "Venue is swapping USDC to ZEC").await;
                 }
@@ -1321,6 +1504,12 @@ impl Executor {
         let db = &self.inner.db;
         let chain = &self.inner.chain;
         let treasury = Self::is_treasury(f);
+        // The swap is recorded, and the money moves, only once the run is approved.
+        if run.status != "swapping" {
+            if let Some(wait) = self.wait_for_approvals(run).await? {
+                return Ok(wait);
+            }
+        }
         if db::transition(db, &run.id, &["awaiting_funds", "funded"], "swapping").await? {
             self.log(
                 &run.id,
