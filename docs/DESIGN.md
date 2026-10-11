@@ -722,3 +722,60 @@ Tokens and type apply everywhere. The run page's explorer strip becomes a two-vi
 - **Action counts.** The explorer's view names the action count where the figure is known: the landing hero's payment, checked on the explorer (Verified facts, 11 Oct 2026). The service does not report action counts for a run's transactions or for a proof, so the run page, payslip and proof show the txid, block and redaction bars without one. Showing it there needs the service to count the Orchard and Ironwood actions of each transaction it built (its wallet database holds the raw transactions) and return the count with the run's lines and with a verified proof. Fetching it from a public explorer is not an option: it would tell the explorer which transactions the company or contractor is looking at.
 - **Copy.** No middle-dot joined strings in the console, portal or Books (sentences and commas instead), no arrows appended to link text (a chevron stays only where it shows a disclosure opening), no all-caps labels.
 - **Icons.** Drawn at stroke 1.5 by one `LucideProvider` in the root layout.
+
+## 17. Pay advice on paper (11 Oct 2026; supersedes the look of section 16, keeps its idea)
+
+The owner rejected the Bricolage and Instrument Sans faces and then Geist, and chose this direction from a specimen (two rounds). Section 16's idea stays: one payment seen two ways. Its look changes: everything is printed on paper. The key's view is the white original of a pay advice; the explorer's view is the yellow carbon copy of the same form with the private fields inked out.
+
+### Material
+
+- The app is a desk (cool grey) with sheets of paper on it. Paper is white with a faint fibre texture (an SVG fractal-noise layer multiplied at low opacity). Sheets have a hairline shadow, square corners, no rounded cards.
+- Continuous-form edges (tractor-feed holes in a dashed margin) appear on full documents only: the landing page sheet, the payslip document, the run page's pay advice pair, the public proof. Not on console lists or settings.
+- Tear lines are a dotted rule with a scissors mark where two parts of one form separate (the original and its copy).
+- Green-bar rows (alternating pale green) on forms and ledgers. Ruled lines elsewhere.
+- Carbon copy: canary paper, blue-black carbon impressions slightly soft, solid ink redaction bars (near black, slightly rough edge) for everything the chain hides, and a red rubber stamp "SHIELDED" (decorative, `aria-hidden`; the meaning is always in text too).
+
+### Tokens (light)
+
+| Name | Hex | Use |
+| --- | --- | --- |
+| Desk | #E8E9EB | app background behind sheets, sidebar |
+| Paper | #FFFFFF | sheets |
+| Ink | #1C2230 | text, primary buttons, rules on forms |
+| Ink soft | #545B69 | secondary text (7:1 on paper) |
+| Rule | #CFD3DA | hairlines |
+| Green bar | #EDF3EC, line #C9D6C7 | alternating form rows |
+| Carbon | #FBF1C7, line #E5D48F, ink #2A3557 | the explorer's copy |
+| Redaction | #11141B | ink bars |
+| Stamp | #B42A2A | the SHIELDED stamp and destructive confirmations only |
+| Gold | #F4B728 | the logo's bar only |
+
+Dark ("carbon paper"): desk #0F1218, paper #171B23, ink #E6E2D6, ink soft #A7ADB8, rule #2B313C, green bar #1C232A, carbon #2A2616 with ink #E9D98A, redaction #000000 with a 1px #3A404B outline so it reads on dark paper, stamp #E05A5A.
+
+### Type
+
+| Role | Face | Where |
+| --- | --- | --- |
+| Display | Redaction 35 (degraded print cut), 700, with the ink filter | page headlines, the landing headline, form titles ("Pay advice", "What the explorer sees"), the company name |
+| Typewriter | Courier Prime 400 and 700 | navigation, buttons, form labels (spaced caps are allowed here because they are form labels), form values, table cells, transaction ids, keys, block heights, dates |
+| Dot matrix | DotGothic16 | the one large amount on a pay advice or payslip, and headline money figures |
+| Text | Libre Franklin 400 to 600 | paragraphs, descriptions, help text, toasts, dialogs' body text |
+
+Redaction and its degraded cuts are OFL 1.1 (fontsource packages `@fontsource/redaction`, `@fontsource/redaction-35`), loaded with next/font/local. The others come from next/font/google. Geist, Geist Mono, Inter, Instrument Sans and Bricolage are removed.
+
+The ink filter (an SVG feTurbulence plus feDisplacementMap at scale 1.4) is applied only to display type, the large amounts, redaction bars and the stamp. Paragraphs, tables and form values stay crisp. Reduced motion has no effect on it (it is static).
+
+### Components
+
+- Sheet: paper with texture, optional feed edges, optional tear line at the top or bottom.
+- Pay advice (form): title in display, a spaced-caps label line on the right ("ORIGINAL: FOR THE PAYEE"), green-bar rows of label and value in typewriter, the amount in dot matrix.
+- Carbon copy: same rows on canary; private values replaced by redaction bars sized to the hidden value; public values (txid, block, time, action count) printed in carbon ink; the stamp; a one-sentence note in text face.
+- Two copies: original and carbon side by side from 1024px, stacked below, with the tear line between them. Used on the landing page, run page (per payment, with the allocation as its own pair), payslip and proof.
+- Buttons: square, 2px ink border; primary is ink-filled with white typewriter text; secondary is outlined; destructive uses the stamp red outline. Focus ring: 2px offset outline in ink.
+- Tables: typewriter cells, green-bar rows, ruled header in spaced caps.
+- Tags: typewriter caps in a 1px box (like a form check box label); "Shielded" is a tiny stamp mark.
+- Inputs: typewriter text on a ruled baseline (bottom border only), labels in spaced caps.
+
+### Layout
+
+Left-aligned, generous margins like a printed form. Console: desk-grey sidebar with typewriter navigation; content on one sheet. Landing: one long continuous-form sheet with feed edges, the headline, the two copies, and the sections of section 16 in order, each starting after a tear line.
