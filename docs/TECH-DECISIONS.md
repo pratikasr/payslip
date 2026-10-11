@@ -191,6 +191,10 @@ Decision:
 
 Why: the run log, the overlap guard and the idempotency rules already make a run the unit of payroll; a schedule that creates draft runs and requests that become pay lines reuse all of it, so nothing about funding, paying or statements changes.
 
+## ADR-029 Recorded approvals (extends ADR-026) (11 Oct 2026)
+
+Launch plan increment 2 (docs/superpowers/specs/2026-10-11-launch-plan-design.md, Recorded approvals). Decision: the service, not the web app, holds the line. Migration 0007 adds `run_approvals` (one row per member per run: user, role, time) and `runs.created_by`. `PAYSLIP_APPROVALS_REQUIRED` is 1 by default with sign-in required and 0 with sign-in off (a policy without sign-in is refused at start: nobody could approve), so the testnet judge path does not change. `POST /api/runs/{id}/approve` sits in the guard's rule table under the same permission as every run write (admin, approver) and is audited as `run.approve`; the executor applies the policy in two places, `start` (409 `approvals_required`, checked before `not_funded` so the gate is named first) and the transition from `funded` or `awaiting_funds` to `swapping` (it waits and logs once), because a run resumed after a restart never went through `start`. At 2 or more the creator cannot approve their own run: the point of a second approval is a second person. Approval is allowed in `draft`, `awaiting_funds` and `funded` (and `failed` before the swap, so a stricter policy cannot strand a stopped run); funding is not held up, paying is. The web only hides a button the service would refuse (`web/src/lib/approvals.ts`); the Review step's Approve records the first approval at 1 and becomes "Send for approval" at 2 or more. Not chosen: an approval as a run status (it would widen the state machine for what is a count), and a signed approval payload (the token already names the member; the audit row and the run log carry the record).
+
 ## Verified facts
 
 Append one line per fact, with the date checked and the source. Agents append here as M0 items are resolved.

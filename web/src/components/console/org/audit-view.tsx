@@ -36,6 +36,7 @@ const ACTIONS: Record<string, string> = {
   "run.fund": "Funded a run",
   "run.deposit_tx": "Reported a deposit",
   "run.execute": "Executed a run",
+  "run.approve": "Approved a payroll run",
   "run.cancel": "Cancelled a run",
 };
 

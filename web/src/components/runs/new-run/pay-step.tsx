@@ -6,6 +6,7 @@ import { CircleCheck } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { useCoinUnit, useHealth } from "@/components/app/health-provider";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card } from "@/components/ds/card";
 import { KeyValues } from "@/components/ds/kv";
@@ -21,11 +22,13 @@ import {
 } from "@/components/ui/dialog";
 import type { StreamState } from "@/hooks/use-run-events";
 import { api, ApiError, toDisplayError, type PayLine, type Run, type RunLogEvent } from "@/lib/api";
+import { approvalState } from "@/lib/approvals";
 import { formatClock, formatHeight, formatTime } from "@/lib/format";
 import { lineConfirmedAt } from "@/lib/payroll";
 import { logSentence } from "@/lib/run-log";
 import { cn } from "cn";
 import { TYPE } from "@/components/ds/type";
+import { ApprovalStatus } from "../approvals";
 import { CancelRun } from "../cancel-run";
 import { Problem } from "../problem";
 import {
@@ -80,12 +83,16 @@ export function PayStep({
 
 function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
   const { health } = useHealth();
+  const auth = useAuth();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const n = run.lines.length;
   const { zat, reserve, testnet } = funded(run);
   const appFee = health?.app_fee_bps ?? 0;
+  // Pay waits for the approvals; the service refuses it before they are in.
+  const approvals = approvalState(run, auth);
+  const payBlocked = !!approvals && !approvals.met;
 
   const pay = async () => {
     setBusy(true);
@@ -136,7 +143,9 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       <H1>Pay {plural(n, "contractor")}</H1>
       <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
         Funded. Each contractor gets one shielded payment for {runTitle(run)}.
+        {payBlocked ? " The payments start once every required approval is in." : ""}
       </p>
+      {approvals ? <ApprovalStatus run={run} onRun={onRun} className="mt-4" /> : null}
 
       <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -159,7 +168,7 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       ) : null}
 
       <div className="mt-6">
-        <Button size="lg" onClick={() => setOpen(true)} disabled={busy}>
+        <Button size="lg" onClick={() => setOpen(true)} disabled={busy || payBlocked} aria-disabled={payBlocked}>
           Pay {plural(n, "contractor")}
         </Button>
       </div>

@@ -17,9 +17,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
 import { useRunEvents } from "@/hooks/use-run-events";
 import { api, type PayLine, type Run, type RunLogEvent } from "@/lib/api";
+import { approvable, approvalState } from "@/lib/approvals";
 import { formatDate, formatDateTime, formatRange, rateE6FromDecimal, truncateMiddle } from "@/lib/format";
 import { runCoin, runPaidAt } from "@/lib/payroll";
 import { cn } from "cn";
+import { useAuth } from "@/components/auth/auth-provider";
+import { ApprovalStatus } from "./approvals";
 import { AuditTrail } from "./audit-trail";
 import { CancelRun } from "./cancel-run";
 import { LineDrawer } from "./line-drawer";
@@ -196,7 +199,7 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
       <RunViews run={run} onShowPrivacy={showPrivacy} />
       <SummaryStrip run={run} />
 
-      <NextAction run={run} archived={archived.size} />
+      <NextAction run={run} archived={archived.size} onRun={(r) => fetched.setData(r)} />
       {canCancel(run) ? (
         <CancelRun
           run={run}
@@ -375,8 +378,13 @@ function SummaryStrip({ run }: { run: Run }) {
   );
 }
 
-/** Only while the run still needs funding or paying: what is next, and the way back into the flow. */
-function NextAction({ run, archived }: { run: Run; archived: number }) {
+/**
+ * Only while the run still needs funding or paying: what is next, and the way back into the flow.
+ * With approvals required, the card says where they stand and offers Approve to a member who may
+ * give the next one; Pay waits until the count is met (the service refuses it meanwhile).
+ */
+function NextAction({ run, archived, onRun }: { run: Run; archived: number; onRun: (run: Run) => void }) {
+  const auth = useAuth();
   if (run.status === "paid") return null;
   if (run.status === "cancelled") {
     return (
@@ -391,10 +399,13 @@ function NextAction({ run, archived }: { run: Run; archived: number }) {
   const href = `/console/runs/new?run=${run.id}`;
   const n = run.lines.length;
   const confirmed = confirmedCount(run.lines);
+  const approvals = approvalState(run, auth);
   let title: string;
   let text: React.ReactNode;
   let action: string;
   let warn = run.status === "failed";
+  // Pay is offered only once the approvals are in; the service refuses it before then.
+  let payBlocked = false;
   if (fundingClosed(run)) {
     // The quote can no longer be paid: say what happened, not "waiting for your deposit".
     const status = run.funding!.status;
@@ -416,8 +427,14 @@ function NextAction({ run, archived }: { run: Run; archived: number }) {
     text = "Payments keep going on the service. This page updates live.";
     action = "Follow progress";
   } else if (run.status === "funded") {
-    title = "Ready to pay";
-    text = `Funded. Send ${plural(n, "shielded payment")} when you are ready.`;
+    if (approvals && !approvals.met) {
+      title = `Funded, waiting for ${approvals.missing === 1 ? "one more approval" : "approvals"}`;
+      text = "The contractors are paid once every required approval is in.";
+      payBlocked = true;
+    } else {
+      title = "Ready to pay";
+      text = `Funded. Send ${plural(n, "shielded payment")} when you are ready.`;
+    }
     action = `Pay ${plural(n, "contractor")}`;
   } else if (run.status === "awaiting_funds") {
     title = "Waiting for your deposit";
@@ -428,6 +445,10 @@ function NextAction({ run, archived }: { run: Run; archived: number }) {
     text = `${plural(archived, "person", "people")} in this run ${archived === 1 ? "was" : "were"} archived after it was approved. Discard this run from the funding step and start a new one without them.`;
     action = "Open funding step";
     warn = true;
+  } else if (approvals && !approvals.met) {
+    title = approvals.approvals.length === 0 ? "Not approved yet" : "Waiting for approval";
+    text = "The run can be funded meanwhile; it is paid once every required approval is in.";
+    action = "Fund run";
   } else {
     title = "Approved, not funded yet";
     text = "Fund the run to pay the contractors.";
@@ -459,10 +480,17 @@ function NextAction({ run, archived }: { run: Run; archived: number }) {
             />
           </div>
         ) : null}
+        {approvals && approvable(run) ? <ApprovalStatus run={run} onRun={onRun} className="mt-3" /> : null}
       </div>
-      <Button asChild size="lg" className="self-start sm:self-center">
-        <Link href={href}>{action}</Link>
-      </Button>
+      {payBlocked ? (
+        <Button size="lg" className="self-start sm:self-center" disabled aria-disabled="true">
+          {action}
+        </Button>
+      ) : (
+        <Button asChild size="lg" className="self-start sm:self-center">
+          <Link href={href}>{action}</Link>
+        </Button>
+      )}
     </Card>
   );
 }

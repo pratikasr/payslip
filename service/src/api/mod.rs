@@ -478,6 +478,8 @@ struct Health {
     fund_with_zec: bool,
     /// PAYSLIP_MAX_RUN_USD_CENTS, the largest payroll one run may carry; None when no cap.
     max_run_usd_cents: Option<u64>,
+    /// PAYSLIP_APPROVALS_REQUIRED: approvals a run needs before it is paid; 0 when none.
+    approvals_required: u32,
 }
 
 /// Skew beyond which the server clock is reported as wrong (block times lag by minutes).
@@ -556,6 +558,7 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         auth: s.cfg.auth.mode.as_str(),
         fund_with_zec: s.cfg.fund_with_zec(),
         max_run_usd_cents: s.cfg.max_run_usd_cents,
+        approvals_required: s.cfg.auth.approvals_required,
         version: env!("CARGO_PKG_VERSION"),
         lightwalletd_error: err,
         clock_skew_seconds: skew,

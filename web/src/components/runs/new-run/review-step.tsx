@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ChevronDown, Lock } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
 import { Card } from "@/components/ds/card";
 import { KeyValues } from "@/components/ds/kv";
@@ -98,7 +99,12 @@ export function ReviewStep({
   // The approval restates who gets what: every line shows unless the run is long.
   const [open, setOpen] = useState(check.included.length <= SHOW_LINES_UP_TO);
   const { network } = useHealth();
+  const auth = useAuth();
   const testnet = network === "testnet" || health?.venue === "testnet-fixed-rate";
+  // With sign-in on, Approve records the run's first approval (the flow posts it after creating
+  // the run). With two or more required the creator cannot approve, so the button only submits.
+  const approvalsRequired = auth.required ? (health?.approvals_required ?? 0) : 0;
+  const othersApprove = approvalsRequired >= 2;
   const n = check.included.length;
   const title = periodTitle(draft.from, draft.to);
   const amounts = check.included.map((c) => parseUsdToCents(draft.lines[c.id].amount) ?? 0);
@@ -343,13 +349,31 @@ export function ReviewStep({
           Back
         </Button>
         <Button size="lg" onClick={onApprove} disabled={busy || !check.valid}>
-          {busy ? "Approving" : "Approve"}
+          {busy ? (othersApprove ? "Sending" : "Approving") : othersApprove ? "Send for approval" : "Approve"}
         </Button>
       </div>
       <p className="mt-3 max-w-[56ch] text-[0.8125rem] leading-relaxed text-muted-foreground">
-        By clicking Approve, I authorise Payslip to pay the {plural(n, "contractor")} above a total of{" "}
-        <Usd cents={check.totalCents} /> from the treasury. Nothing is sent until I confirm the funding and the payment.
+        {othersApprove ? (
+          <>
+            By clicking Send for approval, I confirm the {plural(n, "contractor")} above and a total of{" "}
+            <Usd cents={check.totalCents} />. {countWord(approvalsRequired)} other admins or approvers must approve the
+            run before anything is paid; I cannot approve a run I created.
+          </>
+        ) : (
+          <>
+            By clicking Approve, I authorise Payslip to pay the {plural(n, "contractor")} above a total of{" "}
+            <Usd cents={check.totalCents} /> from the treasury.
+            {approvalsRequired === 1 ? " This is recorded as the run's approval." : ""} Nothing is sent until I confirm
+            the funding and the payment.
+          </>
+        )}
       </p>
     </div>
   );
+}
+
+const COUNT_WORDS = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
 }

@@ -425,6 +425,8 @@ pub async fn tick(pool: &Pool, today: Date) -> anyhow::Result<TickOutcome> {
                 period_start: &s.next_period_start,
                 period_end: &s.next_period_end,
                 allow_overlap: false,
+                // The schedule drafts the run, so no member created it and every approver may approve it.
+                created_by: None,
             };
             let run_id = match db::create_run(pool, &run, &new_lines).await? {
                 RunInsert::Created(id) => {
