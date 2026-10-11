@@ -2,6 +2,9 @@
 .env
 .env.*
 !.env.example
+deploy/payslip.env
+deploy/aws/outputs.env
+deploy/aws/outputs-*.env
 *.seed
 *.key
 wallet.db*

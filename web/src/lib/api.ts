@@ -4,6 +4,9 @@
   cents, rates in USD per ZEC times 1,000,000.
 */
 
+// A value of "/" means the page's own origin (API_URL becomes ""): a proxy in front of the web app
+// sends /api/* to the service, so the browser never crosses origins (deploy/). The Next server
+// cannot use a relative base; its reads go through PAYSLIP_API_INTERNAL_URL (lib/server-api.ts).
 export const API_URL = (process.env.NEXT_PUBLIC_PAYSLIP_API_URL?.trim() || "http://127.0.0.1:8080").replace(/\/+$/, "");
 
 export type Network = "mainnet" | "testnet";
@@ -557,7 +560,7 @@ function unreachable(): ApiError {
 /** For whoever runs Payslip: where the web app expects the service and what it must allow. */
 export function serviceSetupHint(): string {
   const origin = typeof window === "undefined" ? "this web app's origin" : window.location.origin;
-  return `Start it with: cd service && cargo run. If it is already running, check that NEXT_PUBLIC_PAYSLIP_API_URL points at it (now ${API_URL}) and that the service's PAYSLIP_WEB_ORIGIN includes ${origin}.`;
+  return `Start it with: cd service && cargo run. If it is already running, check that NEXT_PUBLIC_PAYSLIP_API_URL points at it (now ${API_URL || "this origin"}) and that the service's PAYSLIP_WEB_ORIGIN includes ${origin}.`;
 }
 
 function isErrorBody(value: unknown): value is { error: ApiErrorBody } {

@@ -48,7 +48,7 @@ Payslip's claim is "private to the world, transparent to your accountant". Each 
 2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power). On a statements-only Payslip (below), choose Viewing as Accountant (Books), then Import key file: every run, every line, funded against paid, read from the chain. Choose Viewing as Contractor and paste one contractor key: that person's payslips and nothing else. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
-There is no hosted statements page yet (it needs a hosting account; see M7 under Status). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
+There is no hosted statements page yet; the runbook that puts one on AWS is [deploy/README.md](deploy/README.md) (see Hosting below). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
 
 1. From the repository root, start the service in statements-only mode. It stays in the foreground:
 
@@ -160,6 +160,10 @@ On testnet there is no USDC venue (1Click has no testnet), so a clearly labelled
 4. Run it again with `--yes` and deposit the USDC it asks for from the web app's Fund step.
 
 The full runbook is in [docs/DEMO.md](docs/DEMO.md).
+
+## Hosting
+
+`deploy/` has everything for a hosted Payslip: container images for the service and the web app, a compose file that runs the public statements page (`books`: statements-only service, no seed) and the company console (`app`: full service, behind basic auth) on one host, and scripts that create and remove the AWS resources (one EC2 instance behind two CloudFront distributions, encrypted backups to S3). The runbook from a fresh AWS account to a working statements page with the judge kit, with update, rollback and restore, is [deploy/README.md](deploy/README.md).
 
 ## Tests
 

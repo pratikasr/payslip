@@ -1,0 +1,15 @@
+# Build context for deploy/Dockerfile.web is the repository root. Send the web app without its
+# installed modules, previous builds, env files, screenshots and browser test output.
+*
+!web/
+web/node_modules/
+web/.next/
+web/out/
+web/.env
+web/.env.*
+web/screenshots/
+web/test-results/
+web/playwright-report/
+web/public/zxing/
+web/e2e/
+web/*.tsbuildinfo
