@@ -756,8 +756,14 @@ mod signin {
         format!("http://{addr}/api/auth/jwks")
     }
 
-    /// A full-mode service with sign-in required, checking tokens against `jwks_url`.
+    /// A full-mode service with sign-in required, checking tokens against `jwks_url`, with the
+    /// default approval policy (one approval per run).
     pub async fn start(jwks_url: &str, bootstrap: Option<&str>) -> (Service, Pool) {
+        start_with(jwks_url, bootstrap, 1).await
+    }
+
+    /// As [`start`], requiring `approvals_required` approvals before a run is paid.
+    pub async fn start_with(jwks_url: &str, bootstrap: Option<&str>, approvals_required: u32) -> (Service, Pool) {
         let dir = tempfile::tempdir().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -769,6 +775,7 @@ mod signin {
             issuer: ISSUER.into(),
             audience: AUDIENCE.into(),
             bootstrap_admin_email: bootstrap.map(|b| b.to_string()),
+            approvals_required,
         };
         let db = db::open(&cfg.app_db_path()).await.unwrap();
         let venue = payslip::venue::build(&cfg).unwrap();
@@ -781,7 +788,8 @@ mod signin {
             Duration::from_millis(5),
             1,
         )
-        .with_run_cap(cfg.max_run_usd_cents);
+        .with_run_cap(cfg.max_run_usd_cents)
+        .with_approvals_required(cfg.auth.approvals_required);
         let state = Arc::new(AppState {
             viewers: ViewerRegistry::new(&cfg),
             db: db.clone(),
@@ -1421,6 +1429,7 @@ async fn the_role_matrix_covers_every_payer_route() {
             Need::None,
         ),
         ("POST", "/api/runs/{id}/execute", json!({}), RUNS, Need::None),
+        ("POST", "/api/runs/{id}/approve", json!({}), RUNS, Need::None),
         ("POST", "/api/runs/{id}/cancel", json!({}), RUNS, Need::DraftRun),
         ("GET", "/api/runs/{id}/events", Value::Null, ALL, Need::None),
         ("GET", "/api/runs/{id}/log", Value::Null, ALL, Need::None),
@@ -1483,7 +1492,7 @@ async fn the_role_matrix_covers_every_payer_route() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 32 * 4);
+    assert_eq!(checked, 33 * 4);
 }
 
 /// Every write leaves an audit row naming who (user and role), what (action and target) and
@@ -1758,6 +1767,340 @@ async fn fund_with_zec_answers_the_treasury_address_amount_rate_and_deadline() {
     let statements = start().await;
     let (_, h) = statements.get("/api/health").await;
     assert_eq!(h["fund_with_zec"], json!(false));
+}
+
+// =============================================================================================
+// Recorded approvals (migration 0007): named members approve a run before money moves.
+
+/// Admins and approvers approve a run once each (the guard refuses the other roles); with two
+/// approvals required the run's creator cannot be one of them; the run JSON lists who approved
+/// and how many are required; every approval is on the audit log and in the run's log.
+#[tokio::test]
+async fn approvals_by_each_role_once_each_and_never_the_creator_at_two() {
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start_with(&jwks, Some("owner@acme.test"), 2).await;
+    let (_, h) = s.get("/api/health").await;
+    assert_eq!(h["approvals_required"], json!(2));
+    let admin = key.token("owner@acme.test", 300, json!({ "name": "Owner" }));
+    signin::me(&s, &admin).await;
+    let approver = key.token("approver@acme.test", 300, json!({ "name": "Ann Approver" }));
+    signin::join(&s, &admin, "approver@acme.test", "approver", &approver).await;
+    let second = key.token("second@acme.test", 300, json!({}));
+    signin::join(&s, &admin, "second@acme.test", "admin", &second).await;
+    let accountant = key.token("accountant@acme.test", 300, json!({}));
+    signin::join(&s, &admin, "accountant@acme.test", "accountant", &accountant).await;
+    let viewer = key.token("viewer@acme.test", 300, json!({}));
+    signin::join(&s, &admin, "viewer@acme.test", "viewer", &viewer).await;
+    let c = contractor(&pool, 1).await;
+    let (st, run) = s
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-1")),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    assert_eq!(run["approvals"], json!([]));
+    assert_eq!(run["approvals_required"], json!(2));
+    assert_eq!(run["created_by"], json!("user-owner"), "the creator is recorded");
+    let path = format!("/api/runs/{run_id}/approve");
+    // The guard: accountants and viewers cannot approve.
+    for (role, token) in [("accountant", &accountant), ("viewer", &viewer)] {
+        let (st, v) = s.req("POST", &path, Some(token), Some(json!({}))).await;
+        assert_eq!((st, code(&v)), (403, "forbidden"), "{role}: {v}");
+    }
+    // The creator, with two required.
+    let (st, v) = s.req("POST", &path, Some(&admin), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (403, "creator_cannot_approve"), "{v}");
+    assert!(has_hint(&v));
+    // One approval per member.
+    let (st, v) = s.req("POST", &path, Some(&approver), Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    let a = v["approvals"].as_array().unwrap();
+    assert_eq!(a.len(), 1, "{v}");
+    assert_eq!(a[0]["user_id"], json!("user-approver"));
+    assert_eq!(a[0]["name"], json!("Ann Approver"));
+    assert_eq!(a[0]["email"], json!("approver@acme.test"));
+    assert_eq!(a[0]["role"], json!("approver"));
+    assert!(a[0]["at"].as_str().unwrap().ends_with('Z'));
+    let (st, v) = s.req("POST", &path, Some(&approver), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "already_approved"), "{v}");
+    assert!(has_hint(&v));
+    let (st, v) = s.req("POST", &path, Some(&second), Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    let a = v["approvals"].as_array().unwrap();
+    assert_eq!(a.len(), 2, "{v}");
+    assert_eq!(a[1]["user_id"], json!("user-second"));
+    assert_eq!(a[1]["role"], json!("admin"));
+    assert_eq!(v["approvals_required"], json!(2));
+    // Reads carry the same.
+    let (_, v) = s.req("GET", &format!("/api/runs/{run_id}"), Some(&viewer), None).await;
+    assert_eq!(v["approvals"].as_array().unwrap().len(), 2);
+    // The audit log: one row per approval, by whom, as which role, with the count.
+    let (st, v) = s.req("GET", "/api/org/audit", Some(&admin), None).await;
+    assert_eq!(st, 200, "{v}");
+    let rows: Vec<&Value> = v["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["action"] == json!("run.approve"))
+        .collect();
+    assert_eq!(rows.len(), 2, "{v}");
+    // Newest first.
+    assert_eq!(rows[0]["user"]["email"], json!("second@acme.test"));
+    assert_eq!(rows[0]["role"], json!("admin"));
+    assert_eq!(rows[0]["target"], json!(run_id));
+    assert_eq!(rows[0]["details"]["approvals"], json!(2));
+    assert_eq!(rows[0]["details"]["approvals_required"], json!(2));
+    assert_eq!(rows[1]["user"]["email"], json!("approver@acme.test"));
+    assert_eq!(rows[1]["role"], json!("approver"));
+    assert_eq!(rows[1]["details"]["approvals"], json!(1));
+    // Refused approvals leave no row: two run.approve rows for six attempts.
+    let recorded: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'run.approve'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(recorded, 2);
+    // The run's own log names each approval, for the audit trail on the run page.
+    let (_, v) = s
+        .req("GET", &format!("/api/runs/{run_id}/log"), Some(&admin), None)
+        .await;
+    let messages: Vec<&str> = v["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["message"].as_str().unwrap())
+        .collect();
+    assert!(
+        messages.contains(&"Approved by Ann Approver (approver), approval 1 of 2"),
+        "{messages:?}"
+    );
+    assert!(
+        messages.contains(&"Approved by second (admin), approval 2 of 2"),
+        "{messages:?}"
+    );
+}
+
+/// Execute is refused with `approvals_required`, naming how many are missing, until the
+/// approvals are in, whatever else the run still needs; then it is accepted. A run can only be
+/// approved before it is paid: not once cancelled, nor once past its swap.
+#[tokio::test]
+async fn execute_is_refused_until_the_approvals_are_in() {
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start_with(&jwks, Some("owner@acme.test"), 2).await;
+    let admin = key.token("owner@acme.test", 300, json!({ "name": "Owner" }));
+    signin::me(&s, &admin).await;
+    let approver = key.token("approver@acme.test", 300, json!({ "name": "Ann" }));
+    signin::join(&s, &admin, "approver@acme.test", "approver", &approver).await;
+    let second = key.token("second@acme.test", 300, json!({ "name": "Ben" }));
+    signin::join(&s, &admin, "second@acme.test", "approver", &second).await;
+    let c = contractor(&pool, 1).await;
+    let (st, run) = s
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-1")),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    let execute = format!("/api/runs/{run_id}/execute");
+    let approve = format!("/api/runs/{run_id}/approve");
+    let (st, v) = s.req("POST", &execute, Some(&admin), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "approvals_required"), "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("2 more approvals") && message.contains("0 of 2"),
+        "{v}"
+    );
+    assert!(has_hint(&v));
+    // Funding is not held up by approvals. The testnet venue needs a chain this service does not
+    // have, so the run is marked funded directly, as a venue's deposit would.
+    assert!(db::transition(&pool, &run_id, &["draft"], "funded").await.unwrap());
+    let (st, v) = s.req("POST", &approve, Some(&approver), Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["status"], json!("funded"));
+    let (st, v) = s.req("POST", &execute, Some(&approver), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "approvals_required"), "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("1 more approval") && message.contains("1 of 2"), "{v}");
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+    // A refused execute leaves the run alone, and no audit row.
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'run.execute'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 0);
+    let (st, v) = s.req("POST", &approve, Some(&second), Some(json!({}))).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = s.req("POST", &execute, Some(&admin), Some(json!({}))).await;
+    assert_eq!(st, 202, "{v}");
+    assert_eq!(v["approvals"].as_array().unwrap().len(), 2);
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'run.execute'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows, 1);
+    // Only a run that has not been paid can be approved.
+    let (st, other) = s
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-10-01", "2026-10-31", &[(&c, 480_000, "INV-2")], "k-2")),
+        )
+        .await;
+    assert_eq!(st, 201, "{other}");
+    let other_id = other["id"].as_str().unwrap().to_string();
+    let other_approve = format!("/api/runs/{other_id}/approve");
+    assert!(db::transition(&pool, &other_id, &["draft"], "paid").await.unwrap());
+    let (st, v) = s.req("POST", &other_approve, Some(&approver), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "run_not_approvable"), "{v}");
+    assert!(db::transition(&pool, &other_id, &["paid"], "cancelled").await.unwrap());
+    let (st, v) = s.req("POST", &other_approve, Some(&approver), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "run_cancelled"), "{v}");
+
+    // With one approval required the creator approves their own run, as the Review step does.
+    let (s1, pool1) = signin::start_with(&jwks, Some("owner@acme.test"), 1).await;
+    signin::me(&s1, &admin).await;
+    let c1 = contractor(&pool1, 1).await;
+    let (st, run) = s1
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-09-01", "2026-09-30", &[(&c1, 480_000, "INV-1")], "k-1")),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let id1 = run["id"].as_str().unwrap().to_string();
+    let execute1 = format!("/api/runs/{id1}/execute");
+    let (st, v) = s1.req("POST", &execute1, Some(&admin), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "approvals_required"), "{v}");
+    let (st, v) = s1
+        .req(
+            "POST",
+            &format!("/api/runs/{id1}/approve"),
+            Some(&admin),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["approvals"][0]["user_id"], json!("user-owner"));
+    // Approved; what the run still needs is funding.
+    let (st, v) = s1.req("POST", &execute1, Some(&admin), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (409, "not_funded"), "{v}");
+}
+
+/// With sign-in off nothing changes: runs need no approvals and carry none, execute answers as
+/// before, and an approval cannot be recorded. With sign-in on and the policy at 0, the same.
+#[tokio::test]
+async fn auth_off_needs_no_approvals() {
+    let (s, pool) = start_full().await;
+    let (_, h) = s.get("/api/health").await;
+    assert_eq!(h["approvals_required"], json!(0));
+    let c = contractor(&pool, 1).await;
+    let (st, run) = s
+        .post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-1"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    assert_eq!(run["approvals"], json!([]));
+    assert_eq!(run["approvals_required"], json!(0));
+    assert_eq!(run["created_by"], Value::Null);
+    let (st, v) = s.post(&format!("/api/runs/{run_id}/execute"), json!({})).await;
+    assert_eq!((st, code(&v)), (409, "not_funded"), "{v}");
+    let (st, v) = s.post(&format!("/api/runs/{run_id}/approve"), json!({})).await;
+    assert_eq!((st, code(&v)), (409, "signin_off"), "{v}");
+    assert!(has_hint(&v));
+    let (st, _) = s
+        .delete(&format!("/api/runs/{run_id}"), Some("application/json"), "")
+        .await;
+    assert_eq!(st, 204);
+
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start_with(&jwks, Some("owner@acme.test"), 0).await;
+    let admin = key.token("owner@acme.test", 300, json!({}));
+    signin::me(&s, &admin).await;
+    let c = contractor(&pool, 1).await;
+    let (st, run) = s
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-1")),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    assert_eq!(run["created_by"], json!("user-owner"));
+    assert_eq!(run["approvals_required"], json!(0));
+    let (st, v) = s
+        .req(
+            "POST",
+            &format!("/api/runs/{run_id}/approve"),
+            Some(&admin),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "approvals_off"), "{v}");
+    let (st, v) = s
+        .req(
+            "POST",
+            &format!("/api/runs/{run_id}/execute"),
+            Some(&admin),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "not_funded"), "{v}");
+}
+
+/// A draft that was approved can still be discarded: its approvals go with it.
+#[tokio::test]
+async fn an_approved_draft_can_be_discarded() {
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start(&jwks, Some("owner@acme.test")).await;
+    let admin = key.token("owner@acme.test", 300, json!({}));
+    signin::me(&s, &admin).await;
+    let c = contractor(&pool, 1).await;
+    let (st, run) = s
+        .req(
+            "POST",
+            "/api/runs",
+            Some(&admin),
+            Some(run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-1")),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    let (st, v) = s
+        .req(
+            "POST",
+            &format!("/api/runs/{run_id}/approve"),
+            Some(&admin),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = s
+        .req("DELETE", &format!("/api/runs/{run_id}"), Some(&admin), Some(json!({})))
+        .await;
+    assert_eq!(st, 204, "{v}");
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM run_approvals")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
 }
 
 /// PAYSLIP_MAX_RUN_USD_CENTS: a payroll over the cap is refused when the run is created, with

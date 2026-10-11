@@ -1924,6 +1924,159 @@ async fn a_run_over_the_cap_is_refused() {
     assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
 }
 
+// =============================================================================================
+// Recorded approvals (migration 0007): the executor moves no money on a run short of them.
+
+use payslip::auth::{store, Claims, Role};
+
+/// A member of the organisation, as the guard would create one from a sign-in token.
+async fn member(pool: &Pool, email: &str, name: &str) -> store::User {
+    let claims = Claims {
+        sub: format!("user-{}", email.split('@').next().unwrap()),
+        email: Some(email.into()),
+        email_verified: true,
+        name: Some(name.into()),
+        picture: None,
+        google_sub: None,
+        sid: None,
+        exp: 0,
+    };
+    store::find_or_create_user(pool, &claims, email).await.unwrap().unwrap()
+}
+
+/// The service-side transition from `funded` to `swapping` waits for the approvals: a run driven
+/// short of them (as a restart resumes a run executed under an earlier policy) stays funded,
+/// says so once, and pays once the approval is recorded. `start` refuses it meanwhile, naming
+/// what is missing.
+#[tokio::test]
+async fn the_swap_is_recorded_only_once_the_run_is_approved() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue()).with_approvals_required(1);
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+    let err = exec.start(&run_id).await.unwrap_err();
+    assert_eq!(err.body.code, "approvals_required");
+    assert!(err.body.message.contains("1 more approval"), "{}", err.body.message);
+    assert!(!exec.is_running(&run_id));
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+    // Driven anyway: the run waits in `funded`, and the log says so once.
+    let driver = {
+        let exec = exec.clone();
+        let run_id = run_id.clone();
+        tokio::spawn(async move { exec.drive(&run_id).await })
+    };
+    for _ in 0..30 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+    }
+    assert!(!driver.is_finished());
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "funded");
+    assert!(r.allocation_txid.is_none());
+    let waits = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.message == "Waiting for 1 more approval before the swap is recorded")
+        .count();
+    assert_eq!(waits, 1, "said once, not once per poll");
+    // The approval arrives; the same driver records the swap and pays.
+    let owner = member(&pool, "owner@acme.test", "Owner").await;
+    exec.approve(&run_id, &owner, Role::Admin).await.unwrap();
+    let again = exec.approve(&run_id, &owner, Role::Admin).await.unwrap_err();
+    assert_eq!(again.body.code, "already_approved");
+    for _ in 0..4000 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        if driver.is_finished() {
+            break;
+        }
+    }
+    assert!(driver.is_finished(), "the run did not finish");
+    driver.await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
+    let messages: Vec<String> = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.message)
+        .collect();
+    assert!(
+        messages.contains(&"Approved by Owner (admin), approval 1 of 1".to_string()),
+        "{messages:?}"
+    );
+    // A paid run can no longer be approved.
+    let other = member(&pool, "other@acme.test", "Other").await;
+    let late = exec.approve(&run_id, &other, Role::Approver).await.unwrap_err();
+    assert_eq!(late.body.code, "run_not_approvable");
+}
+
+/// The same on the USDC path: a venue already swapping the deposit does not move the run to
+/// `swapping` until the approvals are in; a restart that resumes the run finds it waiting. With
+/// two required, the creator's approval is refused and one of two is not enough.
+#[tokio::test]
+async fn a_resumed_run_waits_for_its_approvals_before_the_swap_is_recorded() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(0);
+    let venue: Arc<dyn SwapVenue> = Arc::new(PollVenue {
+        script: Mutex::new(vec!["processing"]),
+    });
+    let exec = executor(&pool, &chain, venue).with_approvals_required(2);
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, Some("base".into()), Some("0xrefund".into()))
+        .await
+        .unwrap();
+    // Executed under an earlier policy, then the service restarts.
+    db::set_execute_requested(&pool, &run_id, true).await.unwrap();
+    exec.resume_all().await;
+    tokio::time::sleep(Duration::from_millis(60)).await;
+    assert!(exec.is_running(&run_id));
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "awaiting_funds", "never swapping without approvals");
+    let waits = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.message == "Waiting for 2 more approvals before the swap is recorded")
+        .count();
+    assert_eq!(waits, 1);
+    // The creator cannot be one of the two.
+    let owner = member(&pool, "owner@acme.test", "Owner").await;
+    sqlx::query("UPDATE runs SET created_by = ? WHERE id = ?")
+        .bind(&owner.id)
+        .bind(&run_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let refused = exec.approve(&run_id, &owner, Role::Admin).await.unwrap_err();
+    assert_eq!(refused.body.code, "creator_cannot_approve");
+    let ann = member(&pool, "ann@acme.test", "Ann").await;
+    let ben = member(&pool, "ben@acme.test", "Ben").await;
+    exec.approve(&run_id, &ann, Role::Approver).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(40)).await;
+    assert_eq!(
+        db::get_run(&pool, &run_id).await.unwrap().unwrap().status,
+        "awaiting_funds",
+        "one of two is not enough"
+    );
+    exec.approve(&run_id, &ben, Role::Admin).await.unwrap();
+    for _ in 0..100 {
+        tokio::time::sleep(Duration::from_millis(5)).await;
+        if db::get_run(&pool, &run_id).await.unwrap().unwrap().status == "swapping" {
+            break;
+        }
+    }
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "swapping");
+    let approvals = db::approvals(&pool, &run_id).await.unwrap();
+    assert_eq!(
+        approvals.iter().map(|a| a.role.as_str()).collect::<Vec<_>>(),
+        ["approver", "admin"]
+    );
+}
+
 /// Two runs await ZEC and one deposit arrives: the earlier run takes it, the later one keeps
 /// waiting with the earlier run's claim held back from what it sees, and a second deposit funds
 /// it. Both then pay from the one treasury.

@@ -319,6 +319,8 @@ pub fn rule(method: &Method, template: &str) -> Rule {
         ("POST", "/api/runs/{id}/funding/deposit-tx") => write(ManageRuns, "run.deposit_tx"),
         ("POST", "/api/runs/{id}/execute") => write(ManageRuns, "run.execute"),
         ("POST", "/api/runs/{id}/cancel") => write(ManageRuns, "run.cancel"),
+        // Recorded approvals (migration 0007): admins and approvers, like every run write.
+        ("POST", "/api/runs/{id}/approve") => write(ManageRuns, "run.approve"),
         ("PATCH", "/api/org") => write(ManageOrg, "org.update"),
         ("POST", "/api/org/members") => write(ManageOrg, "member.role"),
         ("DELETE", "/api/org/members/{user_id}") => write(ManageOrg, "member.remove"),
@@ -617,6 +619,9 @@ mod tests {
     fn every_payer_write_is_audited_and_reads_are_open_to_members() {
         let r = rule(&Method::POST, "/api/runs/{id}/execute");
         assert_eq!((r.permission, r.action), (Permission::ManageRuns, Some("run.execute")));
+        let r = rule(&Method::POST, "/api/runs/{id}/approve");
+        assert_eq!((r.permission, r.action), (Permission::ManageRuns, Some("run.approve")));
+        assert!(Role::Approver.allows(r.permission) && !Role::Accountant.allows(r.permission));
         let r = rule(&Method::GET, "/api/runs/{id}/events");
         assert_eq!((r.permission, r.action), (Permission::Read, None));
         let r = rule(&Method::GET, "/api/viewing-keys");

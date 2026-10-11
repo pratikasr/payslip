@@ -291,6 +291,18 @@ One word per state, defined once in `web/src/components/runs/run-meta.tsx` and d
 | `cancelled` | Cancelled | Closed before any money reached it. Nobody was paid. |
 | awaiting funds with a closed quote | Quote expired (amber), Refunded (amber), Swap failed (red) | What happened to the funding, when that is the news. |
 
+Approvals (sign-in on with `PAYSLIP_APPROVALS_REQUIRED` above 0; `web/src/lib/approvals.ts`, shown by `components/runs/approvals.tsx` on the run page's next-action card and the Pay step; nothing of this appears with sign-in off). One sentence, the same everywhere, with Approve beside it for a member who may give the next approval; the service decides and the page only hides a button it would refuse.
+
+| Approval state | Sentence | Where it leads |
+| --- | --- | --- |
+| none recorded, one required | Waiting for one approval. | Approve, for an admin or approver. |
+| none recorded, two or more required | Waiting for two approvals. | Approve, for an admin or approver who did not create the run; the creator reads "You created this run, so its approvals come from other admins or approvers." |
+| some recorded, more needed | Approved by Amara, waiting for one more. | Approve, unless the reader already approved ("You approved it; another admin or approver gives the next approval."). On a funded run the card says "Funded, waiting for one more approval" and Pay is disabled. |
+| count met | Approved by Amara and Ben. | Fund run, or Pay. |
+| Review step, one required | Approve | Creates the run and records the first approval ("This is recorded as the run's approval."). |
+| Review step, two or more required | Send for approval | Creates the run; "Two other admins or approvers must approve the run before anything is paid; I cannot approve a run I created." |
+| audit trail | Approved by Amara (admin), "Approval 1 of 2."; Waiting for one more approval before the swap is recorded (amber) | The run's log lines, in the timeline; with approvals on, the first entry reads "Created: 3 payments" rather than "Approved". |
+
 | Pay line | Where payments are listed | Meaning |
 | --- | --- | --- |
 | `confirmed` | the gold Shielded mark (dot and word; "Shielded · USDC" for a line paid out as USDC), with the paid time when the service gives `confirmed_at` | Nothing is wrong, so the row says what makes it different: amount, sender and recipient are hidden on chain (the tooltip). No grey "Paid" chip. |

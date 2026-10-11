@@ -1,13 +1,16 @@
-//! Runs: create, fund, execute, progress over SSE.
+//! Runs: create, approve, fund, execute, progress over SSE.
 
 use std::{convert::Infallible, time::Duration};
 
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    response::sse::{Event, KeepAlive, Sse},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{get, post},
-    Json, Router,
+    Extension, Json, Router,
 };
 use futures_util::{Stream, StreamExt};
 use serde::Deserialize;
@@ -17,6 +20,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use super::AppStateRef;
 use crate::{
+    auth::{AuditInfo, Identity},
     db::{self, NewLine, NewRun, RunInsert, RunRow},
     error::{ApiError, ApiResult},
     memo,
@@ -27,6 +31,7 @@ pub fn routes() -> Router<AppStateRef> {
     Router::new()
         .route("/api/runs", get(list).post(create))
         .route("/api/runs/{id}", get(get_one).delete(discard))
+        .route("/api/runs/{id}/approve", post(approve))
         .route("/api/runs/{id}/fund", post(fund))
         .route("/api/runs/{id}/funding", get(funding))
         .route("/api/runs/{id}/funding/deposit-tx", post(deposit_tx))
@@ -145,7 +150,13 @@ async fn discard(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiRes
     }
 }
 
-async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> ApiResult<(StatusCode, Json<Value>)> {
+async fn create(
+    State(s): State<AppStateRef>,
+    // The signed-in member (ADR-026); absent with sign-in off.
+    identity: Option<Extension<Identity>>,
+    Json(input): Json<CreateRun>,
+) -> ApiResult<(StatusCode, Json<Value>)> {
+    let created_by = identity.as_ref().map(|i| i.user.id.clone());
     let hash = request_hash(&input);
     if let Some(key) = input.idempotency_key.as_deref() {
         if key.is_empty() || key.len() > 100 {
@@ -248,6 +259,7 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
         }
     }
     let run = NewRun {
+        created_by: created_by.as_deref(),
         idempotency_key: input.idempotency_key.as_deref(),
         request_hash: Some(&hash),
         period_start: &input.period_start,
@@ -321,6 +333,37 @@ async fn deposit_tx(
 async fn execute(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<(StatusCode, Json<Value>)> {
     s.executor()?.start(&id).await?;
     Ok((StatusCode::ACCEPTED, Json(view(&s, &id).await?)))
+}
+
+/// Records the signed-in member's approval of the run (ADR-026, migration 0007). The guard has
+/// already checked the role (admin or approver) and writes the audit row; the executor applies
+/// the run's state, the creator rule and one approval per member.
+async fn approve(
+    State(s): State<AppStateRef>,
+    identity: Option<Extension<Identity>>,
+    Path(id): Path<String>,
+) -> ApiResult<Response> {
+    let Some(Extension(identity)) = identity else {
+        return Err(ApiError::conflict(
+            "signin_off",
+            "Approvals need sign-in: with PAYSLIP_AUTH=off there is nobody to record.",
+            "Set PAYSLIP_AUTH=required and PAYSLIP_APPROVALS_REQUIRED on the service (README, Sign-in).",
+        ));
+    };
+    let member = identity.member()?;
+    let executor = s.executor()?;
+    executor.approve(&id, &identity.user, member.role).await?;
+    let run = view(&s, &id).await?;
+    let recorded = run["approvals"].as_array().map(|a| a.len()).unwrap_or(0);
+    let mut res = Json(&run).into_response();
+    res.extensions_mut().insert(AuditInfo {
+        target: Some(id),
+        details: Some(json!({
+            "approvals": recorded,
+            "approvals_required": executor.approvals_required(),
+        })),
+    });
+    Ok(res)
 }
 
 async fn cancel(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<Json<Value>> {

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { UsersRound } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
+import { useAuth } from "@/components/auth/auth-provider";
 import { FocusShell } from "@/components/shell/focus-shell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,6 +104,7 @@ function DraftFlow({
 }) {
   const router = useRouter();
   const { health } = useHealth();
+  const auth = useAuth();
   const contractors = useResource((s) => api.contractors(s), "flow-contractors");
   const runs = useResource((s) => api.runs(s), "flow-runs");
   const wallet = useResource((s) => api.wallet(s), "flow-wallet");
@@ -166,6 +168,17 @@ function DraftFlow({
         setMismatch({ id: run.id, run });
         setBusy(false);
         return;
+      }
+      // With sign-in on and one approval required, Approve is that approval. With two or more the
+      // creator cannot give one, so the run goes on unapproved and the run page asks the others.
+      // A failure here is not a failure to create the run: the run page shows the approval state
+      // and offers Approve again.
+      if (auth.required && (run.approvals_required ?? 0) === 1) {
+        try {
+          await api.approveRun(run.id);
+        } catch {
+          // The run page says where the approvals stand.
+        }
       }
       clearStored();
       router.replace(`${BASE}?run=${run.id}`);
