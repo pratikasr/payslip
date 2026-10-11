@@ -325,6 +325,15 @@ pub async fn list_runs(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
         .await?)
 }
 
+/// Every run in the order it was created: `created_at` has whole seconds, so the row order
+/// breaks ties (runs created in the same second). Fund with ZEC claims the treasury balance in
+/// this order (ADR-025).
+pub async fn runs_oldest_first(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
+    Ok(sqlx::query_as("SELECT * FROM runs ORDER BY created_at ASC, rowid ASC")
+        .fetch_all(pool)
+        .await?)
+}
+
 /// A run's lines. The payout details (address, settlement, USDC chain and address) are the ones
 /// fixed when the run was funded; a draft shows the contractor's current ones.
 pub async fn lines(pool: &Pool, run_id: &str) -> anyhow::Result<Vec<LineRow>> {

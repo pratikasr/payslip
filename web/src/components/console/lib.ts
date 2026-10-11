@@ -187,13 +187,15 @@ export function isSimulated(run: Run): boolean {
 }
 
 /**
- * Where a run's money came from, in words: "USDC on Base", or on testnet "From the
- * testnet treasury" (the testnet venue earmarks coins already in the treasury; no money arrives).
+ * Where a run's money came from, in words: "USDC on Base", "ZEC sent to the treasury" (Fund
+ * with ZEC), or on testnet "From the testnet treasury" (the testnet venue earmarks coins already
+ * in the treasury; no money arrives).
  */
 export function fundingSource(run: Run): string {
   const f = run.funding;
   if (!f) return "Not funded";
   if (f.venue === "testnet-fixed-rate") return "From the testnet treasury";
+  if (f.venue === "treasury") return "ZEC sent to the treasury";
   const chain = f.origin_chain ? f.origin_chain.charAt(0).toUpperCase() + f.origin_chain.slice(1) : null;
   return chain ? `${f.origin_asset} on ${chain}` : f.origin_asset;
 }

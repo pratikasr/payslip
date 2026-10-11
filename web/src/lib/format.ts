@@ -198,6 +198,7 @@ export const VENUE_LABELS: Record<string, string> = {
   "near-intents-1click": "NEAR Intents 1Click",
   maya: "Maya Protocol",
   "testnet-fixed-rate": "Testnet fixed rate",
+  treasury: "Treasury (ZEC)",
 };
 
 export function venueLabel(venue: string | null | undefined): string {

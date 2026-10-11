@@ -188,7 +188,7 @@ function GetStarted({ wallet, contractors, runs }: { wallet?: Wallet; contractor
       title: "Fund the treasury",
       detail:
         network === "mainnet" ? (
-          "Each run is funded with USDC when you approve it"
+          "Each run is funded when you approve it, with ZEC sent to the treasury or with USDC"
         ) : wallet ? (
           funded ? (
             <>

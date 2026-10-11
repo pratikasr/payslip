@@ -7,7 +7,8 @@
 export const API_URL = (process.env.NEXT_PUBLIC_PAYSLIP_API_URL?.trim() || "http://127.0.0.1:8080").replace(/\/+$/, "");
 
 export type Network = "mainnet" | "testnet";
-export type VenueId = "near-intents-1click" | "maya" | "testnet-fixed-rate";
+/** `treasury`: Fund with ZEC (ADR-025), chosen per run with `method: "zec"`, on any network. */
+export type VenueId = "near-intents-1click" | "maya" | "testnet-fixed-rate" | "treasury";
 
 export interface ApiErrorBody {
   code: string;
@@ -44,6 +45,13 @@ export interface Health {
    * mode; absent on older services.
    */
   simulated_rate_usd_per_zec?: number | string | null;
+  /**
+   * True when POST /api/runs/{id}/fund accepts method "zec" (ZEC sent to the treasury, funded
+   * at the market rate when it confirms). False in statements mode; absent on older services.
+   */
+  fund_with_zec?: boolean;
+  /** PAYSLIP_MAX_RUN_USD_CENTS: the largest payroll one run may carry; null when no cap. */
+  max_run_usd_cents?: number | null;
 }
 
 export interface Treasury {
@@ -126,7 +134,12 @@ export type RunStatus =
   | "failed"
   | "cancelled";
 
-/** `deposit_seen` and `incomplete` come from the 1Click venue; the rest from every venue. */
+/**
+ * `deposit_seen` and `incomplete` come from the 1Click venue; the rest from every venue. For
+ * Fund with ZEC (venue `treasury`): `awaiting_deposit` (nothing in the treasury yet),
+ * `deposit_seen` (ZEC arrived but is still confirming or short), `success` (confirmed and the
+ * run is funded), `expired` (24 hours passed unfunded).
+ */
 export type FundingStatus =
   "awaiting_deposit" | "deposit_seen" | "processing" | "incomplete" | "success" | "refunded" | "failed" | "expired";
 
@@ -160,6 +173,20 @@ export interface Funding {
   router?: string | null;
   /** Maya only: the memo the deposit must carry, or the swap is not made. */
   deposit_memo?: string | null;
+  /** Fund with ZEC only: the treasury unified address to send ZEC to (also `deposit_address`). */
+  treasury_address?: string | null;
+  /** Fund with ZEC only: the ZEC asked for at request time (payroll at the rate, fee reserve, 2% buffer). */
+  zec_required_zat?: number | null;
+  /** Fund with ZEC only: confirmed ZEC available to this run at the last check. */
+  zec_received_zat?: number | null;
+  /** Fund with ZEC only: ZEC seen in the treasury but not yet confirmed. */
+  zec_pending_zat?: number | null;
+  /** Fund with ZEC only: what the run still needs at the current rate (0 once funded); null when the price could not be read. */
+  zec_shortfall_zat?: number | null;
+  /** Fund with ZEC only: the block at whose rate the run was funded. */
+  funded_at_height?: number | null;
+  /** Fund with ZEC only: when the price point behind the rate was taken. */
+  priced_at?: string | null;
 }
 
 /** Funding that asks for an EVM deposit: the fields the browser wallet needs are present. */
@@ -167,6 +194,13 @@ export type EvmFunding = Funding & { chain_id: number; token_address: string; de
 
 export function isEvmFunding(f: Funding | null | undefined): f is EvmFunding {
   return !!f && typeof f.chain_id === "number" && !!f.token_address && !!f.deposit_address;
+}
+
+/** Fund with ZEC: the treasury address and the amount to send are present. */
+export type ZecFunding = Funding & { venue: "treasury"; treasury_address: string; zec_required_zat: number };
+
+export function isZecFunding(f: Funding | null | undefined): f is ZecFunding {
+  return !!f && f.venue === "treasury" && !!f.treasury_address && typeof f.zec_required_zat === "number";
 }
 
 export type PayLineStatus = "pending" | "allocated" | "broadcast" | "confirmed" | "failed";
@@ -259,6 +293,11 @@ export interface NewRun {
 }
 
 export interface FundRequest {
+  /**
+   * "zec": ZEC sent to the treasury, funded at the market rate when it confirms (ADR-025).
+   * "usdc" or absent: a USDC deposit swapped by the venue (on testnet, the fixed-rate venue).
+   */
+  method?: "zec" | "usdc";
   origin_chain?: string;
   refund_address?: string;
 }

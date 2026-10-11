@@ -64,6 +64,10 @@ pub enum VenueKind {
     NearIntents,
     Maya,
     TestnetFixedRate,
+    /// Fund with ZEC (ADR-025): the payer sends ZEC to the treasury and the run is funded at the
+    /// market rate when it confirms. Not chosen by `PAYSLIP_SWAP_VENUE`: it is the `zec` funding
+    /// method, available on every network beside the configured USDC venue.
+    Treasury,
 }
 
 impl VenueKind {
@@ -72,6 +76,7 @@ impl VenueKind {
             VenueKind::NearIntents => "near-intents-1click",
             VenueKind::Maya => "maya",
             VenueKind::TestnetFixedRate => "testnet-fixed-rate",
+            VenueKind::Treasury => "treasury",
         }
     }
 }
@@ -114,6 +119,9 @@ pub struct Config {
     pub app_fee_bps: u32,
     /// NEAR account that receives the fee (required when `app_fee_bps` > 0).
     pub app_fee_recipient: Option<String>,
+    /// PAYSLIP_MAX_RUN_USD_CENTS: the largest payroll one run may carry, in cents; None means no
+    /// cap. States the custody exposure plainly: one run's money, for minutes (ADR-025).
+    pub max_run_usd_cents: Option<u64>,
 }
 
 fn var(name: &str) -> Option<String> {
@@ -157,6 +165,13 @@ impl Config {
                 "PAYSLIP_APP_FEE_BPS is set, so PAYSLIP_APP_FEE_RECIPIENT must name the NEAR account that receives it"
             );
         }
+        let max_run_usd_cents = var("PAYSLIP_MAX_RUN_USD_CENTS")
+            .map(|s| {
+                s.parse::<u64>().ok().filter(|v| *v > 0).context(
+                    "PAYSLIP_MAX_RUN_USD_CENTS must be a whole number of cents above 0, such as 2500000 for $25,000",
+                )
+            })
+            .transpose()?;
         let min_confirmations = match var("PAYSLIP_MIN_CONFIRMATIONS") {
             Some(s) => s
                 .parse::<u32>()
@@ -201,6 +216,7 @@ impl Config {
             price_api_key: var("PAYSLIP_PRICE_API_KEY"),
             app_fee_bps,
             app_fee_recipient,
+            max_run_usd_cents,
             allowed_hosts: var("PAYSLIP_ALLOWED_HOSTS")
                 .map(|v| {
                     v.split(',')
@@ -231,6 +247,12 @@ impl Config {
     pub fn simulated_rate_usd_per_zec(&self) -> Option<f64> {
         (!self.statements_only && self.venue == VenueKind::TestnetFixedRate && self.network == ZcashNetwork::Testnet)
             .then(|| self.testnet_rate_e6 as f64 / 1_000_000.0)
+    }
+
+    /// Whether `POST /api/runs/{id}/fund` accepts `method: "zec"` (ADR-025): every full-mode
+    /// service does, on any network; a statements-only deployment funds nothing.
+    pub fn fund_with_zec(&self) -> bool {
+        !self.statements_only
     }
 
     pub fn app_db_path(&self) -> PathBuf {
@@ -297,6 +319,7 @@ mod tests {
             allow_remote_payer: false,
             app_fee_bps: 0,
             app_fee_recipient: None,
+            max_run_usd_cents: None,
         }
     }
 

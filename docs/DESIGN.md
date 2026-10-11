@@ -304,6 +304,10 @@ Month names come from a fixed table rather than `Intl`, so the server and every 
 | `processing` | Processing |
 | `success` | Received |
 | `refunded`, `failed`, `expired` | Refunded, Failed, Expired (with "Request a new deposit address") |
+| `awaiting_deposit`, venue `treasury` (Fund with ZEC) | Awaiting ZEC |
+| `deposit_seen`, venue `treasury` | ZEC arriving (confirming, or short: the shortfall is shown) |
+| `success`, venue `treasury` | Funded |
+| `expired`, venue `treasury` | Request expired (with "Request again"; ZEC already in the treasury counts) |
 
 | Reconciliation status | Label | Meaning |
 | --- | --- | --- |
