@@ -7,7 +7,8 @@
     body     15px  text and table cells (Libre Franklin 400, line-height 1.55)
     heading  17px  section headings and dialog titles: Redaction, the clean cut, at 700
     title    34px  page titles and the company name: Redaction 35 at 700, inked; 26px on phones
-    hero     48px  the headline money figure of a page: DotGothic16, inked; 34px below 1024px
+    hero     48px  the headline money figure of a page: DotGothic16, inked; 34px below 1024px (a
+                   figure inside keeps the dot matrix where the console types every other figure)
     data     13px  transaction ids, keys, heights, addresses, memos: Courier Prime
     label    12px  form labels: Courier Prime in spaced caps (the one place caps are allowed)
 
@@ -19,7 +20,7 @@ export const TYPE = {
   body: "text-[0.9375rem]",
   heading: "font-serif text-[1.0625rem] leading-snug font-bold",
   title: "inked font-display text-[1.625rem] leading-[1.02] font-bold tracking-[-0.01em] sm:text-[2.125rem]",
-  hero: "inked font-dot text-[2.125rem] leading-none font-normal tracking-[0.01em] lg:text-[3rem]",
+  hero: "inked font-dot text-[2.125rem] leading-none font-normal tracking-[0.01em] lg:text-[3rem] [&_.money]:font-dot",
   data: "font-type text-[0.8125rem] tracking-normal",
   label: "form-label text-[0.75rem] leading-tight font-bold",
 } as const;

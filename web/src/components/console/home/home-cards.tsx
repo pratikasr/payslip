@@ -19,6 +19,7 @@ import {
 import { compactUsd, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { Card, CardHeader } from "@/components/ds/card";
+import { FormRow, FormRows } from "@/components/ds/paper";
 import { Tag } from "@/components/ds/tag";
 import { TYPE } from "@/components/ds/type";
 import { Button } from "@/components/ui/button";
@@ -40,7 +41,7 @@ import {
   zatToCents,
   type PeriodPoint,
 } from "@/components/console/lib";
-import { IconChip } from "@/components/console/ui";
+import { Bar, IconChip } from "@/components/console/ui";
 import { periodTitle, plural, runTitle } from "@/components/runs/run-meta";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -93,13 +94,15 @@ export function PayrollHero({ runs }: { runs: Run[] }) {
       <div className={cn(TYPE.hero, "mt-2")}>
         <Usd cents={totals.cents} />
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[0.8125rem] text-strong">
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 font-type text-[0.875rem] text-strong">
         <span>
           {plural(totals.payrolls, "payroll")} and {plural(totals.payments, "payment")}
         </span>
         {latest ? (
           <span className="inline-flex items-center gap-2 whitespace-nowrap">
-            <span className="text-muted-foreground">{formatPeriodLabel(latest.period)}</span>
+            <span className="form-label text-[0.75rem] font-bold text-muted-foreground">
+              {formatPeriodLabel(latest.period)}
+            </span>
             <Usd cents={latest.cents} />
             {latest.runs > 1 ? (
               <span className="text-muted-foreground" title="This month had more than one paid run">
@@ -150,16 +153,17 @@ function yearMonths(year: string, paid: PeriodPoint[]): MonthPoint[] {
 }
 
 /**
- * Twelve columns, January to December: ink for the latest paid month, a softer tone before it,
- * faint stubs for months with no payroll, nothing for months still ahead. Values sit over paid
- * months and in each column's tooltip; the caption reads them all for screen readers.
+ * Twelve columns, January to December, printed like a bar chart on a ledger sheet: the latest
+ * paid month in solid ink, the months before it on green bar with a ruled edge, a dotted stub for
+ * a month with no payroll, nothing for months still ahead. Month labels and the one value are
+ * typewritten. Values sit in each column's tooltip; the caption reads them all for screen readers.
  */
 function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
   const max = Math.max(1, ...points.map((p) => p.cents));
   const lastPaid = points.reduce((l, p, i) => (p.cents > 0 ? i : l), -1);
   return (
     <figure className="mt-6 flex h-[200px] flex-col">
-      <div className="flex flex-1 items-end gap-1 border-b border-hairline sm:gap-2" aria-hidden="true">
+      <div className="flex flex-1 items-end gap-1 border-b-2 border-ink sm:gap-2" aria-hidden="true">
         {points.map((p, i) => (
           <div
             key={p.period}
@@ -172,14 +176,18 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
           >
             {/* Twelve columns leave no room for every value: the latest paid month carries its
                 figure; the others show theirs in the tooltip, the caption and the table view. */}
-            <span className="money text-[0.8125rem] text-foreground">
+            <span className="money font-type text-[0.8125rem] font-bold text-foreground">
               {i === lastPaid && p.cents > 0 ? compactUsd(p.cents) : ""}
             </span>
             {p.future ? null : (
               <span
                 className={cn(
-                  "w-full max-w-[40px] rounded-t-[5px]",
-                  p.cents === 0 ? "h-[3px] bg-chip" : i === lastPaid ? "bg-viz" : "bg-viz-soft",
+                  "w-full max-w-[40px]",
+                  p.cents === 0
+                    ? "h-0 border-t-2 border-dotted border-faint"
+                    : i === lastPaid
+                      ? "bg-viz"
+                      : "border-[1.5px] border-b-0 border-ink/45 bg-bar",
                 )}
                 style={p.cents > 0 ? { height: `${Math.max(4, (p.cents / max) * 100) * 0.78}%` } : undefined}
               />
@@ -189,7 +197,10 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
       </div>
       <div className="mt-2 flex gap-1 sm:gap-2" aria-hidden="true">
         {points.map((p) => (
-          <span key={p.period} className="min-w-0 flex-1 text-center text-[0.8125rem] text-muted-foreground">
+          <span
+            key={p.period}
+            className="form-label min-w-0 flex-1 text-center text-[0.75rem] font-bold text-muted-foreground"
+          >
             <span className="sm:hidden">{p.label.charAt(0)}</span>
             <span className="hidden sm:inline">{p.label}</span>
           </span>
@@ -211,27 +222,27 @@ function YearBars({ year, points }: { year: string; points: MonthPoint[] }) {
 function MonthTable({ year, points }: { year: string; points: MonthPoint[] }) {
   const shown = points.filter((p) => !p.future);
   return (
-    <table className="mt-4 w-full border-collapse text-[0.9375rem]">
+    <table className="mt-4 w-full border-collapse border-b-2 border-ink text-[0.9375rem]">
       <caption className="sr-only">Paid to contractors by month in {year}</caption>
       <thead>
-        <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-          <th scope="col" className="py-2 font-normal">
+        <tr className="border-y-2 border-ink text-left text-[0.75rem]">
+          <th scope="col" className="py-2 pl-2 font-bold">
             Month
           </th>
-          <th scope="col" className="py-2 text-right font-normal">
+          <th scope="col" className="py-2 text-right font-bold">
             Runs
           </th>
-          <th scope="col" className="py-2 text-right font-normal">
+          <th scope="col" className="py-2 pr-2 text-right font-bold">
             Paid
           </th>
         </tr>
       </thead>
       <tbody>
         {shown.map((p) => (
-          <tr key={p.period} className="border-b border-hairline last:border-0">
-            <td className="py-1.5">{formatPeriodLabel(p.period)}</td>
+          <tr key={p.period} className="border-b border-bar-line last:border-0">
+            <td className="py-1.5 pl-2">{formatPeriodLabel(p.period)}</td>
             <td className="num py-1.5 text-right text-strong">{p.runs || ""}</td>
-            <td className="py-1.5 text-right">
+            <td className="py-1.5 pr-2 text-right">
               {p.cents > 0 ? <Usd cents={p.cents} /> : <span className="text-muted-foreground">None</span>}
             </td>
           </tr>
@@ -263,6 +274,7 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
   const zat = wallet?.treasury.total_zat ?? 0;
   const lastPayroll = paidRuns(runs)[0];
   const cover = wallet ? payrollsCovered(zat, lastPayroll) : null;
+  const amount = (z: number) => (rate ? <Usd cents={zatToCents(z, rate)} /> : <Zec zat={z} short />);
   return (
     <Card className="flex flex-col" aria-labelledby="treasury-title">
       <CardHeader
@@ -270,64 +282,58 @@ export function TreasuryCard({ wallet, runs }: { wallet?: Wallet; runs: Run[] })
         title="Treasury"
         actions={<IconChip icon={Landmark} href="/console/treasury" label="Open treasury" />}
       />
-      <div className="mt-1 text-[1.0625rem] font-medium">
-        {!wallet ? (
-          <span className="text-muted-foreground">Unavailable</span>
-        ) : rate ? (
+      {/* The balance as a form: the total on top, then what can be spent and what is confirming. */}
+      <FormRows className="mt-3 border border-bar-line">
+        <FormRow label="Balance" valueClassName="font-bold">
+          {!wallet ? (
+            <span className="font-normal text-muted-foreground">Unavailable</span>
+          ) : rate ? (
+            <>
+              <Usd cents={zatToCents(zat, rate)} />
+              <span className="block text-[0.8125rem] font-normal text-muted-foreground">
+                <Zec zat={zat} /> at the latest fill rate
+              </span>
+            </>
+          ) : (
+            <Zec zat={zat} />
+          )}
+        </FormRow>
+        {wallet ? (
           <>
-            <Usd cents={zatToCents(zat, rate)} />
-            <span className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
-              <Zec zat={zat} /> at the latest fill rate
-            </span>
+            <FormRow label="Spendable">{amount(wallet.treasury.spendable_zat)}</FormRow>
+            <FormRow label="Confirming">{amount(wallet.treasury.pending_zat)}</FormRow>
           </>
-        ) : (
-          <Zec zat={zat} />
-        )}
-      </div>
-      {cover !== null && lastPayroll ? (
-        <>
-          <div
-            className="mt-4 h-1.5 overflow-hidden rounded-full bg-chip"
-            role="img"
-            aria-label={`Covers ${cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`}
-          >
-            <span className="block h-full rounded-full bg-viz" style={{ width: `${Math.min(1, cover) * 100}%` }} />
-          </div>
-          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+        ) : null}
+        {cover !== null && lastPayroll ? (
+          <FormRow label="Covers">
             {cover >= 1
-              ? `Covers ${cover >= 10 ? Math.floor(cover) : cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`
-              : `Not enough for a payroll like ${runTitle(lastPayroll)}`}
-          </p>
-        </>
-      ) : null}
-      {wallet ? (
-        <dl className="mt-4 mb-4 grid grid-cols-2 gap-x-4 text-[0.9375rem]">
-          <div>
-            <dt className="text-[0.8125rem] text-muted-foreground">Spendable</dt>
-            <dd className="mt-0.5">
-              {rate ? (
-                <Usd cents={zatToCents(wallet.treasury.spendable_zat, rate)} />
-              ) : (
-                <Zec zat={wallet.treasury.spendable_zat} short />
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-[0.8125rem] text-muted-foreground">Confirming</dt>
-            <dd className="mt-0.5">
-              {rate ? (
-                <Usd cents={zatToCents(wallet.treasury.pending_zat, rate)} />
-              ) : (
-                <Zec zat={wallet.treasury.pending_zat} short />
-              )}
-            </dd>
-          </div>
-        </dl>
-      ) : null}
-      <div className="mt-auto flex items-end justify-between gap-3 border-t border-hairline pt-3.5">
+              ? `${cover >= 10 ? Math.floor(cover) : cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`
+              : `Not one payroll like ${runTitle(lastPayroll)}`}
+          </FormRow>
+        ) : null}
+      </FormRows>
+      {cover !== null && lastPayroll ? (
+        <Bar
+          value={Math.min(1, cover)}
+          label={
+            cover >= 1
+              ? `Covers ${cover.toFixed(1)} payrolls like ${runTitle(lastPayroll)}`
+              : `Not enough for a payroll like ${runTitle(lastPayroll)}`
+          }
+          className="mt-3 mb-4"
+        />
+      ) : (
+        <div className="mb-4" />
+      )}
+      <div className="mt-auto flex items-end justify-between gap-3 border-t border-ink pt-3.5">
         <div className="min-w-0 text-[0.8125rem] text-muted-foreground">
           {testnet ? (
-            <a href={TESTNET_FAUCET_URL} target="_blank" rel="noreferrer" className="text-link hover:underline">
+            <a
+              href={TESTNET_FAUCET_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="font-type font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+            >
               Get free testnet coins<span className="sr-only"> (opens in a new tab)</span>
             </a>
           ) : (
@@ -398,22 +404,19 @@ export function NextPayrollCard({
         }
         actions={<IconChip icon={CalendarClock} href="/console/settings" label="Pay schedule settings" />}
       />
-      <div className="mt-3 flex items-center gap-4">
-        <div className="grid w-14 shrink-0 overflow-hidden rounded-lg border text-center" aria-hidden="true">
-          <span className="identity-vault bg-vault py-0.5 text-[0.8125rem] font-medium text-ink">
-            {MONTHS[end.getUTCMonth()]}
-          </span>
-          <span className="py-1 text-[0.9375rem] leading-tight">{end.getUTCFullYear()}</span>
-        </div>
-        <div className="min-w-0">
-          <div className="text-[0.9375rem]">{title} payroll</div>
+      <div className="mt-4 mb-4 flex flex-wrap items-end gap-x-5 gap-y-3">
+        <DateBox date={end} label={ended ? "Period ended" : "Period ends"} />
+        <div className="min-w-0 flex-1 basis-48 pb-0.5">
+          <div className="font-type text-[0.9375rem] font-bold">{title} payroll</div>
           <div className="text-[0.8125rem] text-muted-foreground">{sub}</div>
         </div>
       </div>
-      <div className="mt-auto flex items-end justify-between gap-3 border-t border-hairline pt-3.5">
+      <div className="mt-auto flex items-end justify-between gap-3 border-t border-ink pt-3.5">
         <div className="min-w-0">
-          <div className="text-[0.8125rem] text-muted-foreground">{open ? "Total" : "Last payroll"}</div>
-          <div className="text-[0.9375rem]">
+          <div className="form-label text-[0.75rem] font-bold text-muted-foreground">
+            {open ? "Total" : "Last payroll"}
+          </div>
+          <div className="font-type text-[0.9375rem]">
             {open ? (
               <Usd cents={open.total_usd_cents} />
             ) : estimate ? (
@@ -433,6 +436,33 @@ export function NextPayrollCard({
         </Button>
       </div>
     </Card>
+  );
+}
+
+/**
+ * A date typed into the boxes of a form field: day, month and year, each in its own ruled box
+ * with a spaced-caps caption over it. Decorative; the card says the date in words beside it.
+ */
+function DateBox({ date, label }: { date: Date; label: string }) {
+  const cells = [
+    { k: "Day", v: String(date.getUTCDate()).padStart(2, "0") },
+    { k: "Month", v: MONTHS[date.getUTCMonth()] },
+    { k: "Year", v: String(date.getUTCFullYear()) },
+  ];
+  return (
+    <div aria-hidden="true" className="shrink-0">
+      <div className="form-label mb-1 text-[0.6875rem] font-bold text-muted-foreground">{label}</div>
+      <div className="flex border border-ink font-type">
+        {cells.map((c, i) => (
+          <div key={c.k} className={cn("grid text-center", i > 0 && "border-l border-ink")}>
+            <span className="form-label border-b border-rule bg-bar px-1.5 pt-0.5 text-[0.6875rem] leading-[1.4] text-muted-foreground">
+              {c.k}
+            </span>
+            <span className="px-2 py-1 text-[1.0625rem] leading-tight font-bold uppercase">{c.v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -562,33 +592,50 @@ export function TodoCard({
           <span className="inline-flex items-center gap-2">
             To do
             {tasks.length > 0 ? (
-              <span className="text-[0.8125rem] text-muted-foreground">{formatCount(tasks.length)}</span>
+              <span className="border border-current px-1 font-type text-[0.75rem] leading-[1.35] font-bold text-muted-foreground">
+                {formatCount(tasks.length)}
+              </span>
             ) : null}
           </span>
         }
       />
+      {/* A typed checklist: an empty box to tick before each thing that needs the payer. */}
       {shown.length === 0 ? (
-        <p className="mt-4 inline-flex items-center gap-2 text-[0.9375rem] text-muted-foreground">
-          <Check className="size-4 text-success" aria-hidden="true" />
+        <p className="mt-4 flex items-center gap-3 font-type text-[0.9375rem] text-muted-foreground">
+          <CheckBox ticked />
           Nothing needs you right now.
         </p>
       ) : (
-        <ul className="-mx-2 mt-2 grid">
+        <ul className="mt-3 grid border-t border-rule font-type">
           {shown.map((t) => (
-            <li key={t.key}>
+            <li key={t.key} className="border-b border-rule">
               <Link
                 href={t.href}
-                className="flex items-center gap-3 rounded-lg px-2 py-2.5 text-[0.9375rem] text-strong hover:bg-muted"
+                className="flex items-start gap-3 px-1 py-2.5 text-[0.9375rem] text-strong transition-colors hover:bg-bar [&_b]:font-bold [&_b]:text-foreground"
               >
-                <span className="grid size-7 shrink-0 place-items-center rounded-full bg-chip text-muted-foreground">
-                  <t.icon className="size-3.5" aria-hidden="true" />
-                </span>
+                <CheckBox />
                 <span className="min-w-0 flex-1">{t.text}</span>
+                <t.icon className="mt-[3px] size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               </Link>
             </li>
           ))}
         </ul>
       )}
     </Card>
+  );
+}
+
+/** The box before a line of a typed checklist: empty, or ticked in ink. Decorative. */
+function CheckBox({ ticked = false }: { ticked?: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "mt-[3px] grid size-4 shrink-0 place-items-center border-[1.5px] border-ink",
+        ticked && "bg-ink text-paper",
+      )}
+    >
+      {ticked ? <Check className="size-3" strokeWidth={3} /> : null}
+    </span>
   );
 }

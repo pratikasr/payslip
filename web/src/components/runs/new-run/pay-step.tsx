@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { CircleCheck } from "lucide-react";
+import { Check } from "lucide-react";
 import { Coin, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { useCoinUnit, useHealth } from "@/components/app/health-provider";
@@ -147,9 +147,9 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       </p>
       {approvals ? <ApprovalStatus run={run} onRun={onRun} className="mt-4" /> : null}
 
-      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
+      <Card className="mt-6 px-6 py-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.8125rem] text-strong">Total for {plural(n, "contractor")}</p>
+          <p className="form-label text-[0.75rem] font-bold text-strong">Total for {plural(n, "contractor")}</p>
           {testnet ? <SimulatedRate rateE6={run.funding?.rate_usd_per_zec_e6} /> : null}
         </div>
         <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
@@ -177,7 +177,7 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className={TYPE.heading}>
+            <DialogTitle className="inked font-display text-[1.25rem] leading-tight font-bold">
               Pay {plural(n, "contractor")} <Usd cents={run.total_usd_cents} />
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
@@ -251,7 +251,7 @@ function Paying({
           <span key={confirmed} className={cn(TYPE.hero, "ps-rise")}>
             {confirmed}
           </span>
-          <span className="text-[0.9375rem] text-muted-foreground">of {n} confirmed</span>
+          <span className="font-type text-[0.9375rem] text-muted-foreground">of {n} confirmed</span>
         </p>
         <div
           role="progressbar"
@@ -260,10 +260,10 @@ function Paying({
           aria-valuemax={n}
           aria-valuenow={confirmed}
           aria-valuetext={`${confirmed} of ${n} confirmed`}
-          className="mt-3 h-1.5 overflow-hidden rounded-full bg-chip"
+          className="mt-3 h-3 overflow-hidden border border-ink bg-card p-px"
         >
           <div
-            className="h-full rounded-full bg-viz transition-[width] duration-700 ease-out"
+            className="h-full bg-viz transition-[width] duration-700 ease-out"
             style={{ width: `${n ? Math.max(3, (confirmed / n) * 100) : 0}%` }}
           />
         </div>
@@ -271,10 +271,10 @@ function Paying({
 
       <LineList lines={run.lines} run={run} changed={changed} className="mt-6" />
 
-      <div className="mt-5 space-y-2 text-[0.8125rem] text-muted-foreground">
+      <div className="mt-5 space-y-2 font-type text-[0.8125rem] text-muted-foreground">
         {latest ? (
           <p className="[overflow-wrap:anywhere]">
-            <span className="text-strong">
+            <span className="font-bold text-strong">
               Latest, at <time dateTime={latest.at}>{formatTime(latest.at)}</time>:
             </span>{" "}
             {logSentence(latest.message, coin)}
@@ -284,7 +284,7 @@ function Paying({
           <span
             aria-hidden="true"
             className={cn(
-              "size-1.5 rounded-full",
+              "size-2",
               stream === "live" ? "bg-success" : stream === "closed" ? "bg-faint" : "animate-pulse bg-warning",
             )}
           />
@@ -292,9 +292,12 @@ function Paying({
         </p>
       </div>
 
-      <p className="mt-6 rounded-xl bg-raised px-4 py-3 text-[0.9375rem]">
+      <p className="mt-6 border border-dashed border-ink px-4 py-3 text-[0.9375rem]">
         You can leave this page. Payments keep going on the service, and{" "}
-        <Link href={`/console/runs/${run.id}`} className="text-link hover:underline">
+        <Link
+          href={`/console/runs/${run.id}`}
+          className="font-type font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+        >
           the run page
         </Link>{" "}
         shows where they stand.
@@ -369,12 +372,12 @@ export function LineList({
   className?: string;
 }) {
   return (
-    <ul className={cn("border-t border-hairline", className)} aria-label="Payments">
+    <ul className={cn("green-bar border-y-2 border-ink font-type", className)} aria-label="Payments">
       {lines.map((l) => (
         <li
           key={l.id}
           className={cn(
-            "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-hairline py-3",
+            "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-bar-line px-2 py-3 last:border-b-0",
             changed.has(l.id) && "ps-flash",
           )}
         >
@@ -401,7 +404,7 @@ export function LineList({
             </p>
             {l.error ? (
               // A line still in progress can carry a warning (the service is retrying it).
-              <p className={cn("text-[0.8125rem]", isLineWarning(l) ? "text-warning" : "text-destructive")}>
+              <p className={cn("font-sans text-[0.8125rem]", isLineWarning(l) ? "text-warning" : "text-destructive")}>
                 {l.error.message} {l.error.hint}
               </p>
             ) : null}
@@ -428,15 +431,20 @@ export function DoneStep({ run }: { run: Run }) {
   return (
     <div>
       <div className="flex items-center gap-2.5">
-        <CircleCheck className="size-6 text-success" aria-hidden="true" />
+        <span
+          aria-hidden="true"
+          className="grid size-8 shrink-0 place-items-center border-2 border-ink bg-ink text-paper"
+        >
+          <Check className="size-5" strokeWidth={3} />
+        </span>
         <H1>Payroll paid</H1>
       </div>
       <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
         {plural(n, "shielded payment")} confirmed{top ? ` by block ${formatHeight(top)}` : ""}. Each contractor can read
         theirs with their viewing key.
       </p>
-      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
-        <p className="text-[0.8125rem] text-strong">Paid to {plural(n, "contractor")}</p>
+      <Card className="mt-6 px-6 py-6 sm:px-6">
+        <p className="form-label text-[0.75rem] font-bold text-strong">Paid to {plural(n, "contractor")}</p>
         <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
         {run.total_zat ? (
           <p className="mt-2 text-[0.9375rem] text-muted-foreground">

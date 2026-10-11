@@ -100,11 +100,14 @@ export function ConsoleSearch() {
         variant="outline"
         size="sm"
         onClick={() => setOpen(true)}
-        className="hidden w-64 justify-start gap-2 rounded-full border-border px-3 text-muted-foreground md:inline-flex lg:w-72"
+        className="hidden w-64 justify-start gap-2 border-0 border-b border-input px-1 font-normal text-muted-foreground hover:border-foreground hover:bg-transparent md:inline-flex lg:w-72"
       >
         <Search aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left">Search people, runs, invoices</span>
-        <kbd className="rounded border px-1 font-sans text-[0.8125rem] text-muted-foreground" aria-hidden="true">
+        <kbd
+          className="border border-current px-1 font-type text-[0.75rem] leading-[1.35] font-bold text-muted-foreground"
+          aria-hidden="true"
+        >
           Ctrl K
         </kbd>
       </Button>
@@ -158,7 +161,7 @@ function SearchBody({ onDone }: { onDone: () => void }) {
           placeholder="Search people, runs, invoices or a transaction id"
           aria-label="Search"
           aria-describedby="search-count"
-          className="h-12 min-w-0 flex-1 bg-transparent text-[0.9375rem] outline-none placeholder:text-muted-foreground"
+          className="h-12 min-w-0 flex-1 bg-transparent font-type text-[0.9375rem] outline-none placeholder:text-muted-foreground"
         />
       </div>
       <p id="search-count" className="sr-only" aria-live="polite">
@@ -178,20 +181,20 @@ function SearchBody({ onDone }: { onDone: () => void }) {
         ) : (
           groups.map((g) => (
             <section key={g.label} aria-label={g.label} className="py-1">
-              <h2 className="px-2 pt-1 pb-1.5 text-[0.8125rem] text-muted-foreground">{g.label}</h2>
+              <h2 className="form-label px-2 pt-1 pb-1.5 text-[0.75rem] font-bold text-muted-foreground">{g.label}</h2>
               <ul>
                 {g.hits.map((h) => (
                   <li key={h.key}>
                     <Link
                       href={h.href}
                       onClick={onDone}
-                      className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-muted focus-visible:bg-muted"
+                      className="flex items-center gap-3 px-2 py-2 hover:bg-bar focus-visible:bg-bar"
                     >
-                      <span className="grid size-7 shrink-0 place-items-center rounded-full bg-chip text-muted-foreground">
+                      <span className="grid size-7 shrink-0 place-items-center border border-rule text-muted-foreground">
                         <h.icon className="size-3.5" aria-hidden="true" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[0.9375rem]">{h.title}</span>
+                        <span className="block truncate font-type text-[0.9375rem]">{h.title}</span>
                         <span className="block truncate text-[0.8125rem] text-muted-foreground">{h.detail}</span>
                       </span>
                     </Link>

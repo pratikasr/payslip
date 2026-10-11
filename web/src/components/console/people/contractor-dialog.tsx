@@ -208,14 +208,14 @@ export function ContractorDialog({
                 rows={3}
                 spellCheck={false}
                 autoComplete="off"
-                className="font-mono text-[0.8125rem] break-all"
+                className="font-type text-[0.8125rem] break-all"
                 aria-invalid={!!errors.unified_address}
                 aria-describedby={describedBy(id("unified_address"), errors.unified_address, true)}
               />
             </Field>
 
             <fieldset className="grid gap-2">
-              <legend className="mb-2 text-[0.8125rem] font-medium">Settlement</legend>
+              <legend className="form-label mb-2 text-[0.75rem] font-bold">Settlement</legend>
               <RadioGroup
                 value={settlement}
                 onValueChange={(v) => setSettlement(v as SettlementChoice)}
@@ -223,11 +223,11 @@ export function ContractorDialog({
               >
                 <label
                   htmlFor={id("hold")}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors has-[[data-state=checked]]:border-primary-edge has-[[data-state=checked]]:bg-primary-soft/40"
+                  className="flex cursor-pointer items-start gap-3 border border-rule p-3.5 transition-colors has-[[data-state=checked]]:border-2 has-[[data-state=checked]]:border-ink has-[[data-state=checked]]:bg-bar has-[[data-state=checked]]:p-[13px]"
                 >
                   <RadioGroupItem id={id("hold")} value="hold_zec" className="mt-0.5" />
                   <span className="grid gap-0.5">
-                    <span className="text-[0.9375rem]">Hold {coin}</span>
+                    <span className="font-type text-[0.9375rem] font-bold">Hold {coin}</span>
                     <span className="text-[0.8125rem] text-muted-foreground">
                       Paid in shielded {coin} to their own wallet. Most private.
                     </span>
@@ -235,11 +235,11 @@ export function ContractorDialog({
                 </label>
                 <label
                   htmlFor={id("convert")}
-                  className="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors has-[[data-state=checked]]:border-primary-edge has-[[data-state=checked]]:bg-primary-soft/40"
+                  className="flex cursor-pointer items-start gap-3 border border-rule p-3.5 transition-colors has-[[data-state=checked]]:border-2 has-[[data-state=checked]]:border-ink has-[[data-state=checked]]:bg-bar has-[[data-state=checked]]:p-[13px]"
                 >
                   <RadioGroupItem id={id("convert")} value="convert_usdc" className="mt-0.5" />
                   <span className="grid gap-0.5">
-                    <span className="text-[0.9375rem]">Convert to USDC</span>
+                    <span className="font-type text-[0.9375rem] font-bold">Convert to USDC</span>
                     <span className="text-[0.8125rem] text-muted-foreground">
                       Swapped to USDC through NEAR Intents and sent to their payout address. Less private: the
                       venue&apos;s explorer shows the amount and the USDC address.
@@ -274,7 +274,7 @@ export function ContractorDialog({
                     placeholder={payoutChain === "sol" ? "Solana address" : "0x"}
                     spellCheck={false}
                     autoComplete="off"
-                    className="h-10 font-mono text-[0.8125rem]"
+                    className="h-10 font-type text-[0.8125rem]"
                     aria-invalid={!!errors.payout_address}
                     aria-describedby={describedBy(id("payout_address"), errors.payout_address)}
                   />
@@ -292,7 +292,7 @@ export function ContractorDialog({
               <div className="relative">
                 <span
                   aria-hidden="true"
-                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[0.9375rem] text-muted-foreground"
+                  className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 font-type text-[0.9375rem] text-muted-foreground"
                 >
                   $
                 </span>
@@ -303,7 +303,7 @@ export function ContractorDialog({
                   value={defaultAmount}
                   placeholder="0.00"
                   onChange={(e) => setDefaultAmount(e.target.value)}
-                  className="money h-10 pl-6 text-right tracking-normal"
+                  className="money h-10 pl-5 text-right tracking-normal"
                   aria-invalid={!!errors.default_amount}
                   aria-describedby={describedBy(id("default_amount"), errors.default_amount, true)}
                 />
@@ -311,13 +311,13 @@ export function ContractorDialog({
             </Field>
 
             {errors.form ? (
-              <p role="alert" className="rounded-lg bg-danger-bg p-3 text-[0.8125rem] text-danger">
+              <p role="alert" className="border border-destructive bg-danger-bg p-3 text-[0.8125rem] text-danger">
                 {errors.form}
               </p>
             ) : null}
           </div>
 
-          <DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-4">
+          <DialogFooter className="mx-0 mb-0 px-6 py-4">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>

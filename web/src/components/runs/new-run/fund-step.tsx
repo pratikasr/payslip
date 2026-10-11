@@ -63,8 +63,8 @@ const WalletPay = dynamic(() => import("./wallet-pay"), {
   ssr: false,
   loading: () => (
     <div role="status" aria-label="Loading wallet connection" className="flex gap-3">
-      <Skeleton className="h-10 w-40 rounded-full" />
-      <Skeleton className="h-10 w-48 rounded-full" />
+      <Skeleton className="h-10 w-40" />
+      <Skeleton className="h-10 w-48" />
     </div>
   ),
 });
@@ -151,7 +151,7 @@ function ArchivedNote({ run, archived }: { run: Run; archived: ReadonlySet<strin
   const names = run.lines.filter((l) => archived.has(l.id)).map((l) => l.contractor_name);
   if (names.length === 0) return null;
   return (
-    <p role="note" className="mt-5 rounded-xl bg-warning-bg px-4 py-3 text-[0.8125rem] text-strong">
+    <p role="note" className="carbon-paper mt-5 border border-carbon-line px-4 py-3 text-[0.8125rem] text-strong">
       {names.join(", ")} {names.length === 1 ? "was" : "were"} archived after this run was approved.
       {run.status === "draft"
         ? " Discard this run (below) and start a new one without them."
@@ -180,12 +180,24 @@ function QuoteRow({
   sub?: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 border-t border-hairline py-3 text-[0.9375rem]">
-      <span className="text-strong">{label}</span>
-      <span className="text-right">
+    <div className="grid gap-x-4 gap-y-0.5 border-t border-bar-line px-2 py-2.5 font-type text-[0.9375rem] even:bg-bar @md:flex @md:items-baseline @md:justify-between">
+      <span className="form-label shrink-0 text-[0.75rem] font-bold text-strong">{label}</span>
+      <span className="@md:text-right">
         {children}
-        {sub ? <span className="block text-[0.8125rem] text-muted-foreground">{sub}</span> : null}
+        {sub ? <span className="block font-sans text-[0.8125rem] text-muted-foreground">{sub}</span> : null}
       </span>
+    </div>
+  );
+}
+
+/** The head of a funding form: its title in the display face, a spaced-caps label on the right. */
+function FormHead({ id, title, label }: { id: string; title: string; label: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-ink px-6 py-4">
+      <h2 id={id} className="inked font-display text-[1.25rem] leading-tight font-bold">
+        {title}
+      </h2>
+      <p className="form-label text-[0.75rem] text-muted-foreground">{label}</p>
     </div>
   );
 }
@@ -223,7 +235,7 @@ export function FundStep({
     return (
       <div role="status" aria-label="Loading funding options" className="space-y-3">
         <Skeleton className="h-8 w-2/3" />
-        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
@@ -302,9 +314,9 @@ function TestnetFund({
     <div>
       <Heading run={run}>Testnet runs are funded from coins already in the treasury. No deposit is needed.</Heading>
 
-      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
+      <Card className="@container mt-6 px-6 py-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.8125rem] text-strong">Payroll to fund</p>
+          <p className="form-label text-[0.75rem] font-bold text-strong">Payroll to fund</p>
           <SimulatedRate rateE6={simulatedRate} />
         </div>
         <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 mb-4 block")} />
@@ -345,7 +357,7 @@ function TestnetFund({
       ) : null}
 
       <div className="mt-6 flex flex-wrap items-center gap-3">
-        {/* One gold action: while the treasury is short, Check again (above) is it. */}
+        {/* One inked action: while the treasury is short, Check again (above) is it. */}
         <Button
           size="lg"
           variant={short ? "secondary" : "default"}
@@ -355,7 +367,7 @@ function TestnetFund({
           Fund from treasury
         </Button>
         {short ? (
-          <p className="text-[0.8125rem] text-muted-foreground">Top up the treasury first.</p>
+          <p className="font-type text-[0.8125rem] text-muted-foreground">Top up the treasury first.</p>
         ) : busy && !open ? (
           <FundingNote />
         ) : null}
@@ -365,7 +377,7 @@ function TestnetFund({
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className={TYPE.heading}>
+            <DialogTitle className="inked font-display text-[1.25rem] leading-tight font-bold">
               Fund <Usd cents={run.total_usd_cents} /> from the treasury?
             </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
@@ -428,8 +440,8 @@ function TopUp({ wallet, need, onWallet }: { wallet: Wallet; need: number | null
     }
   };
   return (
-    <section aria-labelledby="topup-title" className="mt-5 rounded-xl border bg-card px-5 py-5 sm:px-6">
-      <h2 id="topup-title" className="text-[0.9375rem] text-foreground">
+    <section aria-labelledby="topup-title" className="carbon-paper mt-5 border border-carbon-line px-5 py-5 sm:px-6">
+      <h2 id="topup-title" className="font-type text-[0.9375rem] font-bold text-foreground">
         Top up the treasury
       </h2>
       <p className="mt-1 text-[0.9375rem] text-muted-foreground">
@@ -453,11 +465,11 @@ function TopUp({ wallet, need, onWallet }: { wallet: Wallet; need: number | null
           <QrCode value={t.unified_address} label="QR code of the treasury address" size={148} />
         </Sensitive>
         <div className="min-w-0">
-          <p className="text-[0.8125rem] text-muted-foreground">Treasury address</p>
+          <p className="form-label text-[0.75rem] font-bold text-muted-foreground">Treasury address</p>
           <div className="mt-1 flex items-start gap-1">
             <Sensitive
               block
-              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[0.8125rem] leading-relaxed break-all"
+              className="min-w-0 flex-1 border border-rule bg-card p-2 font-type text-[0.8125rem] leading-relaxed break-all"
             >
               {t.unified_address}
             </Sensitive>
@@ -522,48 +534,45 @@ type UsdcQuote = ReturnType<typeof useUsdcQuote>;
 /** The origin chain and refund address fields of a USDC quote request. */
 function UsdcFields({ q }: { q: UsdcQuote }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-[11rem_minmax(0,1fr)]">
-      <div className="space-y-1.5">
-        <label htmlFor="origin-chain" className="text-[0.8125rem] text-strong">
-          Pay USDC from
-        </label>
-        <NativeSelect
-          id="origin-chain"
-          value={q.chain}
-          onChange={(e) => q.setChain(e.target.value)}
-          className="h-10 rounded-[10px]"
-        >
-          {ORIGIN_CHAINS.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </NativeSelect>
-      </div>
-      <div className="space-y-1.5">
-        <label htmlFor="refund-address" className="text-[0.8125rem] text-strong">
-          Refund address
-        </label>
-        <Input
-          id="refund-address"
-          value={q.refund}
-          onChange={(e) => q.setRefund(e.target.value)}
-          placeholder="0x"
-          spellCheck={false}
-          autoComplete="off"
-          className="h-10 rounded-[10px] font-mono text-[0.8125rem]"
-          aria-invalid={!!q.refundError}
-          aria-describedby={q.refundError ? "refund-address-error" : "refund-address-help"}
-        />
-        {q.refundError ? (
-          <p id="refund-address-error" className="text-[0.8125rem] text-destructive">
-            {q.refundError}
-          </p>
-        ) : (
-          <p id="refund-address-help" className="text-[0.8125rem] text-muted-foreground">
-            Yours, on the same chain. Used only if the swap cannot complete.
-          </p>
-        )}
+    <div className="@container">
+      <div className="grid gap-4 @md:grid-cols-[11rem_minmax(0,1fr)]">
+        <div className="space-y-1.5">
+          <label htmlFor="origin-chain" className="form-label text-[0.75rem] font-bold text-strong">
+            Pay USDC from
+          </label>
+          <NativeSelect id="origin-chain" value={q.chain} onChange={(e) => q.setChain(e.target.value)} className="h-10">
+            {ORIGIN_CHAINS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="refund-address" className="form-label text-[0.75rem] font-bold text-strong">
+            Refund address
+          </label>
+          <Input
+            id="refund-address"
+            value={q.refund}
+            onChange={(e) => q.setRefund(e.target.value)}
+            placeholder="0x"
+            spellCheck={false}
+            autoComplete="off"
+            className="h-10 font-type text-[0.8125rem]"
+            aria-invalid={!!q.refundError}
+            aria-describedby={q.refundError ? "refund-address-error" : "refund-address-help"}
+          />
+          {q.refundError ? (
+            <p id="refund-address-error" className="text-[0.8125rem] text-destructive">
+              {q.refundError}
+            </p>
+          ) : (
+            <p id="refund-address-help" className="text-[0.8125rem] text-muted-foreground">
+              Yours, on the same chain. Used only if the swap cannot complete.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -587,10 +596,10 @@ function QuoteForm({
       <Heading run={run}>Send USDC from any wallet. {venueName} swaps it to ZEC straight into the treasury.</Heading>
       <Card className="mt-6 space-y-5 px-6 py-6 sm:px-6">
         <div>
-          <p className="text-[0.8125rem] text-strong">Payroll total</p>
+          <p className="form-label text-[0.75rem] font-bold text-strong">Payroll total</p>
           <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
         </div>
-        <div className="border-t border-hairline pt-5">
+        <div className="border-t border-ink pt-5">
           <UsdcFields q={q} />
         </div>
       </Card>
@@ -620,27 +629,27 @@ function UsdcCard({
 }) {
   return (
     <form onSubmit={q.submit} noValidate aria-labelledby="fund-usdc-title">
-      <Card className="px-6 py-6 sm:px-6">
-        <h2 id="fund-usdc-title" className="text-[0.9375rem] text-strong">
-          Fund with USDC
-        </h2>
-        <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
-          From any wallet holding USDC. {venueName} swaps it to ZEC straight into the treasury at a rate the quote
-          locks. The deposit is visible on that chain.
-        </p>
-        <div className="mt-5 border-t border-hairline pt-5">
-          <UsdcFields q={q} />
+      <Card className="h-full p-0 sm:px-0">
+        <FormHead id="fund-usdc-title" title="Fund with USDC" label={`Swapped by ${venueName}`} />
+        <div className="@container px-6 pt-4 pb-6">
+          <p className="text-[0.9375rem] text-muted-foreground">
+            From any wallet holding USDC. {venueName} swaps it to ZEC straight into the treasury at a rate the quote
+            locks. The deposit is visible on that chain.
+          </p>
+          <div className="mt-5 border-t border-ink pt-5">
+            <UsdcFields q={q} />
+          </div>
+          {q.error ? <FundProblem className="mt-4" error={q.error} title="No quote yet" /> : null}
+          <Button
+            type="submit"
+            size="lg"
+            variant={secondary ? "secondary" : "default"}
+            className="mt-5"
+            disabled={q.busy || disabled}
+          >
+            {q.busy ? "Getting a quote" : "Get a USDC quote"}
+          </Button>
         </div>
-        {q.error ? <FundProblem className="mt-4" error={q.error} title="No quote yet" /> : null}
-        <Button
-          type="submit"
-          size="lg"
-          variant={secondary ? "secondary" : "default"}
-          className="mt-5"
-          disabled={q.busy || disabled}
-        >
-          {q.busy ? "Getting a quote" : "Get a USDC quote"}
-        </Button>
       </Card>
     </form>
   );
@@ -681,36 +690,38 @@ function MethodChoice({
         Send ZEC to the treasury, or USDC from any wallet. Either way the treasury holds the ZEC before anything is
         paid.
       </Heading>
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <Card aria-labelledby="fund-zec-title" className="px-6 py-6 sm:px-6">
-          <h2 id="fund-zec-title" className="text-[0.9375rem] text-strong">
-            Fund with ZEC
-          </h2>
-          <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "mt-2 block")} />
-          <p className="mt-2 text-[0.9375rem] text-muted-foreground">
-            From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another chain.
-          </p>
-          <div className="mt-4">
-            <QuoteRow label="You send" sub="The amount and address come next">
-              ZEC at the market rate, plus a fee reserve and 2% for price moves
-            </QuoteRow>
-            <QuoteRow label="Rate" sub="The USD basis of every payslip">
-              The market rate of the block in which your ZEC confirms
-            </QuoteRow>
-            <QuoteRow label="Time to send">24 hours</QuoteRow>
+      {/* Two forms, one above the other: each needs the column's width for its fields. */}
+      <div className="mt-6 grid gap-5">
+        <Card aria-labelledby="fund-zec-title" className="p-0 sm:px-0">
+          <FormHead id="fund-zec-title" title="Fund with ZEC" label="Shielded, no swap" />
+          <div className="@container px-6 pt-4 pb-6">
+            <Usd cents={run.total_usd_cents} className={cn(TYPE.hero, "block")} />
+            <p className="mt-2 text-[0.9375rem] text-muted-foreground">
+              From any Zcash wallet, shielded, to the treasury address. No swap venue, and nothing shows on another
+              chain.
+            </p>
+            <div className="mt-4 border-b border-bar-line">
+              <QuoteRow label="You send" sub="The amount and address come next">
+                ZEC at the market rate, plus a fee reserve and 2% for price moves
+              </QuoteRow>
+              <QuoteRow label="Rate" sub="The USD basis of every payslip">
+                The market rate of the block in which your ZEC confirms
+              </QuoteRow>
+              <QuoteRow label="Time to send">24 hours</QuoteRow>
+            </div>
+            {error ? (
+              <FundProblem
+                className="mt-4"
+                error={error}
+                title="No treasury address yet"
+                onRetry={requestZec}
+                busy={busy}
+              />
+            ) : null}
+            <Button size="lg" className="mt-5" onClick={requestZec} disabled={busy || q.busy}>
+              {busy ? "Preparing" : "Fund with ZEC"}
+            </Button>
           </div>
-          {error ? (
-            <FundProblem
-              className="mt-4"
-              error={error}
-              title="No treasury address yet"
-              onRetry={requestZec}
-              busy={busy}
-            />
-          ) : null}
-          <Button size="lg" className="mt-5" onClick={requestZec} disabled={busy || q.busy}>
-            {busy ? "Preparing" : "Fund with ZEC"}
-          </Button>
         </Card>
         <UsdcCard q={q} venueName={venueName} secondary disabled={busy} />
       </div>
@@ -873,12 +884,12 @@ function ZecDeposit({
           : "Send the amount below to the treasury address from any Zcash wallet. The run is funded when it confirms, at the market rate of that block."}
       </Heading>
 
-      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
+      <Card className="@container mt-6 px-6 py-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.8125rem] text-strong">You send</p>
+          <p className="form-label text-[0.75rem] font-bold text-strong">You send</p>
           {rate ? (
             <span
-              className="inline-flex items-center rounded-full bg-raised px-2.5 py-1 text-[0.8125rem] text-foreground"
+              className="inline-flex items-center border border-ink px-2 py-0.5 font-type text-[0.8125rem] font-bold text-foreground"
               title={
                 funded
                   ? "The market rate of the block in which the ZEC confirmed: this run's USD basis."
@@ -891,7 +902,7 @@ function ZecDeposit({
         </div>
         <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
           <span className={cn(TYPE.hero, "money")}>{required !== null ? formatZec(required) : "ZEC"}</span>
-          {required !== null ? <span className="text-[0.9375rem] text-strong">ZEC</span> : null}
+          {required !== null ? <span className="font-type text-[0.9375rem] font-bold text-strong">ZEC</span> : null}
         </p>
         {funding.deadline && !closed ? (
           <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
@@ -937,7 +948,7 @@ function ZecDeposit({
             </Button>
             <button
               type="button"
-              className="rounded-sm text-[0.9375rem] text-link hover:underline"
+              className="font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
               onClick={() => setShowUsdc((v) => !v)}
             >
               {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
@@ -951,23 +962,23 @@ function ZecDeposit({
         </p>
       ) : (
         <div className="mt-6 space-y-5">
-          <div className="grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+          <div className="grid gap-5 border border-ink p-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
             <Sensitive block>
               <QrCode value={address} label="QR code of the treasury address" size={160} />
             </Sensitive>
-            <dl className="grid min-w-0 gap-3 text-[0.9375rem]">
+            <dl className="grid min-w-0 gap-3 font-type text-[0.9375rem]">
               <div>
-                <dt className="text-[0.8125rem] text-muted-foreground">Treasury address</dt>
+                <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Treasury address</dt>
                 <dd>
                   <Hash value={address} label="treasury address" head={12} tail={8} />
                 </dd>
               </div>
               <div>
-                <dt className="text-[0.8125rem] text-muted-foreground">Amount</dt>
+                <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Amount</dt>
                 <dd className="flex flex-wrap items-center gap-2">
                   {required !== null ? (
                     <>
-                      <span className="money">{formatZec(required)} ZEC</span>
+                      <span className="money font-type font-bold">{formatZec(required)} ZEC</span>
                       <CopyButton value={plainZec(required)} label="amount in ZEC" size="sm">
                         Copy amount
                       </CopyButton>
@@ -986,7 +997,7 @@ function ZecDeposit({
           {waiting ? (
             <button
               type="button"
-              className="rounded-sm text-[0.9375rem] text-link hover:underline"
+              className="font-type text-[0.9375rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
               onClick={() => setShowUsdc((v) => !v)}
             >
               {showUsdc ? "Keep funding with ZEC" : "Fund with USDC instead"}
@@ -1082,9 +1093,9 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
           : "Send the exact amount below. The treasury receives ZEC as soon as the swap completes."}
       </Heading>
 
-      <Card className="mt-6 px-6 py-6 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
+      <Card className="@container mt-6 px-6 py-6 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[0.8125rem] text-strong">You send exactly</p>
+          <p className="form-label text-[0.75rem] font-bold text-strong">You send exactly</p>
           {rate ? (
             <RatePill title="The venue's quoted rate, held until the quote's deadline.">
               1 ZEC = <span className="money">{formatRate(rate)}</span>
@@ -1093,7 +1104,7 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
         </div>
         <p className="mt-2 flex flex-wrap items-baseline gap-x-2">
           <span className={cn(TYPE.hero, "money")}>{groupAmount(funding.amount_in)}</span>
-          <span className="text-[0.9375rem] text-strong">
+          <span className="font-type text-[0.9375rem] font-bold text-strong">
             {funding.origin_asset}
             {chainName ? ` on ${chainName}` : ""}
           </span>
@@ -1161,7 +1172,7 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
           />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1 space-y-1.5">
-              <label htmlFor="requote-refund" className="text-[0.8125rem] text-strong">
+              <label htmlFor="requote-refund" className="form-label text-[0.75rem] font-bold text-strong">
                 Refund address on {chainName}
               </label>
               <Input
@@ -1169,7 +1180,7 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
                 value={refund}
                 onChange={(e) => setRefund(e.target.value)}
                 placeholder="0x"
-                className="h-10 rounded-[10px] font-mono text-[0.8125rem]"
+                className="h-10 font-type text-[0.8125rem]"
                 spellCheck={false}
               />
             </div>
@@ -1185,19 +1196,23 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
         </p>
       ) : (
         <div className="mt-6 space-y-5">
-          <div className="grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+          <div className="grid gap-5 border border-ink p-4 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
             <Sensitive block>
               <QrCode value={evm.deposit_address} label={`QR code of the deposit address on ${chainName}`} size={160} />
             </Sensitive>
-            <dl className="grid min-w-0 gap-3 text-[0.9375rem]">
+            <dl className="grid min-w-0 gap-3 font-type text-[0.9375rem]">
               <div>
-                <dt className="text-[0.8125rem] text-muted-foreground">Deposit address on {chainName}</dt>
+                <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">
+                  Deposit address on {chainName}
+                </dt>
                 <dd>
                   <Hash value={evm.deposit_address} label="deposit address" head={10} tail={8} />
                 </dd>
               </div>
               <div>
-                <dt className="text-[0.8125rem] text-muted-foreground">{funding.origin_asset} token contract</dt>
+                <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">
+                  {funding.origin_asset} token contract
+                </dt>
                 <dd>
                   <Hash value={evm.token_address} label="token contract address" head={8} tail={6} />
                 </dd>
@@ -1205,8 +1220,8 @@ function DepositQuote({ run, onRun, notes }: { run: Run; onRun: (run: Run) => vo
             </dl>
           </div>
           {waiting && !pastDeadline && funding.status === "awaiting_deposit" ? (
-            <div className="space-y-2 border-t border-hairline pt-5">
-              <p className="text-[0.9375rem]">Pay with a browser wallet</p>
+            <div className="space-y-2 border-t border-ink pt-5">
+              <p className="form-label text-[0.75rem] font-bold">Pay with a browser wallet</p>
               <WalletPay runId={run.id} funding={evm} onSubmitted={() => undefined} />
             </div>
           ) : null}
@@ -1251,14 +1266,20 @@ function DiscardRun({ run }: { run: Run }) {
     <>
       <p className="mt-8 text-[0.8125rem] text-muted-foreground">
         Approved by mistake?{" "}
-        <button type="button" className="rounded-sm text-link hover:underline" onClick={() => setOpen(true)}>
+        <button
+          type="button"
+          className="font-type font-bold text-destructive underline decoration-1 underline-offset-[3px] hover:decoration-2"
+          onClick={() => setOpen(true)}
+        >
           Discard this run
         </button>
       </p>
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className={TYPE.heading}>Discard the {runTitle(run)} run?</DialogTitle>
+            <DialogTitle className="inked font-display text-[1.25rem] leading-tight font-bold">
+              Discard the {runTitle(run)} run?
+            </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
               Nothing has been funded or paid. The run and its {plural(run.lines.length, "line")} are removed.
             </DialogDescription>

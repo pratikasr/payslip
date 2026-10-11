@@ -7,7 +7,7 @@ import { cn } from "cn";
 import { plural, runTitle } from "./run-meta";
 
 /*
-  A payroll run in its two views (docs/DESIGN.md section 16), above the run's tabs. The vault
+  A payroll run in its two copies (docs/DESIGN.md sections 16 and 17), above the run's tabs. The vault
   side is what the public explorer shows: the allocation transaction that fills every
   contractor's account, then one shielded payment per person, each a transaction id and a block
   with its amount, sender, recipient and memo hidden. The paper side is what the company's keys
@@ -75,7 +75,7 @@ export function RunViews({ run, onShowPrivacy }: { run: Run; onShowPrivacy: () =
           />
         ))}
         {more > 0 ? (
-          <p className="border-t border-mist py-3 text-[0.8125rem] text-ash">
+          <p className="border-t border-mist py-3 font-type text-[0.8125rem] text-ash">
             And {plural(run.lines.slice(shown.length).filter((l) => l.txid).length, "more transaction")} like these
           </p>
         ) : null}
@@ -90,15 +90,17 @@ export function RunViews({ run, onShowPrivacy }: { run: Run; onShowPrivacy: () =
         </ViewTitle>
         {allocation ? (
           <PaperRow
+            bar
             txid={allocation.txid}
             name={`Funding for ${plural(people, "person", "people")}`}
             sub={formatRange(run.period_start, run.period_end)}
             amount={<Usd cents={run.total_usd_cents} />}
           />
         ) : null}
-        {shown.map((l) => (
+        {shown.map((l, i) => (
           <PaperRow
             key={l.id}
+            bar={(i + (allocation ? 1 : 0)) % 2 === 0}
             txid={l.txid}
             name={l.contractor_name}
             sub={l.invoice_ref || "No invoice"}
@@ -107,11 +109,11 @@ export function RunViews({ run, onShowPrivacy }: { run: Run; onShowPrivacy: () =
           />
         ))}
         {more > 0 ? <MoreRow lines={run.lines.slice(shown.length)} /> : null}
-        <div className="border-t border-mist pt-4">
+        <div className="border-t border-bar-line pt-4">
           <button
             type="button"
             onClick={onShowPrivacy}
-            className="rounded-sm text-[0.8125rem] text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+            className="font-type text-[0.8125rem] font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
           >
             See the Privacy view
           </button>
@@ -125,7 +127,9 @@ export function RunViews({ run, onShowPrivacy }: { run: Run; onShowPrivacy: () =
 function VaultRow({ tx, what }: { tx: Tx | null; what: string }) {
   if (!tx) {
     return (
-      <div className="flex items-center border-t border-mist py-3 text-[0.8125rem] text-ash">Not on chain yet</div>
+      <div className="flex items-center border-t border-mist py-3 font-type text-[0.8125rem] text-ash">
+        Not on chain yet
+      </div>
     );
   }
   return (
@@ -142,7 +146,7 @@ function VaultRow({ tx, what }: { tx: Tx | null; what: string }) {
         <Redacted label={null} className="w-[5em]" />
         <Redacted label={null} className="w-[6em]" />
       </span>
-      <span className="grid grid-cols-[auto_auto] items-center text-[0.8125rem] leading-[1.45]">
+      <span className="grid grid-cols-[auto_auto] items-center font-type text-[0.8125rem] leading-[1.45]">
         <span className="justify-self-end">
           {tx.url ? (
             <a
@@ -151,13 +155,13 @@ function VaultRow({ tx, what }: { tx: Tx | null; what: string }) {
               rel="noreferrer"
               data-txid={tx.txid}
               title={tx.txid}
-              className="rounded-[3px] font-mono text-ink underline decoration-ink/30 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
+              className="font-type text-ink underline decoration-ink/30 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink"
             >
               {shortTx(tx.txid)}
               <span className="sr-only"> (opens on the explorer in a new tab)</span>
             </a>
           ) : (
-            <code className="font-mono" title={tx.txid}>
+            <code className="font-type" title={tx.txid}>
               {shortTx(tx.txid)}
             </code>
           )}
@@ -165,7 +169,7 @@ function VaultRow({ tx, what }: { tx: Tx | null; what: string }) {
         <span className="flex items-center">
           <Thread side="vault" split={SPLIT} weight="thin" />
         </span>
-        <span aria-hidden="true" className="justify-self-end font-mono text-ash tabular-nums">
+        <span aria-hidden="true" className="justify-self-end font-type text-ash tabular-nums">
           {tx.height !== null ? formatHeight(tx.height) : "Not mined"}
         </span>
       </span>
@@ -180,25 +184,29 @@ function PaperRow({
   sub,
   amount,
   pending = false,
+  bar = false,
 }: {
   txid: string | null;
   name: string;
   sub: ReactNode;
   amount: ReactNode;
   pending?: boolean;
+  /** Every other row of the original sits on the green bar. */
+  bar?: boolean;
 }) {
   return (
     <div
       className={cn(
-        "grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-t border-mist py-3",
+        "-mx-2.5 grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 border-t border-bar-line px-2.5 py-3 font-type",
         "xl:grid-cols-[auto_minmax(0,1fr)_auto]",
+        bar && "bg-bar",
       )}
     >
       {/* Side by side, the transaction id leads the row, joined to its twin on the explorer's side. */}
       {txid ? (
         <span className="hidden items-center self-center xl:flex">
           <Thread side="paper" split={SPLIT} weight="thin" />
-          <code className="font-mono text-[0.8125rem] text-ash" title={txid}>
+          <code className="font-type text-[0.8125rem] text-ash" title={txid}>
             {shortTx(txid)}
           </code>
         </span>
@@ -206,21 +214,19 @@ function PaperRow({
         <span className="hidden w-[13ch] text-[0.8125rem] text-ash xl:block">Not sent</span>
       )}
       <span className="min-w-0">
-        <span className="block truncate text-[0.9375rem]" title={name}>
-          {name}
-        </span>
-        <span className="block truncate text-[0.8125rem] text-ash">
+        <span className="block text-[0.9375rem] [overflow-wrap:anywhere] xl:text-[0.875rem]">{name}</span>
+        <span className="block text-[0.8125rem] [overflow-wrap:anywhere] text-ash xl:text-[0.75rem]">
           {sub}
           {txid ? (
             <span className="xl:hidden">
-              , <code className="font-mono">{shortTx(txid)}</code>
+              , <code className="font-type">{shortTx(txid)}</code>
             </span>
           ) : pending ? (
             <span className="xl:hidden">, not sent yet</span>
           ) : null}
         </span>
       </span>
-      <span className="text-right text-[0.9375rem]">{amount}</span>
+      <span className="text-right text-[0.9375rem] xl:text-[0.875rem]">{amount}</span>
     </div>
   );
 }
@@ -228,7 +234,7 @@ function PaperRow({
 function MoreRow({ lines }: { lines: PayLine[] }) {
   const cents = lines.reduce((n, l) => n + l.amount_usd_cents, 0);
   return (
-    <div className="flex items-baseline justify-between gap-4 border-t border-mist py-3 text-[0.8125rem] text-ash">
+    <div className="flex items-baseline justify-between gap-4 border-t border-bar-line py-3 font-type text-[0.8125rem] text-ash">
       <span>And {plural(lines.length, "more person", "more people")}</span>
       <Usd cents={cents} className="text-[0.9375rem] text-ink" />
     </div>

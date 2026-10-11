@@ -99,11 +99,16 @@ function PersonBody({
         <Initials name={c.name} size="lg" />
         <div className="min-w-0">
           {/* A long name wraps to two lines and an email breaks anywhere: nothing is cut off unseen. */}
-          <DrawerTitle className={cn(TYPE.heading, "line-clamp-2 [overflow-wrap:anywhere]")} title={c.name}>
+          <DrawerTitle
+            className="inked line-clamp-2 font-display text-[1.375rem] leading-[1.1] font-bold [overflow-wrap:anywhere]"
+            title={c.name}
+          >
             {c.name}
           </DrawerTitle>
           {c.email ? (
-            <p className="text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">{c.email}</p>
+            <p className="mt-0.5 font-type text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">
+              {c.email}
+            </p>
           ) : null}
         </div>
       </div>
@@ -114,11 +119,11 @@ function PersonBody({
       </div>
 
       <div className="mt-5">
-        <div className="text-[0.8125rem] text-muted-foreground">Paid to date</div>
-        <div className={cn(TYPE.title, "mt-1")}>
+        <div className="form-label text-[0.75rem] font-bold text-muted-foreground">Paid to date</div>
+        <div className={cn(TYPE.hero, "mt-2")}>
           <Usd cents={paidCents} />
         </div>
-        <Zec zat={paidZat} short className="text-[0.8125rem] text-muted-foreground" />
+        <Zec zat={paidZat} short className="mt-1.5 block font-type text-[0.8125rem] text-muted-foreground" />
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -138,11 +143,11 @@ function PersonBody({
         </Button>
       </div>
 
-      <dl className="mt-6 grid gap-y-3.5 border-t border-hairline pt-5 text-[0.9375rem]">
+      <dl className="green-bar mt-6 grid border-y-2 border-ink font-type text-[0.875rem]">
         <Row label="Zcash address">
           <span className="inline-flex items-center gap-0.5">
             <Sensitive>
-              <code className="font-mono text-[0.8125rem]" title={c.unified_address}>
+              <code className="font-type text-[0.8125rem]" title={c.unified_address}>
                 {truncateMiddle(c.unified_address, 10, 8)}
               </code>
             </Sensitive>
@@ -154,7 +159,7 @@ function PersonBody({
             <span className="text-right">
               Converts to USDC on {chainLabel(c.payout_chain)}
               {c.payout_address ? (
-                <span className="block font-mono text-[0.8125rem] text-muted-foreground" title={c.payout_address}>
+                <span className="block font-type text-[0.8125rem] text-muted-foreground" title={c.payout_address}>
                   {truncateMiddle(c.payout_address, 8, 6)}
                 </span>
               ) : null}
@@ -170,39 +175,39 @@ function PersonBody({
         <Row label="Added">{formatDate(c.created_at)}</Row>
       </dl>
       <Disclosure summary="Technical details" className="mt-4">
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[0.8125rem]">
-          <dt className="text-muted-foreground">Private account</dt>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 font-type text-[0.8125rem]">
+          <dt className="form-label text-[0.75rem] text-muted-foreground">Private account</dt>
           <dd className="num text-right">Account {c.account_index}</dd>
-          <dt className="text-muted-foreground">Full address</dt>
+          <dt className="form-label text-[0.75rem] text-muted-foreground">Full address</dt>
           <dd className="min-w-0 text-right">
             <Sensitive>
-              <code className="font-mono [overflow-wrap:anywhere]">{c.unified_address}</code>
+              <code className="font-type [overflow-wrap:anywhere]">{c.unified_address}</code>
             </Sensitive>
           </dd>
         </dl>
       </Disclosure>
 
-      <section aria-labelledby="history-title" className="mt-6 border-t border-hairline pt-5">
-        <h3 id="history-title" className="text-[0.9375rem]">
+      <section aria-labelledby="history-title" className="mt-6 border-t border-ink pt-5">
+        <h3 id="history-title" className="inked font-display text-[1.125rem] leading-tight font-bold">
           Payment history
         </h3>
         {history.length === 0 ? (
-          <p className="mt-2 text-[0.8125rem] text-muted-foreground">
+          <p className="mt-2 font-type text-[0.875rem] text-muted-foreground">
             No payments yet. They appear here once a run includes them.
           </p>
         ) : (
-          <ul className="mt-2">
+          <ul className="green-bar mt-3 border-y-2 border-ink font-type">
             {history.map(({ line, run }) => {
               const paidAt = lineConfirmedAt(line, run);
               return (
                 <li
                   key={line.id}
-                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-hairline py-3 last:border-0"
+                  className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-bar-line px-2 py-2.5 last:border-0"
                 >
                   <span className="min-w-0">
                     <Link
                       href={`/console/runs/${run.id}`}
-                      className="block truncate rounded-sm text-[0.9375rem] hover:underline"
+                      className="block truncate text-[0.9375rem] font-bold hover:underline"
                     >
                       {runTitle(run)}
                       {line.invoice_ref ? (
@@ -216,7 +221,7 @@ function PersonBody({
                           href={line.explorer_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="inline-flex items-center gap-1 rounded-sm hover:text-foreground"
+                          className="inline-flex items-center gap-1 hover:text-foreground"
                           aria-label={`Open the ${runTitle(run)} payment in a block explorer (opens in a new tab)`}
                         >
                           Explorer
@@ -298,7 +303,7 @@ function DefaultAmount({ contractor: c, onSaved }: { contractor: Contractor; onS
         <div className="relative">
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[0.8125rem] text-muted-foreground"
+            className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 font-type text-[0.8125rem] text-muted-foreground"
           >
             $
           </span>
@@ -335,8 +340,8 @@ function DefaultAmount({ contractor: c, onSaved }: { contractor: Contractor; onS
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <dt className="shrink-0 text-strong">{label}</dt>
+    <div className="flex items-start justify-between gap-4 border-b border-bar-line px-2 py-2.5 last:border-b-0">
+      <dt className="form-label shrink-0 pt-px text-[0.75rem] font-bold text-strong">{label}</dt>
       <dd className="min-w-0 text-right">{children}</dd>
     </div>
   );
@@ -408,7 +413,10 @@ export function ArchiveDialog({
           </DialogDescription>
         </DialogHeader>
         {unfinished.length > 0 ? (
-          <div className="mx-6 mb-4 rounded-lg bg-warning-bg p-3 text-[0.8125rem] text-strong" role="note">
+          <div
+            className="carbon-paper mx-6 mb-4 border border-carbon-line p-3 text-[0.8125rem] text-strong"
+            role="note"
+          >
             <p>
               {contractor?.name} {unfinished.length === 1 ? "is in a run" : "is in runs"} that{" "}
               {unfinished.length === 1 ? "has" : "have"} not finished.{" "}
@@ -429,7 +437,7 @@ export function ArchiveDialog({
           </div>
         ) : null}
         {error ? <Problem className="mx-6 mb-4" error={error} title="Not archived" /> : null}
-        <DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-4">
+        <DialogFooter className="mx-0 mb-0 px-6 py-4">
           <Button variant="secondary" onClick={close}>
             Cancel
           </Button>

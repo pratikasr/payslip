@@ -215,7 +215,7 @@ function ScheduleCard({
               {daysBad ? "Use a whole number from 0 to 28." : "0 to 28. The draft appears on that day."}
             </p>
           </div>
-          <label className="flex cursor-pointer items-start gap-2.5 pt-6 text-[0.9375rem]">
+          <label className="flex cursor-pointer items-start gap-2.5 pt-6 font-type text-[0.9375rem]">
             <input
               type="checkbox"
               checked={active}
@@ -223,23 +223,23 @@ function ScheduleCard({
                 setTouched(true);
                 setActive(e.target.checked);
               }}
-              className="mt-1 size-4 rounded accent-[var(--primary-edge)]"
+              className="mt-1 size-4 accent-[var(--primary-edge)]"
             />
             <span>
               Draft payroll on this schedule
-              <span className="block text-[0.8125rem] text-muted-foreground">
+              <span className="block font-sans text-[0.8125rem] text-muted-foreground">
                 Switched off, the schedule is kept but drafts nothing.
               </span>
             </span>
           </label>
         </div>
         {problem ? <Problem error={problem} title="The schedule was not saved" /> : null}
-        <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-4">
+        <div className="flex flex-wrap items-center gap-3 border-t border-ink pt-4">
           <Button type="submit" disabled={saving || daysBad}>
             {saving ? "Applying" : schedule ? "Update schedule" : "Set schedule"}
           </Button>
           {schedule && !touched ? (
-            <span className="inline-flex items-center gap-1.5 text-[0.8125rem] text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 font-type text-[0.8125rem] text-muted-foreground">
               <Check className="size-3.5 text-success" aria-hidden="true" />
               Saved {formatDate(schedule.updated_at)}
             </span>
@@ -257,7 +257,7 @@ function ScheduleStatus({ schedule: s, loading }: { schedule: PaySchedule | null
   if (!s) {
     return (
       <p
-        className="mt-5 border-t border-hairline pt-4 text-[0.9375rem] text-muted-foreground"
+        className="mt-5 border-t border-ink pt-4 font-type text-[0.9375rem] text-muted-foreground"
         data-testid="schedule-none"
       >
         No schedule yet. Payroll is run by hand from Run payroll.
@@ -266,20 +266,23 @@ function ScheduleStatus({ schedule: s, loading }: { schedule: PaySchedule | null
   }
   const next = periodTitle(s.next_period_start, s.next_period_end);
   return (
-    <dl className="mt-5 grid gap-y-3 border-t border-hairline pt-4 text-[0.9375rem]" data-testid="schedule-status">
+    <dl
+      className="green-bar mt-5 grid border-y-2 border-ink font-type text-[0.9375rem] [&>div]:px-2 [&>div]:py-2.5"
+      data-testid="schedule-status"
+    >
       <div className="flex items-start gap-3">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-chip text-muted-foreground">
+        <span className="grid size-7 shrink-0 place-items-center border border-ink text-strong">
           <CalendarClock className="size-3.5" aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <dt className="text-[0.8125rem] text-muted-foreground">Schedule</dt>
+          <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Schedule</dt>
           <dd>{scheduleSentence(s)}</dd>
         </div>
       </div>
       <div className="flex items-start gap-3">
         <span className="size-7 shrink-0" aria-hidden="true" />
         <div className="min-w-0">
-          <dt className="text-[0.8125rem] text-muted-foreground">Next</dt>
+          <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Next</dt>
           <dd>
             {next} payroll{s.active ? `, ${nextDraftSentence(s)}` : " (schedule off)"}
           </dd>
@@ -289,9 +292,12 @@ function ScheduleStatus({ schedule: s, loading }: { schedule: PaySchedule | null
         <div className="flex items-start gap-3">
           <span className="size-7 shrink-0" aria-hidden="true" />
           <div className="min-w-0">
-            <dt className="text-[0.8125rem] text-muted-foreground">Drafted</dt>
+            <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Drafted</dt>
             <dd className="flex flex-wrap items-center gap-2">
-              <Link href={`/console/runs/new?run=${s.drafted.run_id}`} className="text-link hover:underline">
+              <Link
+                href={`/console/runs/new?run=${s.drafted.run_id}`}
+                className="font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
+              >
                 {periodTitle(s.drafted.period_start, s.drafted.period_end)} payroll
               </Link>
               {s.drafted.pay_day ? (
@@ -327,7 +333,7 @@ function DefaultsCard({
         title="Default amounts"
         actions={
           people.length > 0 ? (
-            <span className="num text-[0.8125rem] text-muted-foreground">
+            <span className="num font-type text-[0.8125rem] font-bold text-muted-foreground">
               {formatCount(withDefault.length)} of {formatCount(people.length)}
             </span>
           ) : null
@@ -340,14 +346,16 @@ function DefaultsCard({
       {error && !contractors ? (
         <Problem className="mt-4" error={error} title="Could not load your people" onRetry={onRetry} />
       ) : people.length === 0 ? (
-        <p className="mt-4 text-[0.9375rem] text-muted-foreground">Nobody yet. Add people first.</p>
+        <p className="mt-4 font-type text-[0.9375rem] text-muted-foreground">
+          Nobody yet. Add people first, then set what each is paid by default.
+        </p>
       ) : (
-        <ul className="mt-3">
+        <ul className="green-bar mt-3 border-y-2 border-ink font-type">
           {people.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} className="border-b border-bar-line last:border-b-0">
               <Link
                 href={`/console/people?person=${c.id}`}
-                className="-mx-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted"
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-2 py-2 transition-colors hover:bg-muted"
               >
                 <Initials name={c.name} />
                 <span className="min-w-0 truncate text-[0.9375rem]">{c.name}</span>

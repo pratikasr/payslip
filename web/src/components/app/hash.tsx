@@ -31,7 +31,7 @@ export function Hash({ value, label, explorerUrl, head = 8, tail = 6, empty = "N
           href={explorerUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="inline-flex size-6 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
           aria-label={`Open ${label} in block explorer (opens in a new tab)`}
           title="Open in block explorer"
           data-print="hide"

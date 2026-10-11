@@ -35,7 +35,7 @@ const matches: Record<Exclude<Filter, "recent">, (l: PayLine) => boolean> = {
 /**
  * Payments, latest pay period first, grouped under their run ("Sep 2026 payroll, 6 payments,
  * $30,375.50"). Only runs that were funded appear: a draft has
- * paid nobody. A confirmed payment shows the gold Shielded mark instead of a grey status; a
+ * paid nobody. A confirmed payment shows the red Shielded stamp instead of a grey status; a
  * payment that needs attention shows its tag. Testnet funding is not listed: on testnet nothing
  * arrives (coins already in the treasury are set aside); Treasury lists it.
  */
@@ -84,30 +84,30 @@ export function PaymentsTable({ runs }: { runs: Run[] }) {
       {options.length > 1 ? (
         <FilterChips label="Filter payments" value={filter} onChange={setFilter} options={options} />
       ) : null}
-      <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+      <table className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.875rem] sm:text-[0.9375rem]">
         <caption className="sr-only">
           Payments by payroll run, latest pay period first. Shielded: {SHIELDED_HELP.toLowerCase()}.
         </caption>
         <thead>
-          <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-            <th scope="col" className="w-[4.25rem] py-3 pr-2 font-normal">
+          <tr className="border-y-2 border-ink text-left text-[0.75rem]">
+            <th scope="col" className="w-[4.75rem] py-2.5 pr-2 pl-2 font-bold">
               Date
             </th>
-            <th scope="col" className="py-3 pr-2 font-normal">
+            <th scope="col" className="py-2.5 pr-2 font-bold">
               To
             </th>
-            <th scope="col" className="w-[7.5rem] py-3 pr-0 text-right font-normal sm:w-[9.5rem] sm:pr-[22px]">
+            <th scope="col" className="w-[7.5rem] py-2.5 pr-2 text-right font-bold sm:w-[9.5rem] sm:pr-[22px]">
               Amount
             </th>
-            <th scope="col" className="hidden w-[9rem] py-3 font-normal sm:table-cell">
+            <th scope="col" className="hidden w-[9rem] py-2.5 font-bold sm:table-cell">
               Status
             </th>
           </tr>
         </thead>
         {groups.length === 0 ? (
           <tbody>
-            <tr className="border-b border-hairline">
-              <td colSpan={3} className="h-[50px] text-[0.8125rem] text-muted-foreground">
+            <tr className="border-b border-bar-line">
+              <td colSpan={3} className="h-[50px] pl-2 text-[0.875rem] text-muted-foreground">
                 {empty}
               </td>
             </tr>
@@ -125,19 +125,23 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
   const f = run.funding;
   return (
     <tbody>
-      <tr className="border-b border-hairline bg-raised/60">
+      <tr data-group="" className="border-b border-ink">
         {/* Three columns on phones (Status is hidden there), so the header spans three and an
             empty cell takes the fourth from tablet width up; a span of four would add a phantom
             column on phones and squeeze the names. */}
-        <th scope="colgroup" colSpan={3} className="h-9 px-0 text-left font-normal">
-          <span className="flex min-w-0 items-baseline gap-2 pr-1 text-[0.8125rem]">
+        <th
+          scope="colgroup"
+          colSpan={3}
+          className="h-auto px-0 pt-6 pb-2 text-left font-normal normal-case tracking-normal"
+        >
+          <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 pr-1">
             <Link
               href={`/console/runs/${run.id}`}
-              className="truncate rounded-sm pl-2 text-foreground hover:underline sm:pl-3"
+              className="inked truncate pl-2 font-display text-[1.0625rem] font-bold text-foreground hover:underline"
             >
               {runTitle(run)} payroll
             </Link>
-            <span className="shrink-0 text-muted-foreground">
+            <span className="shrink-0 pl-2 text-[0.8125rem] text-muted-foreground sm:pl-0">
               {plural(lines.length, "payment")}, <Usd cents={total} />
             </span>
           </span>
@@ -145,8 +149,8 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
         <td className="hidden sm:table-cell" />
       </tr>
       {inflow && f ? (
-        <tr className="border-b border-hairline">
-          <td className="h-[52px] pr-2 whitespace-nowrap text-strong">{formatShortDate(run.created_at)}</td>
+        <tr className="border-b border-bar-line">
+          <td className="h-[48px] pr-2 pl-2 whitespace-nowrap text-strong">{formatShortDate(run.created_at)}</td>
           <td className="pr-2">
             <span className="flex min-w-0 items-center gap-3">
               <Initials text="US" />
@@ -155,7 +159,7 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
               </span>
             </span>
           </td>
-          <td className="py-1.5 pr-0 text-right sm:pr-[22px]">
+          <td className="py-1.5 pr-2 text-right sm:pr-[22px]">
             <Usd cents={f.funded_usd_cents} signed className="block text-success" />
           </td>
           <td className="hidden text-[0.8125rem] text-muted-foreground sm:table-cell">Into treasury</td>
@@ -164,8 +168,8 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
       {lines.map((line) => {
         const at = lineConfirmedAt(line, run);
         return (
-          <tr key={line.id} className="border-b border-hairline">
-            <td className="h-[52px] pr-2 whitespace-nowrap text-strong">
+          <tr key={line.id} className="border-b border-bar-line">
+            <td className="h-[48px] pr-2 pl-2 whitespace-nowrap text-strong">
               {at ? formatShortDate(at) : <span className="text-muted-foreground">Not yet</span>}
             </td>
             <td className="pr-2">
@@ -174,7 +178,7 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
                 <span className="min-w-0">
                   <Link
                     href={`/console/people?person=${line.contractor_id}`}
-                    className="block truncate rounded-sm hover:underline"
+                    className="block truncate hover:underline"
                   >
                     {line.contractor_name}
                   </Link>
@@ -185,7 +189,7 @@ function RunGroup({ group: { run, lines, inflow } }: { group: Group }) {
                 </span>
               </span>
             </td>
-            <td className={cn("py-1.5 pr-0 text-right sm:pr-[22px]", line.status === "failed" && "line-through")}>
+            <td className={cn("py-1.5 pr-2 text-right sm:pr-[22px]", line.status === "failed" && "line-through")}>
               <Usd cents={-line.amount_usd_cents} className="block" />
             </td>
             <td className="hidden sm:table-cell">

@@ -27,3 +27,19 @@ export function Logo({ href = "/", className }: { href?: string; className?: str
     </Link>
   );
 }
+
+/**
+ * The head of a small form on the desk (sign-in, an invitation, a gate): the mark and the name
+ * typed on the left, the form's name in spaced caps on the right, ruled off in ink.
+ */
+export function SlipHead({ label, className }: { label: string; className?: string }) {
+  return (
+    <div className={cn("flex items-center justify-between gap-3 border-b-2 border-ink pb-3", className)}>
+      <span className="inline-flex items-center gap-2 font-type text-[0.9375rem] font-bold">
+        <LogoMark className="size-[24px]" />
+        Payslip
+      </span>
+      <span className="form-label text-[0.75rem] text-muted-foreground">{label}</span>
+    </div>
+  );
+}

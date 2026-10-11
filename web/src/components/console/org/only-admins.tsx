@@ -14,11 +14,11 @@ export function OnlyAdmins({ what, who = "an admin" }: { what: string; who?: str
     <>
       <PageTitle title="Not for your role" />
       <Card>
-        <p className="text-[0.9375rem]">
+        <p className="font-type text-[0.9375rem] font-bold">
           Only {who} can {what}. You are signed in as {roleLabel(auth.role).toLowerCase() || "a member"}.
         </p>
         <p className="mt-1 text-[0.8125rem] text-muted-foreground">An admin can change your role under Members.</p>
-        <div className="mt-5 border-t border-hairline pt-4">
+        <div className="mt-5 border-t border-ink pt-4">
           <Button asChild variant="secondary">
             <Link href="/console">Back to the console</Link>
           </Button>

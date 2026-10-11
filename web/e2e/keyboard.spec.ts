@@ -64,7 +64,7 @@ test("contractor portal unlocks with the keyboard alone", async ({ page }) => {
   }[];
   const contractor = keys.find((k) => k.role === "contractor")!;
   await page.goto("/portal", { waitUntil: "networkidle" });
-  await tabTo(page, /^Viewing key$/);
+  await tabTo(page, /^Enter your viewing key$/);
   await page.keyboard.insertText(contractor.ufvk);
   await tabTo(page, /^Open payslips$/);
   await page.keyboard.press("Enter");

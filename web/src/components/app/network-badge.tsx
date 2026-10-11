@@ -50,13 +50,13 @@ export function NetworkBadge({ className, compact }: { className?: string; compa
   return (
     <span
       className={cn(
-        "inline-flex h-7 shrink-0 items-center gap-2 rounded-full border bg-card px-2.5 text-[0.8125rem] whitespace-nowrap",
+        "inline-flex h-7 shrink-0 items-center gap-2 border border-ink px-2 font-type text-[0.8125rem] font-bold tracking-[0.06em] whitespace-nowrap uppercase",
         className,
       )}
       title={title}
       role={alert ? "status" : undefined}
     >
-      <span aria-hidden="true" className={cn("size-2 rounded-full", dot)} />
+      <span aria-hidden="true" className={cn("size-2", dot)} />
       <span className="num">{text}</span>
     </span>
   );

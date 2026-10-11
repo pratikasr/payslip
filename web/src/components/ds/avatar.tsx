@@ -25,8 +25,9 @@ export function initials(name: string | null | undefined): string {
 }
 
 /**
- * Initials on Mist, in ink: the same for every person, so a list of people stays within the five
- * identity colours. Decorative: the name is always written next to it.
+ * Initials typed in a small 1px box, the way a form abbreviates a name in a narrow column
+ * (docs/DESIGN.md section 17). The same for every person, so a list of people stays ink on paper.
+ * Decorative: the name is always written next to it.
  */
 export function Initials({
   name,
@@ -43,11 +44,11 @@ export function Initials({
     <span
       aria-hidden="true"
       className={cn(
-        "inline-grid shrink-0 place-items-center rounded-full bg-avatar font-medium text-strong",
+        "inline-grid shrink-0 place-items-center border border-current font-type leading-none font-bold tracking-[0.02em] text-strong",
         // Initials stay at the caption size, so two letters are legible on any screen.
-        size === "sm" && "size-6 text-[0.8125rem] tracking-[-0.02em]",
-        size === "md" && "size-7 text-[0.8125rem]",
-        size === "lg" && "size-10 text-[0.8125rem]",
+        size === "sm" && "h-5 min-w-6 px-0.5 text-[0.75rem]",
+        size === "md" && "h-6 min-w-7 px-0.5 text-[0.8125rem]",
+        size === "lg" && "h-9 min-w-10 px-1 text-[0.9375rem]",
         className,
       )}
     >

@@ -22,7 +22,7 @@ export function Disclosure({
 }) {
   return (
     <details className={cn("group", className)} open={defaultOpen}>
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-[0.8125rem] text-strong hover:text-foreground [&::-webkit-details-marker]:hidden">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-type text-[0.8125rem] font-bold text-strong hover:text-foreground [&::-webkit-details-marker]:hidden">
         <ChevronRight
           className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90"
           aria-hidden="true"

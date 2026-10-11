@@ -24,7 +24,7 @@ export function RunPayrollGate({ children }: { children: ReactNode }) {
           You are signed in as {roleLabel(auth.role).toLowerCase() || "a member"}. Admins and approvers create, fund and
           execute payroll runs; an admin can change your role under Members.
         </p>
-        <div className="mt-5 border-t border-hairline pt-4">
+        <div className="mt-5 border-t border-ink pt-4">
           <Button asChild variant="secondary">
             <Link href="/console/runs">Back to payroll runs</Link>
           </Button>

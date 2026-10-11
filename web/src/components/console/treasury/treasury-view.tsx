@@ -43,7 +43,7 @@ export function TreasuryView({ initial }: { initial: { wallet?: Wallet; runs?: R
       ) : !wallet.data ? (
         <div role="status" aria-label="Loading treasury" className="grid gap-5 md:grid-cols-2">
           {[0, 1].map((i) => (
-            <div key={i} className="space-y-3 rounded-xl border p-5">
+            <div key={i} className="space-y-3 border border-rule p-5">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-9 w-56" />
               <Skeleton className="h-16 w-full" />
@@ -108,7 +108,7 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
     <Card className="flex flex-col" aria-labelledby="balance-title">
       <div className="flex flex-wrap items-start justify-between gap-x-8 gap-y-4">
         <div className="min-w-0">
-          <h2 id="balance-title" className="text-[0.8125rem] text-muted-foreground">
+          <h2 id="balance-title" className="form-label text-[0.75rem] font-bold text-muted-foreground">
             Balance
           </h2>
           {/* One balance figure: dollars on mainnet with the coin under it, the coin on testnet. */}
@@ -116,31 +116,32 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
             {rate ? (
               <Usd cents={zatToCents(t.total_zat, rate)} />
             ) : (
-              <Zec zat={t.total_zat} className="[&_[data-unit]]:text-[0.55em]" />
+              <Zec zat={t.total_zat} className="[&_[data-unit]]:font-type [&_[data-unit]]:text-[0.4em]" />
             )}
           </div>
           {rate ? (
-            <div className="mt-1 text-[0.8125rem] text-muted-foreground">
+            <div className="mt-1.5 font-type text-[0.8125rem] text-muted-foreground">
               <Zec zat={t.total_zat} className="text-strong" /> at the latest fill rate
             </div>
           ) : null}
           {cover !== null && last ? (
-            <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
+            <p className="mt-2 font-type text-[0.8125rem] text-muted-foreground">
               {cover >= 1
                 ? `Covers ${cover >= 10 ? Math.floor(cover) : cover.toFixed(1)} payrolls like ${runTitle(last)}`
                 : `Not enough for a payroll like ${runTitle(last)}`}
             </p>
           ) : null}
         </div>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-1">
-          <div>
-            <dt className="text-[0.8125rem] text-muted-foreground">Spendable</dt>
+        {/* Two boxes of the form, ruled in ink: what can be spent and what is still confirming. */}
+        <dl className="grid min-w-[13rem] grid-cols-2 border border-ink font-type sm:grid-cols-1">
+          <div className="px-3 py-2">
+            <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Spendable</dt>
             <dd className="mt-0.5 text-[0.9375rem]">
               <Zec zat={t.spendable_zat} short />
             </dd>
           </div>
-          <div className="sm:mt-2">
-            <dt className="text-[0.8125rem] text-muted-foreground">Confirming</dt>
+          <div className="border-l border-ink px-3 py-2 sm:border-t sm:border-l-0">
+            <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">Confirming</dt>
             <dd className="mt-0.5 text-[0.9375rem]">
               <Zec zat={t.pending_zat} short />
             </dd>
@@ -148,9 +149,9 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
         </dl>
       </div>
       <div className="mt-auto pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-hairline pt-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-ink pt-4">
           <p
-            className="min-w-0 text-[0.8125rem] text-strong"
+            className="min-w-0 font-type text-[0.8125rem] text-strong"
             aria-live="polite"
             title={`Synced to block ${formatHeight(wallet.synced_height)}; the chain tip is ${formatHeight(wallet.chain_tip)}.`}
           >
@@ -194,10 +195,11 @@ function ReceiveCard({ wallet }: { wallet: Wallet }) {
         </Sensitive>
         <div className="min-w-0">
           <p className="text-[0.9375rem] text-strong">Send {coin} to this shielded address to fund payroll.</p>
-          <div className="mt-3 flex items-start gap-1">
+          <p className="form-label mt-3 text-[0.75rem] font-bold text-muted-foreground">Treasury address</p>
+          <div className="mt-1 flex items-start gap-1">
             <Sensitive
               block
-              className="min-w-0 flex-1 rounded-md bg-raised p-2 font-mono text-[0.8125rem] leading-relaxed break-all"
+              className="min-w-0 flex-1 border border-bar-line bg-bar p-2 font-type text-[0.8125rem] leading-relaxed break-all"
             >
               {address}
             </Sensitive>
@@ -235,27 +237,27 @@ function FundingHistory({ runs, error, onRetry }: { runs?: Run[]; error?: ApiErr
           ))}
         </div>
       ) : funded.length === 0 ? (
-        <p className="border-t border-hairline py-4 text-[0.8125rem] text-muted-foreground">
+        <p className="border-y-2 border-ink px-2 py-4 font-type text-[0.875rem] text-muted-foreground">
           No funding yet. Each payroll run records its funding here: where the coins came from and how much.
         </p>
       ) : (
-        <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+        <table className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.9375rem]">
           <caption className="sr-only">Funding for each payroll run, latest pay period first</caption>
           <thead>
-            <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-              <th scope="col" className="py-3 pr-3 font-normal">
+            <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+              <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                 Payroll
               </th>
-              <th scope="col" className="hidden w-[8rem] py-3 pr-3 font-normal lg:table-cell">
+              <th scope="col" className="hidden w-[8rem] py-3 pr-3 font-bold lg:table-cell">
                 Status
               </th>
-              <th scope="col" className="w-[7.5rem] py-3 pr-0 text-right font-normal sm:w-[9.5rem] sm:pr-6">
+              <th scope="col" className="w-[7.5rem] py-3 pr-0 text-right font-bold sm:w-[9.5rem] sm:pr-6">
                 {testnet ? "Payroll" : "Funded"}
               </th>
-              <th scope="col" className="hidden w-[9.5rem] py-3 pr-6 text-right font-normal sm:table-cell">
+              <th scope="col" className="hidden w-[9.5rem] py-3 pr-6 text-right font-bold sm:table-cell">
                 {testnet ? "Set aside" : "Acquired"}
               </th>
-              <th scope="col" className="hidden w-[9.5rem] py-3 text-right font-normal lg:table-cell">
+              <th scope="col" className="hidden w-[9.5rem] py-3 pr-2 text-right font-bold lg:table-cell">
                 Rate
               </th>
             </tr>
@@ -267,9 +269,9 @@ function FundingHistory({ runs, error, onRetry }: { runs?: Run[]; error?: ApiErr
               // Testnet: the payroll's dollars and the coin set aside; the simulated rate stays in its note.
               const cents = simulated ? run.total_usd_cents : (f.funded_usd_cents ?? f.requested_usd_cents ?? null);
               return (
-                <tr key={run.id} className="border-b border-hairline">
-                  <td className="h-[56px] py-2 pr-3">
-                    <Link href={`/console/runs/${run.id}`} className="block truncate rounded-sm hover:underline">
+                <tr key={run.id} className="border-b border-bar-line">
+                  <td className="h-[56px] py-2 pr-3 pl-2">
+                    <Link href={`/console/runs/${run.id}`} className="block truncate font-bold hover:underline">
                       {runTitle(run)} payroll
                     </Link>
                     <span className="block truncate text-[0.8125rem] text-muted-foreground">
@@ -295,7 +297,7 @@ function FundingHistory({ runs, error, onRetry }: { runs?: Run[]; error?: ApiErr
                   <td className="hidden pr-6 text-right sm:table-cell">
                     <Zec zat={f.zec_acquired_zat ?? f.quoted_zat} />
                   </td>
-                  <td className="hidden text-right lg:table-cell">
+                  <td className="hidden pr-2 text-right lg:table-cell">
                     {simulated ? (
                       <SimulatedRate rateE6={f.rate_usd_per_zec_e6} />
                     ) : (

@@ -66,16 +66,16 @@ export function RequestsView({ initial }: { initial?: { requests: PaymentRequest
       {queue.error && !queue.data ? (
         <Problem error={queue.error} title="Could not load the requests" onRetry={queue.reload} />
       ) : !queue.data ? (
-        <p role="status" className="text-[0.8125rem] text-muted-foreground">
+        <p role="status" className="font-type text-[0.8125rem] text-muted-foreground">
           Loading requests
         </p>
       ) : all.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 border-t border-hairline py-12 sm:items-center sm:text-center">
-          <span className="grid size-11 place-items-center rounded-full bg-chip text-strong">
+        <div className="flex flex-col items-start gap-4 border-y-2 border-ink py-12 sm:items-center sm:text-center">
+          <span className="grid size-11 place-items-center border-2 border-ink text-strong">
             <Inbox className="size-5" aria-hidden="true" />
           </span>
           <div className="max-w-md space-y-1.5">
-            <h2 className={TYPE.heading}>No payment requests yet</h2>
+            <h2 className="font-type text-[1.0625rem] font-bold">No payment requests yet</h2>
             <p className="text-[0.9375rem] text-muted-foreground">
               Contractors send them from their portal under Request a payment. They appear here for you to approve or
               reject.
@@ -96,31 +96,31 @@ export function RequestsView({ initial }: { initial?: { requests: PaymentRequest
               { id: "all", label: "All", count: all.length },
             ]}
           />
-          <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+          <table className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.9375rem]">
             <caption className="sr-only">Payment requests, those waiting for a decision first.</caption>
             <thead>
-              <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-                <th scope="col" className="py-3 pr-3 font-normal">
+              <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+                <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                   Request
                 </th>
-                <th scope="col" className="hidden w-[11rem] py-3 pr-3 font-normal md:table-cell">
+                <th scope="col" className="hidden w-[11rem] py-3 pr-3 font-bold md:table-cell">
                   Period
                 </th>
-                <th scope="col" className="w-[7.5rem] py-3 pr-3 text-right font-normal">
+                <th scope="col" className="w-[7.5rem] py-3 pr-3 text-right font-bold">
                   Amount
                 </th>
-                <th scope="col" className="w-[6.5rem] py-3 pr-3 font-normal sm:w-[7.5rem]">
+                <th scope="col" className="w-[6.5rem] py-3 pr-3 font-bold sm:w-[7.5rem]">
                   Status
                 </th>
-                <th scope="col" className="hidden w-[12rem] py-3 text-right font-normal lg:table-cell">
+                <th scope="col" className="hidden w-[12rem] py-3 pr-2 text-right font-bold lg:table-cell">
                   <span className="sr-only">Actions</span>
                 </th>
               </tr>
             </thead>
             <tbody>
               {shown.length === 0 ? (
-                <tr className="border-b border-hairline">
-                  <td colSpan={5} className="h-[52px] text-[0.8125rem] text-muted-foreground">
+                <tr className="border-b border-bar-line">
+                  <td colSpan={5} className="h-[52px] pl-2 text-[0.875rem] text-muted-foreground">
                     Nothing here.
                   </td>
                 </tr>
@@ -162,12 +162,12 @@ function RequestRow({
   const canApprove = canDecide && r.status === "submitted";
   const canReject = canDecide && (r.status === "submitted" || (r.status === "approved" && !r.run_id));
   return (
-    <tr className="border-b border-hairline align-top" data-request-status={r.status}>
-      <td className="max-w-0 py-3 pr-3">
+    <tr className="border-b border-bar-line align-top" data-request-status={r.status}>
+      <td className="max-w-0 py-3 pr-3 pl-2">
         <span className="flex min-w-0 items-start gap-3">
           <Initials name={r.contractor_name} className="mt-0.5" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate" title={r.contractor_name}>
+            <span className="block truncate font-bold" title={r.contractor_name}>
               {r.contractor_name}
             </span>
             <span className="block truncate text-[0.8125rem] text-muted-foreground" title={r.invoice_ref}>
@@ -178,7 +178,9 @@ function RequestRow({
               {periodTitle(r.period_start, r.period_end)}
             </span>
             {r.note ? (
-              <span className="mt-1 block text-[0.8125rem] text-strong [overflow-wrap:anywhere]">{r.note}</span>
+              <span className="mt-1 block font-sans text-[0.8125rem] text-strong [overflow-wrap:anywhere]">
+                {r.note}
+              </span>
             ) : null}
             {r.decision_note ? (
               <span className="mt-1 block text-[0.8125rem] text-muted-foreground [overflow-wrap:anywhere]">
@@ -208,7 +210,7 @@ function RequestRow({
             href={r.explorer_url}
             target="_blank"
             rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 rounded-sm text-[0.8125rem] text-muted-foreground hover:text-foreground"
+            className="mt-1 inline-flex items-center gap-1 text-[0.8125rem] text-muted-foreground hover:text-foreground"
             aria-label={`Open the payment to ${r.contractor_name} in a block explorer (opens in a new tab)`}
           >
             Explorer
@@ -216,7 +218,7 @@ function RequestRow({
           </a>
         ) : null}
       </td>
-      <td className="hidden py-3 text-right lg:table-cell">
+      <td className="hidden py-3 pr-2 text-right lg:table-cell">
         <span className="inline-flex flex-wrap justify-end gap-2">
           <Actions request={r} canApprove={canApprove} canReject={canReject} onDecide={onDecide} />
         </span>
@@ -348,7 +350,7 @@ function DecisionDialog({
         {error ? (
           <Problem className="mx-6 mb-4" error={error} title={approve ? "Not approved" : "Not rejected"} />
         ) : null}
-        <DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-4">
+        <DialogFooter className="mx-0 mb-0 px-6 py-4">
           <Button variant="secondary" onClick={close} disabled={busy}>
             Cancel
           </Button>

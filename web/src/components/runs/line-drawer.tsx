@@ -8,6 +8,7 @@ import { CopyButton } from "@/components/app/copy-button";
 import { Hash } from "@/components/app/hash";
 import { useCoinUnit } from "@/components/app/health-provider";
 import { Disclosure } from "@/components/ds/disclosure";
+import { FormRow, FormRows } from "@/components/ds/paper";
 import { Sensitive } from "@/components/ds/sensitive";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
 import { Timeline as TimelineList, type TimelineItem } from "@/components/ds/timeline";
@@ -84,7 +85,10 @@ function lineEvents(run: Run, line: PayLine, logs: RunLogEvent[]): TimelineItem[
   ];
 }
 
-/** Mercury's floating detail panel for one payment, opened from a row of the pay lines table. */
+/**
+ * One payment as a pay advice slid out over the run, opened from a row of the pay lines table:
+ * the title and the one large amount, its typed history, then its rows on green bar.
+ */
 export function LineDrawer({
   run,
   line,
@@ -106,9 +110,9 @@ export function LineDrawer({
   return (
     <DialogPrimitive.Root open={!!line} onOpenChange={(o) => !o && onClose()}>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/5 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/10 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <DialogPrimitive.Content
-          className="fixed inset-x-2 top-2 bottom-2 z-50 overflow-y-auto rounded-xl border bg-card text-card-foreground shadow-[0_12px_40px_-12px_rgba(14,14,45,0.28),0_2px_6px_rgba(14,14,45,0.06)] outline-none data-open:animate-in data-open:slide-in-from-right-8 data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 sm:inset-x-auto sm:top-3 sm:right-3 sm:bottom-3 sm:w-[420px]"
+          className="paper sheet-shadow fixed inset-x-2 top-2 bottom-2 z-50 overflow-y-auto border border-ink text-card-foreground outline-none data-open:animate-in data-open:slide-in-from-right-8 data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 sm:inset-x-auto sm:top-3 sm:right-3 sm:bottom-3 sm:w-[420px]"
           aria-describedby={undefined}
           ref={content}
           onOpenAutoFocus={(e) => {
@@ -164,17 +168,18 @@ function DrawerBody({ run, line, logs }: { run: Run; line: PayLine; logs: RunLog
   return (
     <div className="flex min-h-full flex-col">
       <div className="px-6 pt-5 pb-6">
-        <DialogPrimitive.Title className="pr-10 text-[0.8125rem] font-normal text-strong">
+        <p className="form-label pr-10 text-[0.75rem] font-bold text-muted-foreground">Pay advice</p>
+        <DialogPrimitive.Title className="inked mt-1 pr-10 font-display text-[1.375rem] leading-[1.1] font-bold">
           Payment to {line.contractor_name}
         </DialogPrimitive.Title>
-        <div className="mt-6">
+        <div className="mt-5">
           <LineStatus line={line} run={run} />
         </div>
-        <p className="mt-3">
-          <Usd cents={line.amount_usd_cents} className={TYPE.title} />
+        <p className={cn(TYPE.hero, "mt-3")}>
+          <Usd cents={line.amount_usd_cents} />
         </p>
         {line.amount_zat ? (
-          <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
+          <p className="mt-2 font-type text-[0.9375rem] text-muted-foreground">
             <Zec zat={line.amount_zat} />
           </p>
         ) : null}
@@ -183,8 +188,8 @@ function DrawerBody({ run, line, logs }: { run: Run; line: PayLine; logs: RunLog
           // A warning while the line is still in progress; a failure once it has stopped.
           <p
             className={cn(
-              "mt-4 rounded-lg px-3 py-2 text-[0.8125rem] text-strong",
-              isLineWarning(line) ? "bg-warning-bg" : "bg-danger-bg",
+              "mt-4 border px-3 py-2 text-[0.8125rem] text-strong",
+              isLineWarning(line) ? "carbon-paper border-carbon-line" : "border-destructive bg-danger-bg",
             )}
           >
             {line.error.message} {line.error.hint}
@@ -203,68 +208,67 @@ function DrawerBody({ run, line, logs }: { run: Run; line: PayLine; logs: RunLog
             <CopyButton
               value={line.txid}
               label="transaction id"
-              className="h-8 rounded-full border-0 bg-secondary px-3.5 text-[0.8125rem] text-foreground"
+              className="h-8 border-2 border-foreground px-3.5 text-[0.8125rem] text-foreground hover:bg-muted"
             >
               Copy transaction id
             </CopyButton>
           ) : null}
         </div>
       </div>
-      <dl className="border-t border-hairline px-6 py-4 text-[0.9375rem]">
-        {facts.map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-4 py-2">
-            <dt className="text-strong">{k}</dt>
-            <dd className="min-w-0 text-right">{v}</dd>
-          </div>
-        ))}
-      </dl>
+      <div className="border-t border-ink px-6 py-4">
+        <FormRows className="border border-bar-line">
+          {facts.map(([k, v]) => (
+            <FormRow key={k} label={k} valueClassName="[overflow-wrap:anywhere]">
+              {v}
+            </FormRow>
+          ))}
+        </FormRows>
+      </div>
       {line.memo ? (
-        <section aria-labelledby="memo-title" className="border-t border-hairline px-6 py-4">
-          <h3 id="memo-title" className="text-[0.8125rem] text-strong">
+        <section aria-labelledby="memo-title" className="border-t border-ink px-6 py-4">
+          <h3 id="memo-title" className="form-label text-[0.75rem] font-bold">
             Encrypted memo
           </h3>
           <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
             Sealed in the payment. Only {line.contractor_name.split(/\s+/)[0]} and your accountant can read it.
           </p>
           {memo && memo.kind === "pay_line" ? (
-            <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-lg bg-raised px-3 py-2.5 text-[0.8125rem]">
-              <dt className="text-muted-foreground">Period</dt>
-              <dd className="text-right">{formatPeriodLabel(memo.period)}</dd>
-              <dt className="text-muted-foreground">Invoice</dt>
-              <dd className="text-right [overflow-wrap:anywhere]">{memo.invoiceRef}</dd>
-              <dt className="text-muted-foreground">Amount</dt>
-              <dd className="text-right">
+            <FormRows tone="ruled" className="mt-2 border border-rule text-[0.8125rem] sm:text-[0.875rem]">
+              <FormRow label="Period">{formatPeriodLabel(memo.period)}</FormRow>
+              <FormRow label="Invoice" valueClassName="[overflow-wrap:anywhere]">
+                {memo.invoiceRef}
+              </FormRow>
+              <FormRow label="Amount">
                 <Usd cents={memo.usdCents} />
-              </dd>
-              <dt className="text-muted-foreground">Rate</dt>
-              <dd className="text-right">
+              </FormRow>
+              <FormRow label="Rate">
                 {testnet ? <SimulatedRate rateE6={memo.rateE6} /> : <Rate e6={memo.rateE6} />}
-              </dd>
-            </dl>
+              </FormRow>
+            </FormRows>
           ) : null}
           <Disclosure summary="Show raw memo" className="mt-3">
             <Sensitive block>
-              <code className="block rounded-lg bg-raised px-3 py-2 font-mono text-[0.8125rem] [overflow-wrap:anywhere] text-strong">
+              <code className="block border border-bar-line bg-bar px-3 py-2 font-type text-[0.8125rem] [overflow-wrap:anywhere] text-strong">
                 {line.memo}
               </code>
             </Sensitive>
           </Disclosure>
         </section>
       ) : null}
-      <div className="border-t border-hairline px-6 py-4">
+      <div className="border-t border-ink px-6 py-4">
         <Disclosure summary="Technical details">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[0.8125rem]">
-            <dt className="text-muted-foreground">Contractor account</dt>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 font-type text-[0.8125rem]">
+            <dt className="form-label text-[0.75rem] text-muted-foreground">Contractor account</dt>
             <dd className="num text-right">{line.account_index}</dd>
             {line.confirmed_height ? (
               <>
-                <dt className="text-muted-foreground">Block</dt>
+                <dt className="form-label text-[0.75rem] text-muted-foreground">Block</dt>
                 <dd className="num text-right">{formatHeight(line.confirmed_height)}</dd>
               </>
             ) : null}
-            <dt className="text-muted-foreground">Pay line</dt>
+            <dt className="form-label text-[0.75rem] text-muted-foreground">Pay line</dt>
             <dd className="min-w-0 text-right">
-              <code className="font-mono [overflow-wrap:anywhere]">{line.id}</code>
+              <code className="font-type [overflow-wrap:anywhere]">{line.id}</code>
             </dd>
           </dl>
         </Disclosure>

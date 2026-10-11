@@ -88,7 +88,7 @@ export function OrgSettings({ initial }: { initial?: Organisation }) {
                 />
               </Field>
               {problem ? <Problem error={problem} /> : null}
-              <div className="flex items-center gap-2 border-t border-hairline pt-4">
+              <div className="flex items-center gap-2 border-t border-ink pt-4">
                 <Button type="submit" disabled={saving || !name.trim()}>
                   {saving ? "Saving" : "Save"}
                 </Button>
@@ -97,14 +97,14 @@ export function OrgSettings({ initial }: { initial?: Organisation }) {
           </Card>
           <Card aria-labelledby="preview-title" className="self-start">
             <CardHeader id="preview-title" title="How it looks" />
-            <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-hairline bg-sidebar px-3 py-2.5">
+            <div className="mt-4 flex items-center gap-2.5 border border-ink bg-sidebar px-3 py-2.5">
               {logo.trim() ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logo.trim()} alt="" className="size-[22px] shrink-0 rounded-[5px] object-cover" />
+                <img src={logo.trim()} alt="" className="size-[22px] shrink-0 border border-ink object-cover" />
               ) : (
                 <LogoMark className="size-[22px]" />
               )}
-              <span className="min-w-0 truncate font-display text-[0.9375rem] font-semibold">
+              <span className="inked min-w-0 truncate font-display text-[1.0625rem] font-bold">
                 {name.trim() || "Payslip"}
               </span>
             </div>

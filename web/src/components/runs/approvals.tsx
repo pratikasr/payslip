@@ -34,9 +34,9 @@ export function ApprovalStatus({ run, onRun, className }: { run: Run; onRun: (ru
 
   return (
     <div className={cn("grid gap-2", className)} data-testid="run-approvals">
-      <p className="text-[0.8125rem] text-foreground" aria-live="polite">
+      <p className="font-type text-[0.8125rem] text-foreground" aria-live="polite">
         {approvalSentence(state)}
-        {state.reason ? <span className="text-muted-foreground"> {state.reason}</span> : null}
+        {state.reason ? <span className="font-sans text-muted-foreground"> {state.reason}</span> : null}
       </p>
       {state.canApprove ? (
         <div>

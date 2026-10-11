@@ -72,14 +72,14 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
           org?.logo_url ? (
             // The organisation's own mark, from the address an admin set under Settings.
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logo_url} alt="" className="size-[22px] shrink-0 rounded-[5px] object-cover" />
+            <img src={org.logo_url} alt="" className="size-[22px] shrink-0 border border-ink object-cover" />
           ) : (
             <Mark className="size-[22px]" />
           )
         }
         name={org?.name || companyName()}
         chip={network ? networkLabel(network) : undefined}
-        sub={sample ? <SampleTag /> : undefined}
+        sub={sample ? <SampleTag className="text-[0.75rem]" /> : undefined}
       />
     ),
     segments: [
@@ -102,7 +102,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
     ],
     bookmarks: (
       <div className="grid gap-0.5">
-        <p className="px-2 pt-1 pb-1 text-[0.8125rem] text-muted-foreground">Bookmarks</p>
+        <p className="form-label px-2 pt-1 pb-1 text-[0.75rem] font-bold text-muted-foreground">Bookmarks</p>
         <Bookmark
           href="/console/treasury"
           icon={BookmarkIcon}
@@ -154,13 +154,13 @@ function SignedInAs({ me }: { me: NonNullable<ReturnType<typeof useAuth>["me"]> 
       <div className="flex items-center gap-2.5 px-1">
         {me.user.picture_url ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={me.user.picture_url} alt="" className="size-7 shrink-0 rounded-full object-cover" />
+          <img src={me.user.picture_url} alt="" className="size-7 shrink-0 border border-ink object-cover" />
         ) : (
           <Initials name={name} />
         )}
         <span className="grid min-w-0">
-          <span className="truncate text-[0.8125rem] text-foreground">{name}</span>
-          <span className="truncate text-[0.8125rem] text-muted-foreground">
+          <span className="truncate font-type text-[0.8125rem] font-bold text-foreground">{name}</span>
+          <span className="form-label truncate text-[0.75rem] text-muted-foreground">
             {me.membership ? roleLabel(me.membership.role) : "Not a member"}
           </span>
         </span>

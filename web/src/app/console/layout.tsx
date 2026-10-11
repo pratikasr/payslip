@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { TypedFiguresProvider } from "@/components/app/amount";
 import { HealthProvider } from "@/components/app/health-provider";
 import { AuthProvider } from "@/components/auth/auth-provider";
 import { ConsoleGate } from "@/components/console/console-gate";
@@ -35,7 +36,10 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
         {/* Privacy mode before first paint; see src/lib/privacy.ts. */}
         <script dangerouslySetInnerHTML={{ __html: privacyBootScript }} />
         {required ? null : <DemoBar />}
-        <ConsoleGate>{children}</ConsoleGate>
+        {/* Every figure in the console is typed on the form, its cents level (DESIGN.md section 17). */}
+        <TypedFiguresProvider>
+          <ConsoleGate>{children}</ConsoleGate>
+        </TypedFiguresProvider>
       </HealthProvider>
     </AuthProvider>
   );

@@ -111,7 +111,7 @@ export function Stamp({ children = "Shielded", className }: { children?: ReactNo
     <span
       aria-hidden="true"
       className={cn(
-        "stamped pointer-events-none inline-block -rotate-[7deg] border-[3px] border-stamp px-3 pt-[6px] pb-[4px] font-type text-[1rem] leading-none font-bold tracking-[0.16em] text-stamp uppercase opacity-90 mix-blend-multiply select-none dark:mix-blend-screen",
+        "stamped pointer-events-none inline-block -rotate-[7deg] border-[3px] border-stamp px-3 pt-[6px] pb-[4px] font-type text-[1rem] leading-none font-bold tracking-[0.16em] text-stamp uppercase opacity-90 mix-blend-multiply select-none dark:mix-blend-screen print:mix-blend-normal",
         className,
       )}
     >
@@ -176,7 +176,9 @@ export function FormRow({
 export function PayAmount({ children, sub, className }: { children: ReactNode; sub?: ReactNode; className?: string }) {
   return (
     <div className={cn("px-2.5 pt-3.5 pb-3", className)}>
-      <div className="inked font-dot text-[2.5rem] leading-none tracking-[0.02em] sm:text-[3.125rem]">{children}</div>
+      <div className="inked font-dot text-[2.5rem] leading-none tracking-[0.02em] sm:text-[3.125rem] [&_.money]:font-dot">
+        {children}
+      </div>
       {sub ? <div className="mt-2 font-type text-[0.8125rem] text-muted-foreground">{sub}</div> : null}
     </div>
   );

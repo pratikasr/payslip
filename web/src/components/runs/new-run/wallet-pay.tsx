@@ -207,8 +207,8 @@ function PayWithWallet({ runId, funding, onSubmitted }: WalletPayProps) {
       ) : null}
 
       {hash ? (
-        <div className="rounded-xl bg-raised p-3.5 text-[0.8125rem]">
-          <p className="font-medium">
+        <div className="border border-ink p-3.5 text-[0.8125rem]">
+          <p className="font-type font-bold">
             {receipt.isSuccess
               ? `Deposit confirmed on ${chain.name}`
               : receipt.isError

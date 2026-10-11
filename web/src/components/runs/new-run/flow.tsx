@@ -242,7 +242,7 @@ function DraftFlow({
   } else if (people && people.length === 0) {
     body = (
       <div className="space-y-4">
-        <span className="grid size-11 place-items-center rounded-full bg-chip text-strong">
+        <span className="grid size-11 place-items-center border-2 border-ink text-strong">
           <UsersRound className="size-5" aria-hidden="true" />
         </span>
         <FlowTitle>Add the people you pay first</FlowTitle>

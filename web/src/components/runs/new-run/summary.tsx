@@ -11,16 +11,15 @@ import { parseUsdToCents } from "@/lib/format";
 import { feeReserveZat, runCoin } from "@/lib/payroll";
 import { confirmedCount, estimateZat, periodTitle, plural, RunTag, runTitle } from "../run-meta";
 import type { Draft, DraftCheck } from "./draft";
-import { TYPE } from "@/components/ds/type";
-import { cn } from "cn";
 
+/** One field of the summary: its spaced-caps caption over the typed value, on green bar. */
 function Row({ label, children, sub }: { label: ReactNode; children: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-t border-hairline py-2.5">
-      <dt className="shrink-0 text-[0.8125rem] whitespace-nowrap text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 text-right text-[0.9375rem]">
+    <div className="grid gap-0.5 border-t border-bar-line px-2 py-2">
+      <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 font-type text-[0.875rem]">
         {children}
-        {sub ? <span className="block text-[0.8125rem] text-muted-foreground">{sub}</span> : null}
+        {sub ? <span className="block font-sans text-[0.75rem] text-muted-foreground">{sub}</span> : null}
       </dd>
     </div>
   );
@@ -40,14 +39,14 @@ function Frame({
   return (
     <Card as="div" className="px-5 py-5 sm:px-5">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[0.8125rem] text-strong">Summary</h2>
+        <h2 className="form-label text-[0.75rem] font-bold">Summary</h2>
         {tag}
       </div>
-      <p className={cn(TYPE.title, "mt-2")}>
+      <p className="inked mt-3 font-dot text-[2rem] leading-none [&_.money]:font-dot">
         <Usd cents={total} />
       </p>
-      <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">to {plural(people, "person", "people")}</p>
-      <dl className="mt-4">{children}</dl>
+      <p className="mt-2 font-type text-[0.8125rem] text-muted-foreground">to {plural(people, "person", "people")}</p>
+      <dl className="green-bar mt-4 border-b border-bar-line">{children}</dl>
       <ShieldedMark className="mt-3" label="Every payment shielded" explain />
     </Card>
   );

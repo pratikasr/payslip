@@ -147,7 +147,7 @@ export function LineTag({ line, run, className }: { line: PayLine; run?: Pick<Ru
 
 /**
  * A pay line's state where payments are listed (Home, the run page, the flow, a person's
- * history): a confirmed payment shows the gold Shielded mark, because nothing is wrong and what
+ * history): a confirmed payment shows the red Shielded stamp, because nothing is wrong and what
  * matters is that nobody else can read it; anything else shows its tag (waiting, sending,
  * retrying, failed). A line paid out as USDC says so beside the mark.
  */
@@ -165,10 +165,7 @@ export function LineStatus({
 }) {
   if (line.status === "confirmed" && !(line.error && isLineWarning(line))) {
     return (
-      <ShieldedMark
-        className={className}
-        detail={isConverted(line) ? detail ? <>, USDC, {detail}</> : ", USDC" : detail ? <>, {detail}</> : undefined}
-      />
+      <ShieldedMark className={className} detail={isConverted(line) ? detail ? <>USDC, {detail}</> : "USDC" : detail} />
     );
   }
   return <LineTag line={line} run={run} className={className} />;

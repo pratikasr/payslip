@@ -10,7 +10,7 @@ import { useHealth } from "@/components/app/health-provider";
 import { Card } from "@/components/ds/card";
 import { PageTitle } from "@/components/ds/page";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
-import { SHIELDED_HELP } from "@/components/ds/status";
+import { ShieldedMark } from "@/components/ds/status";
 import { TYPE } from "@/components/ds/type";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,7 +58,7 @@ const NO_LINES: PayLine[] = [];
 
 /** A tab panel takes focus after its tab (Tab key): it shows a ring then, like everything else. */
 const PANEL =
-  "rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring focus-visible:outline-solid";
+  "focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring focus-visible:outline-solid";
 
 /** One payroll run: header, figures, the next action while there is one, then tabs. */
 export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
@@ -125,7 +125,7 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
   }, [history.data, stream.logs]);
 
   const back = (
-    <Link href="/console/runs" className="inline-flex items-center gap-1 rounded-sm hover:text-foreground">
+    <Link href="/console/runs" className="inline-flex items-center gap-1 font-type font-bold hover:text-foreground">
       <ChevronLeft className="size-4" aria-hidden="true" />
       Payroll runs
     </Link>
@@ -136,9 +136,12 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
       <>
         <PageTitle back={back} title={fetched.error.status === 404 ? "Run not found" : "Payroll run"} />
         {fetched.error.status === 404 ? (
-          <p className="text-[0.9375rem] text-muted-foreground">
-            No run has this id. It may have been discarded while it was a draft.
-          </p>
+          <div className="border border-ink px-4 py-3.5">
+            <p className="font-type font-bold">No run has this id.</p>
+            <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
+              It may have been discarded while it was a draft. Payroll runs lists every run there is.
+            </p>
+          </div>
         ) : (
           <Problem error={fetched.error} title="Could not load this run" onRetry={() => void fetched.reload()} />
         )}
@@ -170,13 +173,13 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
           </span>
         }
         description={
-          <span className="flex flex-wrap items-center gap-x-1 gap-y-1 text-[0.8125rem]">
+          <span className="flex flex-wrap items-center gap-x-1 gap-y-1 font-type text-[0.8125rem]">
             <span>
               {formatRange(run.period_start, run.period_end)}, created {formatDate(run.created_at)}, run
             </span>
             <span className="inline-flex items-center gap-0.5">
               <span className="sr-only">id </span>
-              <code className="font-mono text-[0.8125rem]" title={run.id}>
+              <code className="font-type text-[0.8125rem] font-bold text-foreground" title={run.id}>
                 {truncateMiddle(run.id, 8, 4)}
               </code>
               <CopyButton value={run.id} label="run id" />
@@ -209,17 +212,21 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
       ) : null}
 
       <TabsPrimitive.Root value={tab} onValueChange={changeTab} className="mt-8">
-        <TabsPrimitive.List aria-label="Run details" className="flex gap-6 overflow-x-auto border-b border-hairline">
+        {/* Index tabs on a form: the open one is a ruled tab joined to the page under it. */}
+        <TabsPrimitive.List
+          aria-label="Run details"
+          className="flex gap-1 overflow-x-auto border-b-2 border-ink [scrollbar-width:none]"
+        >
           {TABS.map((t) => (
             <TabsPrimitive.Trigger
               key={t.id}
               value={t.id}
               data-tab={t.id}
-              className="relative inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm text-[0.9375rem] whitespace-nowrap text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid data-[state=active]:text-foreground data-[state=active]:after:absolute data-[state=active]:after:inset-x-0 data-[state=active]:after:bottom-[-1px] data-[state=active]:after:h-0.5 data-[state=active]:after:rounded-full data-[state=active]:after:bg-primary-edge"
+              className="relative -mb-[2px] inline-flex h-10 shrink-0 items-center gap-2 border-2 border-b-0 border-transparent px-3.5 font-type text-[0.875rem] font-bold whitespace-nowrap text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-ring focus-visible:outline-solid data-[state=active]:border-ink data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:after:absolute data-[state=active]:after:inset-x-0 data-[state=active]:after:-bottom-[2px] data-[state=active]:after:h-[2px] data-[state=active]:after:bg-card"
             >
               {t.label}
               {t.id === "lines" ? (
-                <span className="num rounded-[4px] bg-chip px-1.5 text-[0.8125rem] leading-5 text-strong">
+                <span className="num border border-current px-1 text-[0.75rem] leading-[1.35] text-strong">
                   {run.lines.length}
                 </span>
               ) : null}
@@ -242,6 +249,7 @@ export function RunPage({ runId, initial }: { runId: string; initial?: Run }) {
   );
 }
 
+/** One box of the summary form: a spaced-caps caption over a typewritten value. */
 function Figure({
   label,
   children,
@@ -252,10 +260,10 @@ function Figure({
   sub?: React.ReactNode;
 }) {
   return (
-    <div className="min-w-0">
-      <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
-      <dd className="mt-1 text-[0.9375rem] leading-tight">{children}</dd>
-      {sub ? <dd className="mt-0.5 text-[0.8125rem] text-muted-foreground">{sub}</dd> : null}
+    <div className="min-w-0 px-3 py-2.5">
+      <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-type text-[0.9375rem] leading-tight">{children}</dd>
+      {sub ? <dd className="mt-1 text-[0.8125rem] leading-snug text-muted-foreground">{sub}</dd> : null}
     </div>
   );
 }
@@ -266,7 +274,7 @@ function paidCents(run: Run): number {
 
 /**
  * The run in one line, led by its amount in the display face: what was paid (or is to be paid),
- * to how many people, and the gold mark that says nobody else can read it.
+ * to how many people, and the red stamp that says nobody else can read it.
  */
 function Hero({ run }: { run: Run }) {
   const paid = run.status === "paid";
@@ -278,22 +286,13 @@ function Hero({ run }: { run: Run }) {
         <p className={TYPE.hero}>
           <Usd cents={paid ? paidCents(run) : run.total_usd_cents} />
         </p>
-        <p className="mt-2.5 text-[0.9375rem] text-strong">
+        <p className="mt-2.5 font-type text-[0.9375rem] text-strong">
           {paid ? "Paid to " : run.status === "cancelled" ? "Was for " : "To "}
           {plural(n, "person", "people")}
           {paid && at ? <span className="text-muted-foreground"> on {formatDateTime(at)}</span> : null}
         </p>
       </div>
-      {run.status === "cancelled" ? null : (
-        <span
-          className="inline-flex h-7 items-center gap-1.5 rounded-full bg-chip px-3 text-[0.8125rem] text-foreground"
-          title={SHIELDED_HELP}
-        >
-          <span aria-hidden="true" className="size-1.5 rounded-full bg-primary-edge" />
-          Shielded on Zcash
-          <span className="sr-only">: {SHIELDED_HELP.toLowerCase()}</span>
-        </span>
-      )}
+      {run.status === "cancelled" ? null : <ShieldedMark label="Shielded on Zcash" explain className="mb-1" />}
     </div>
   );
 }
@@ -321,60 +320,64 @@ function SummaryStrip({ run }: { run: Run }) {
         rate,
       );
   return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-y border-hairline py-4 sm:grid-cols-3 lg:grid-cols-5">
-      <Figure label={run.status === "paid" ? "Contractors got" : "Contractors get"}>
-        {run.total_zat ? (
-          <Zec zat={run.total_zat} />
-        ) : estimate !== null ? (
-          <span>
-            about <Zec zat={estimate} />
-          </span>
-        ) : (
-          <span className={muted}>Set at funding</span>
-        )}
-      </Figure>
-      <Figure
-        label="Rate"
-        sub={
-          !testnet && !f?.rate_usd_per_zec_e6 && quoted && f?.deadline
-            ? `Quoted, locked until ${formatDateTime(f.deadline)}`
-            : undefined
-        }
-      >
-        {testnet ? (
-          <SimulatedRate rateE6={rate} />
-        ) : rate ? (
-          <Rate e6={rate} />
-        ) : (
-          <span className={muted}>Set at funding</span>
-        )}
-      </Figure>
-      <Figure
-        label="Network fees"
-        sub={run.fees_zat && run.status !== "paid" ? "Of transactions mined so far" : undefined}
-      >
-        {run.fees_zat ? <Zec zat={run.fees_zat} /> : <span className={muted}>After payment</span>}
-      </Figure>
-      {testnet ? (
-        <Figure label="Set aside" sub={coin.reserve !== null ? "Payments plus a fee reserve" : undefined}>
-          {coin.acquired !== null ? <Zec zat={coin.acquired} /> : <span className={muted}>Not yet</span>}
+    // The run's coin as a row of boxes on a form, ruled in ink: 1px inside, 2px around. Each box
+    // rules its right and bottom edges; the frame clips the last ones.
+    <div className="overflow-hidden border-2 border-ink bg-card">
+      <dl className="-mr-px -mb-px grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 [&>div]:border-r [&>div]:border-b [&>div]:border-ink">
+        <Figure label={run.status === "paid" ? "Contractors got" : "Contractors get"}>
+          {run.total_zat ? (
+            <Zec zat={run.total_zat} />
+          ) : estimate !== null ? (
+            <span>
+              about <Zec zat={estimate} />
+            </span>
+          ) : (
+            <span className={muted}>Set at funding</span>
+          )}
         </Figure>
-      ) : (
         <Figure
-          label="Funded"
-          sub={f?.funded_usd_cents && coin.acquired !== null ? <Zec zat={coin.acquired} /> : undefined}
+          label="Rate"
+          sub={
+            !testnet && !f?.rate_usd_per_zec_e6 && quoted && f?.deadline
+              ? `Quoted, locked until ${formatDateTime(f.deadline)}`
+              : undefined
+          }
         >
-          {f?.funded_usd_cents ? <Usd cents={f.funded_usd_cents} /> : <span className={muted}>Not yet</span>}
+          {testnet ? (
+            <SimulatedRate rateE6={rate} />
+          ) : rate ? (
+            <Rate e6={rate} />
+          ) : (
+            <span className={muted}>Set at funding</span>
+          )}
         </Figure>
-      )}
-      <Figure label="Back in treasury" sub={coin.unspent !== null ? "The fee reserve not spent" : undefined}>
-        {coin.unspent !== null ? (
-          <Zec zat={coin.unspent} />
+        <Figure
+          label="Network fees"
+          sub={run.fees_zat && run.status !== "paid" ? "Of transactions mined so far" : undefined}
+        >
+          {run.fees_zat ? <Zec zat={run.fees_zat} /> : <span className={muted}>After payment</span>}
+        </Figure>
+        {testnet ? (
+          <Figure label="Set aside" sub={coin.reserve !== null ? "Payments plus a fee reserve" : undefined}>
+            {coin.acquired !== null ? <Zec zat={coin.acquired} /> : <span className={muted}>Not yet</span>}
+          </Figure>
         ) : (
-          <span className={muted}>{run.status === "cancelled" ? "Nothing was set aside" : "After payment"}</span>
+          <Figure
+            label="Funded"
+            sub={f?.funded_usd_cents && coin.acquired !== null ? <Zec zat={coin.acquired} /> : undefined}
+          >
+            {f?.funded_usd_cents ? <Usd cents={f.funded_usd_cents} /> : <span className={muted}>Not yet</span>}
+          </Figure>
         )}
-      </Figure>
-    </dl>
+        <Figure label="Back in treasury" sub={coin.unspent !== null ? "The fee reserve not spent" : undefined}>
+          {coin.unspent !== null ? (
+            <Zec zat={coin.unspent} />
+          ) : (
+            <span className={muted}>{run.status === "cancelled" ? "Nothing was set aside" : "After payment"}</span>
+          )}
+        </Figure>
+      </dl>
+    </div>
   );
 }
 
@@ -389,7 +392,7 @@ function NextAction({ run, archived, onRun }: { run: Run; archived: number; onRu
   if (run.status === "cancelled") {
     return (
       <Card className="mt-6">
-        <h2 className="text-[0.9375rem] text-foreground">This run was cancelled</h2>
+        <h2 className="font-type text-[0.9375rem] font-bold text-foreground">This run was cancelled</h2>
         <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
           It closed before any money reached it, so nobody was paid. It stays here for the record.
         </p>
@@ -458,26 +461,23 @@ function NextAction({ run, archived, onRun }: { run: Run; archived: number; onRu
     <Card
       className={cn(
         "mt-6 flex flex-col gap-4 sm:flex-row sm:items-center",
-        warn && run.status === "failed" && !fundingClosed(run) && "border-destructive/30 bg-danger-bg",
-        warn && (fundingClosed(run) || run.status === "draft") && "border-warning/40 bg-warning-bg",
+        warn && run.status === "failed" && !fundingClosed(run) && "border-destructive bg-danger-bg",
+        warn && (fundingClosed(run) || run.status === "draft") && "carbon-paper border-carbon-line",
       )}
     >
       <div className="min-w-0 flex-1">
-        <h2 className="text-[0.9375rem] text-foreground">{title}</h2>
+        <h2 className="font-type text-[0.9375rem] font-bold text-foreground">{title}</h2>
         <p className="mt-0.5 text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">{text}</p>
         {isPaying(run) ? (
           <div
-            className="mt-3 h-1.5 overflow-hidden rounded-full bg-chip"
+            className="mt-3 h-2.5 overflow-hidden border border-ink bg-card p-px"
             role="progressbar"
             aria-label="Payments confirmed"
             aria-valuemin={0}
             aria-valuemax={n}
             aria-valuenow={confirmed}
           >
-            <div
-              className="h-full rounded-full bg-viz"
-              style={{ width: `${n ? Math.max(3, (confirmed / n) * 100) : 0}%` }}
-            />
+            <div className="h-full bg-viz" style={{ width: `${n ? Math.max(3, (confirmed / n) * 100) : 0}%` }} />
           </div>
         ) : null}
         {approvals && approvable(run) ? <ApprovalStatus run={run} onRun={onRun} className="mt-3" /> : null}

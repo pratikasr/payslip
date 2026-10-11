@@ -42,8 +42,9 @@ export function useStepFocus(step: number, previous: RefObject<number | null>, r
 }
 
 /**
- * The four steps of running payroll. Wide screens get Mercury's vertical rail; phones get one
- * line ("Step 2 of 4") and a thin bar, so the step list does not push the content down.
+ * The four steps of running payroll. Wide screens get a vertical rail of numbered boxes; phones
+ * get one typed line ("Step 2 of 4") and four small boxes, so the step list does not push the
+ * content down.
  */
 export function FlowRail({ current, done = false }: { current: number; done?: boolean }) {
   const index = Math.min(current, FLOW_STEPS.length - 1);
@@ -52,14 +53,18 @@ export function FlowRail({ current, done = false }: { current: number; done?: bo
       <ol className="hidden lg:block">
         {FLOW_STEPS.map((label, i) => (
           <li key={label}>
-            <RailStep state={done || i < index ? "done" : i === index ? "current" : "upcoming"}>{label}</RailStep>
+            <RailStep state={done || i < index ? "done" : i === index ? "current" : "upcoming"} number={i + 1}>
+              {label}
+            </RailStep>
           </li>
         ))}
       </ol>
       <div className="lg:hidden">
-        <p className="text-[0.8125rem] text-muted-foreground">
-          {done ? "All steps done" : `Step ${index + 1} of ${FLOW_STEPS.length}`}
-          <span className="text-foreground">: {done ? "Paid" : FLOW_STEPS[index]}</span>
+        <p className="font-type text-[0.8125rem] text-muted-foreground">
+          <span className="form-label text-[0.75rem] font-bold">
+            {done ? "All steps done" : `Step ${index + 1} of ${FLOW_STEPS.length}`}
+          </span>
+          <span className="font-bold text-foreground">: {done ? "Paid" : FLOW_STEPS[index]}</span>
         </p>
         <div className="mt-2 grid grid-cols-4 gap-1" aria-hidden="true">
           {FLOW_STEPS.map((label, i) => (
@@ -67,10 +72,10 @@ export function FlowRail({ current, done = false }: { current: number; done?: bo
               key={label}
               className={
                 done || i < index
-                  ? "h-0.5 rounded-full bg-strong/60"
+                  ? "h-2 border border-ink bg-ink"
                   : i === index
-                    ? "h-0.5 rounded-full bg-primary-edge"
-                    : "h-0.5 rounded-full bg-border"
+                    ? "h-2 border border-ink"
+                    : "h-2 border border-dashed border-faint"
               }
             />
           ))}

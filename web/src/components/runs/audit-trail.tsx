@@ -3,6 +3,7 @@
 import { Rate, Usd, Zec } from "@/components/app/amount";
 import { Hash } from "@/components/app/hash";
 import { Card, CardHeader } from "@/components/ds/card";
+import { FormRow, FormRows } from "@/components/ds/paper";
 import { Disclosure } from "@/components/ds/disclosure";
 import { Sensitive } from "@/components/ds/sensitive";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
@@ -15,8 +16,6 @@ import { roleLabel } from "@/lib/roles";
 import { auditTimeline, chainName, type LogEvent, type TimelineEntry } from "@/lib/run-log";
 import { Problem } from "./problem";
 import { fundingTag, plural, runTitle } from "./run-meta";
-import { TYPE } from "@/components/ds/type";
-import { cn } from "cn";
 
 const HEX64 = /\b[0-9a-f]{64}\b/gi;
 
@@ -28,7 +27,7 @@ function LogText({ message }: { message: string }) {
     const i = m.index ?? 0;
     parts.push(message.slice(last, i));
     parts.push(
-      <code key={i} className="font-mono text-[0.8125rem]" title={m[0]}>
+      <code key={i} className="font-type text-[0.8125rem]" title={m[0]}>
         {m[0].slice(0, 8)}…{m[0].slice(-6)}
       </code>,
     );
@@ -38,12 +37,16 @@ function LogText({ message }: { message: string }) {
   return <>{parts}</>;
 }
 
+/** One row of a funding or allocation form: a spaced-caps label and the typed value, on green bar. */
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2">
-      <dt className="text-strong">{label}</dt>
-      <dd className="min-w-0 text-right">{children}</dd>
-    </div>
+    <FormRow
+      label={label}
+      className="flex flex-wrap justify-between gap-y-0.5"
+      valueClassName="[overflow-wrap:anywhere]"
+    >
+      {children}
+    </FormRow>
   );
 }
 
@@ -130,7 +133,7 @@ function eventItem(event: LogEvent, at: string, run: Run, testnet: boolean): Omi
         detail: event.address ? (
           <Sensitive>
             To{" "}
-            <code className="font-mono">
+            <code className="font-type">
               {event.address.slice(0, 10)}…{event.address.slice(-8)}
             </code>
           </Sensitive>
@@ -310,7 +313,7 @@ export function AuditTrail({
         <Card>
           <CardHeader title="Funding" actions={f ? <StatusTag status={fundingTag(f)} /> : undefined} />
           {f ? (
-            <dl className="mt-3 text-[0.9375rem]">
+            <FormRows className="mt-3 border border-bar-line">
               <Row label="Source">
                 {testnet
                   ? "Testnet treasury"
@@ -348,9 +351,9 @@ export function AuditTrail({
                   <Hash value={f.deposit_tx_hash} label="deposit transaction hash" head={8} tail={6} />
                 </Row>
               ) : null}
-            </dl>
+            </FormRows>
           ) : (
-            <p className="mt-3 text-[0.9375rem] text-muted-foreground">Not funded yet.</p>
+            <p className="mt-3 font-type text-[0.9375rem] text-muted-foreground">Not funded yet.</p>
           )}
         </Card>
         <Card>
@@ -359,7 +362,7 @@ export function AuditTrail({
             One transaction moves each payment from the treasury to the contractor&apos;s own account.
           </p>
           {run.allocation_txid ? (
-            <dl className="mt-3 text-[0.9375rem]">
+            <FormRows className="mt-3 border border-bar-line">
               <Row label="Transaction">
                 <Hash
                   value={run.allocation_txid}
@@ -388,35 +391,37 @@ export function AuditTrail({
                   <Zec zat={coin.unspent} />
                 </Row>
               ) : null}
-            </dl>
+            </FormRows>
           ) : (
-            <p className="mt-3 text-[0.9375rem] text-muted-foreground">Not sent yet.</p>
+            <p className="mt-3 font-type text-[0.9375rem] text-muted-foreground">Not sent yet.</p>
           )}
         </Card>
       </div>
 
       <section aria-labelledby="activity-title">
-        <h2 id="activity-title" className={cn(TYPE.heading, "mb-4")}>
+        <h2 id="activity-title" className="inked mb-4 font-display text-[1.25rem] leading-tight font-bold">
           Activity
         </h2>
         {error && logs.length === 0 ? (
           <Problem error={error} title="Could not load the activity log" />
         ) : logs.length === 0 ? (
-          <p className="text-[0.9375rem] text-muted-foreground">
-            {loading ? "Loading the activity log." : "Nothing logged yet."}
+          <p className="font-type text-[0.9375rem] text-muted-foreground">
+            {loading
+              ? "Loading the activity log."
+              : "Nothing logged yet. Each step of the run is written here as it happens."}
           </p>
         ) : (
           <>
             <div aria-live="polite" aria-relevant="additions">
               <Timeline items={timelineItems(run, logs, testnet)} label={`Activity of the ${runTitle(run)} run`} />
             </div>
-            <Disclosure summary="Service log, as recorded" className="mt-6 border-t border-hairline pt-4">
+            <Disclosure summary="Service log, as recorded" className="mt-6 border-t border-ink pt-4">
               <Sensitive block>
-                <ol className="text-[0.8125rem]">
+                <ol className="green-bar border-y-2 border-ink font-type text-[0.8125rem]">
                   {logs.map((l, i) => (
                     <li
                       key={`${l.at}-${i}`}
-                      className="grid gap-x-6 gap-y-0.5 border-b border-hairline py-2 last:border-0 sm:grid-cols-[10rem_minmax(0,1fr)]"
+                      className="grid gap-x-6 gap-y-0.5 border-b border-bar-line px-2 py-2 last:border-0 sm:grid-cols-[11rem_minmax(0,1fr)]"
                     >
                       <time dateTime={l.at} className="num text-muted-foreground">
                         {when(l.at)}

@@ -10,7 +10,7 @@ import { cn } from "cn";
 
 type Icon = ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
 
-/** Mercury's round grey icon at the top right of a card. Decorative unless it has a link. */
+/** A small square key at the top right of a card, ruled in ink. Decorative unless it has a link. */
 export function IconChip({ icon: Icon, href, label }: { icon: Icon; href?: string; label?: string }) {
   const body = <Icon className="size-4" aria-hidden="true" />;
   if (href && label) {
@@ -19,20 +19,20 @@ export function IconChip({ icon: Icon, href, label }: { icon: Icon; href?: strin
         href={href}
         aria-label={label}
         title={label}
-        className="relative grid size-[30px] place-items-center rounded-full bg-chip text-strong transition-colors hover:bg-[color-mix(in_oklch,var(--chip),var(--foreground)_6%)] pointer-coarse:after:absolute pointer-coarse:after:-inset-[7px] pointer-coarse:after:content-['']"
+        className="relative grid size-[30px] place-items-center border border-ink text-strong transition-colors hover:bg-muted pointer-coarse:after:absolute pointer-coarse:after:-inset-[7px] pointer-coarse:after:content-['']"
       >
         {body}
       </Link>
     );
   }
   return (
-    <span aria-hidden="true" className="grid size-[30px] place-items-center rounded-full bg-chip text-strong">
+    <span aria-hidden="true" className="grid size-[30px] place-items-center border border-rule text-muted-foreground">
       {body}
     </span>
   );
 }
 
-/** Three small figures in a row, label over value (Mercury's Bill Pay and Invoicing cards). */
+/** Three small figures in a row, a spaced-caps label over a typewritten value, like boxes on a form. */
 export function MiniStats({
   items,
   className,
@@ -44,21 +44,21 @@ export function MiniStats({
     <dl className={cn("mt-4 grid grid-cols-[repeat(3,minmax(0,auto))] justify-start gap-x-6 gap-y-1.5", className)}>
       {items.map((it, i) => (
         <div key={i} className="min-w-0">
-          <dt className="text-[0.8125rem] text-muted-foreground">{it.label}</dt>
-          <dd className="num mt-1 text-[0.9375rem]">{it.value}</dd>
+          <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">{it.label}</dt>
+          <dd className="num mt-1 font-type text-[0.9375rem]">{it.value}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-/** A link beside a heading ("All runs", "Go to Books"): gold text on paper, underlined, no arrow. */
+/** A link beside a heading ("All runs", "Go to Books"): typewritten ink, underlined, no arrow. */
 export function ArrowLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
   return (
     <Link
       href={href}
       className={cn(
-        "inline-flex shrink-0 items-center rounded-sm text-[0.9375rem] whitespace-nowrap text-link underline decoration-1 underline-offset-[3px] hover:decoration-2",
+        "inline-flex shrink-0 items-center font-type text-[0.875rem] font-bold whitespace-nowrap text-link underline decoration-1 underline-offset-[3px] hover:decoration-2",
         className,
       )}
     >
@@ -67,16 +67,16 @@ export function ArrowLink({ href, children, className }: { href: string; childre
   );
 }
 
-/** A thin rounded progress bar on a Mist track: ink by default (gold stays for the primary action). */
+/** A gauge printed on the form: a ruled box filled in ink up to the value, square at both ends. */
 export function Bar({
   value,
   label,
-  tone = "gold",
+  tone = "ink",
   className,
 }: {
   value: number;
   label: string;
-  tone?: "gold" | "danger" | "muted";
+  tone?: "ink" | "danger" | "muted";
   className?: string;
 }) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
@@ -87,12 +87,12 @@ export function Bar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(pct)}
-      className={cn("h-1.5 overflow-hidden rounded-full bg-chip", className)}
+      className={cn("h-2.5 overflow-hidden border border-ink bg-card p-px", className)}
     >
       <div
         className={cn(
-          "h-full rounded-full",
-          tone === "gold" && "bg-viz",
+          "h-full",
+          tone === "ink" && "bg-viz",
           tone === "danger" && "bg-destructive",
           tone === "muted" && "bg-faint/50",
         )}
@@ -102,7 +102,7 @@ export function Bar({
   );
 }
 
-/** Mercury's filter chips above a table: one selected, the rest outlined. */
+/** Filters above a table, typed in boxes: the selected one inked, the rest ruled. */
 export function FilterChips<T extends string>({
   options,
   value,
@@ -125,13 +125,15 @@ export function FilterChips<T extends string>({
             aria-pressed={on}
             onClick={() => onChange(o.id)}
             className={cn(
-              "relative inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[0.8125rem] text-strong transition-colors hover:bg-muted pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:content-['']",
-              on && "border-transparent bg-chip text-foreground hover:bg-chip",
+              "relative inline-flex h-8 items-center gap-1.5 border border-ink px-3 font-type text-[0.8125rem] font-bold text-strong transition-colors hover:bg-muted pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:content-['']",
+              on && "bg-ink text-paper hover:bg-ink",
             )}
           >
             {o.label}
             {o.count !== undefined && o.count > 0 ? (
-              <span className="num text-[0.8125rem] text-muted-foreground">{o.count}</span>
+              <span className={cn("num text-[0.8125rem]", on ? "text-paper/80" : "text-muted-foreground")}>
+                {o.count}
+              </span>
             ) : null}
           </button>
         );
@@ -182,10 +184,10 @@ export function Drawer({
           tabIndex={-1}
           onOpenAutoFocus={focus.onOpenAutoFocus}
           onCloseAutoFocus={focus.onCloseAutoFocus}
-          className="paper sheet-shadow fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l text-card-foreground outline-none data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right sm:inset-y-2 sm:right-2 sm:w-[440px] sm:border"
+          className="paper sheet-shadow fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-ink text-card-foreground outline-none data-open:animate-in data-open:slide-in-from-right data-closed:animate-out data-closed:slide-out-to-right sm:inset-y-2 sm:right-2 sm:w-[440px] sm:border"
         >
           <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-2 sm:px-6">
-            <div className="min-w-0 truncate text-[0.8125rem] text-muted-foreground">{eyebrow}</div>
+            <div className="form-label min-w-0 truncate text-[0.75rem] font-bold text-muted-foreground">{eyebrow}</div>
             <DialogPrimitive.Close asChild>
               <Button variant="ghost" size="icon-sm" aria-label="Close" className="-mr-2">
                 <X aria-hidden="true" />

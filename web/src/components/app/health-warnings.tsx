@@ -13,14 +13,11 @@ export function HealthWarnings({ className }: { className?: string }) {
   }
   if (warnings.length === 0 && health.status !== "degraded") return null;
   return (
-    <div
-      role="status"
-      className={`rounded-lg border border-warning/40 bg-warning-bg p-3 text-[0.8125rem] ${className ?? ""}`}
-    >
+    <div role="status" className={`carbon-paper border border-carbon-line p-3 text-[0.8125rem] ${className ?? ""}`}>
       <div className="flex items-start gap-2">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="space-y-1">
-          <p className="font-medium">The Payslip service is running in a degraded state</p>
+          <p className="font-type font-bold">The Payslip service is running in a degraded state</p>
           {warnings.length > 0 ? (
             <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
               {warnings.map((w) => (

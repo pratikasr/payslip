@@ -43,7 +43,7 @@ export function ShieldedMark({
 }: {
   className?: string;
   label?: ReactNode;
-  /** A short addition after the word, for example ", 08:13 UTC" (it carries its own comma). */
+  /** A short addition typed after the stamp, for example "08:13 UTC". */
   detail?: ReactNode;
   explain?: boolean;
 }) {
@@ -52,11 +52,16 @@ export function ShieldedMark({
       className={cn("inline-flex items-center gap-1.5 text-[0.8125rem] whitespace-nowrap", className)}
       title={SHIELDED_HELP}
     >
-      <span className="inline-block -rotate-2 border-[1.5px] border-stamp px-1 py-px font-type text-[0.6875rem] leading-none font-bold tracking-[0.12em] text-stamp uppercase">
+      <span className="inline-block -rotate-2 border-[1.5px] border-stamp px-1 py-px dark:bg-card font-type text-[0.6875rem] leading-none font-bold tracking-[0.12em] text-stamp uppercase">
         {label}
         {explain ? <span className="sr-only normal-case">: {SHIELDED_HELP.toLowerCase()}</span> : null}
       </span>
-      {detail ? <span className="font-type text-muted-foreground">{detail}</span> : null}
+      {detail ? (
+        <span className="font-type text-muted-foreground">
+          <span className="sr-only">, </span>
+          {detail}
+        </span>
+      ) : null}
     </span>
   );
 }

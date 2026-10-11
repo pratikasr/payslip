@@ -40,10 +40,7 @@ export function Tag({
       )}
     >
       {dot || tone === "shielded" ? (
-        <span
-          aria-hidden="true"
-          className={cn("size-1.5 rounded-full", tone === "shielded" ? "bg-stamp" : "bg-current")}
-        />
+        <span aria-hidden="true" className={cn("size-1.5", tone === "shielded" ? "bg-stamp" : "bg-current")} />
       ) : null}
       {children}
     </span>

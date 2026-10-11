@@ -18,7 +18,7 @@ function RunsCovering({ runs }: { runs: Run[] }) {
           {/* At least 24px tall, so links listed one under another are easy to hit (WCAG 2.5.8). */}
           <Link
             href={`/console/runs/${r.id}`}
-            className="inline-flex min-h-6 items-center rounded-sm text-link underline"
+            className="inline-flex min-h-6 items-center font-type font-bold text-link underline"
           >
             {runTitle(r)} run
           </Link>
@@ -60,12 +60,12 @@ export function OverlapWarning({
   return (
     <section
       aria-labelledby="overlap-title"
-      className={cn("rounded-xl bg-warning-bg px-4 py-3.5 text-[0.9375rem] sm:px-5", className)}
+      className={cn("carbon-paper border border-carbon-line px-4 py-3.5 text-[0.9375rem] sm:px-5", className)}
     >
       <div className="flex items-start gap-3">
         <TriangleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <h2 id="overlap-title" className="text-foreground">
+          <h2 id="overlap-title" className="font-type font-bold text-foreground">
             {runs.length === 1
               ? `A payroll run already covers ${title}`
               : `${runs.length} payroll runs already cover ${title}`}
@@ -84,7 +84,7 @@ export function OverlapWarning({
               onChange={(e) => setDraft((d) => ({ ...d, overlapAck: e.target.checked ? key : undefined }))}
               aria-invalid={showError && !confirmed}
               aria-describedby={showError && !confirmed ? "overlap-error" : undefined}
-              className="mt-0.5 size-4 shrink-0 rounded accent-[var(--foreground)]"
+              className="mt-0.5 size-4 shrink-0 accent-[var(--foreground)]"
             />
             This is an extra run for the same period, such as a bonus or a correction
           </label>
@@ -108,9 +108,9 @@ export function OverlapNote({ runs, className }: { runs: Run[]; className?: stri
   return (
     <section
       aria-label="Other runs for this period"
-      className={cn("rounded-xl bg-warning-bg px-4 py-3.5 text-[0.9375rem] sm:px-5", className)}
+      className={cn("carbon-paper border border-carbon-line px-4 py-3.5 text-[0.9375rem] sm:px-5", className)}
     >
-      <p className="text-foreground">
+      <p className="font-type font-bold text-foreground">
         {runs.length === 1 ? "Another run covers this period" : `${runs.length} other runs cover this period`}
       </p>
       <p className="mt-0.5 text-[0.8125rem] text-strong">

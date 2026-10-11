@@ -35,7 +35,7 @@ function networkLine(net: string | undefined, offline: boolean): { long: string;
     return {
       long: "Sample company on Zcash testnet. Nothing here is real money.",
       short: "Testnet",
-      tone: "bg-primary",
+      tone: "bg-carbon-ink",
     };
   if (offline)
     return {
@@ -43,7 +43,7 @@ function networkLine(net: string | undefined, offline: boolean): { long: string;
       short: "Offline",
       tone: "bg-danger",
     };
-  return { long: "Checking which Zcash network this Payslip runs on.", short: "Checking", tone: "bg-white/50" };
+  return { long: "Checking which Zcash network this Payslip runs on.", short: "Checking", tone: "bg-carbon-soft" };
 }
 
 /**
@@ -64,7 +64,8 @@ export function showRoleSwitcher(network: string | undefined): boolean {
 }
 
 /**
- * The vault-dark bar above the app: on testnet, the notice that this is a sample company. Its "Viewing as" menu is how a
+ * The canary strip above the app, typed like the header of a carbon form: on testnet, the notice
+ * that this is a sample company. Its "Viewing as" menu is how a
  * visitor switches between the company, contractor and accountant products; inside each product
  * there is no cross-role navigation. The menu shows on testnet and, on mainnet, only on a demo
  * build (NEXT_PUBLIC_PAYSLIP_DEMO=1). A statements-only deployment has no company to show, and a
@@ -87,69 +88,71 @@ export function DemoBar() {
   const line = networkLine(network, offline);
   const switcher = showRoleSwitcher(network);
   return (
-    <>
-      <aside
-        aria-label="Payslip demo"
-        className="flex h-12 items-center gap-3 bg-banner px-4 text-[0.8125rem] text-banner-foreground sm:px-5"
-        data-print="hide"
+    <aside
+      aria-label="Payslip demo"
+      className="identity-vault carbon-paper flex h-12 items-center gap-3 border-b border-carbon-line px-3 font-type text-[0.8125rem] text-carbon-ink sm:px-5"
+      data-print="hide"
+    >
+      <Link
+        href="/"
+        className="-m-1.5 inline-flex size-[34px] items-center justify-center text-carbon-ink pointer-coarse:size-11"
+        aria-label="Payslip home"
       >
-        <Link
-          href="/"
-          className="-m-1.5 inline-flex size-[34px] items-center justify-center rounded-md pointer-coarse:size-11"
-          aria-label="Payslip home"
-        >
-          <LogoMark className="size-[22px]" />
-        </Link>
-        {/* Not a live region: the network does not change while the page is open. Offline is the
-          one state worth announcing, and the page's own error says it. */}
-        <span className="hidden truncate md:inline">{line.long}</span>
-        {/* Phones get the network as a pill: "Payments here are real" matters most on a small screen. */}
-        <span
-          className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full bg-white/12 px-2.5 text-[0.8125rem] md:hidden"
-          title={line.long}
-        >
-          <span aria-hidden="true" className={cn("size-1.5 rounded-full", line.tone)} />
-          <span>{line.short}</span>
-          <span className="sr-only">. {line.long}</span>
-        </span>
-        {switcher ? (
-          <div className="ml-auto flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger className="relative inline-flex h-[30px] items-center gap-1.5 rounded-full bg-white/12 px-3 text-[0.8125rem] whitespace-nowrap outline-hidden hover:bg-white/18 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary focus-visible:outline-solid pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-[7px] pointer-coarse:after:content-['']">
-                Viewing as {view.label}
-                <ChevronDown className="size-3.5" aria-hidden="true" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>View Payslip as</DropdownMenuLabel>
-                {views.map((v) => (
-                  <DropdownMenuItem key={v.href} asChild>
-                    <Link href={v.href} aria-current={v.href === view.href ? "page" : undefined}>
-                      <v.icon aria-hidden="true" />
-                      <span className="grid">
-                        <span className="text-foreground">{v.label}</span>
-                        <span className="text-[0.8125rem] text-muted-foreground">{v.hint}</span>
-                      </span>
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link href="/verify">
-                    <FileCheck2 aria-hidden="true" />
-                    Check a payslip proof
+        <LogoMark className="size-[22px]" />
+      </Link>
+      {/* The notice is typed on the canary copy, like the header of a carbon form. Not a live
+          region: the network does not change while the page is open. Offline is the one state
+          worth announcing, and the page's own error says it. */}
+      <span aria-hidden="true" className="form-label hidden shrink-0 text-[0.75rem] font-bold md:inline">
+        Notice:
+      </span>
+      <span className="hidden truncate md:inline">{line.long}</span>
+      {/* Phones get the network as a boxed word: "Payments here are real" matters most on a small screen. */}
+      <span
+        className="inline-flex h-6 shrink-0 items-center gap-1.5 border border-current px-1.5 text-[0.75rem] font-bold tracking-[0.06em] uppercase md:hidden"
+        title={line.long}
+      >
+        <span aria-hidden="true" className={cn("size-1.5", line.tone)} />
+        <span>{line.short}</span>
+        <span className="sr-only">. {line.long}</span>
+      </span>
+      {switcher ? (
+        <div className="ml-auto flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger className="relative inline-flex h-[30px] items-center gap-1.5 border-[1.5px] border-carbon-ink bg-transparent px-2.5 text-[0.8125rem] font-bold whitespace-nowrap text-carbon-ink outline-hidden transition-colors hover:bg-carbon-ink/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid aria-expanded:bg-carbon-ink aria-expanded:text-carbon pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 pointer-coarse:after:-inset-y-[7px] pointer-coarse:after:content-['']">
+              <span className="form-label text-[0.75rem] font-normal">Viewing as</span> {view.label}
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>View Payslip as</DropdownMenuLabel>
+              {views.map((v) => (
+                <DropdownMenuItem key={v.href} asChild>
+                  <Link href={v.href} aria-current={v.href === view.href ? "page" : undefined}>
+                    <v.icon aria-hidden="true" />
+                    <span className="grid">
+                      <span className="font-bold text-foreground">{v.label}</span>
+                      <span className="font-sans text-[0.8125rem] text-muted-foreground">{v.hint}</span>
+                    </span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/">
-                    <Home aria-hidden="true" />
-                    About Payslip
-                  </Link>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        ) : null}
-      </aside>
-    </>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/verify">
+                  <FileCheck2 aria-hidden="true" />
+                  Check a payslip proof
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/">
+                  <Home aria-hidden="true" />
+                  About Payslip
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      ) : null}
+    </aside>
   );
 }

@@ -89,21 +89,21 @@ export function MembersView({ initial }: { initial?: OrgMember[] }) {
           ))}
         </div>
       ) : (
-        <table className="w-full text-[0.9375rem]">
+        <table className="w-full border-collapse border-b-2 border-ink text-[0.875rem] sm:text-[0.9375rem]">
           <caption className="sr-only">Members and their roles</caption>
           <thead>
-            <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-              <th scope="col" className="py-2 pr-3 font-normal">
+            <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+              <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                 Person
               </th>
-              <th scope="col" className="py-2 pr-3 font-normal">
+              <th scope="col" className="py-2 pr-3 font-bold">
                 Role
               </th>
-              <th scope="col" className="hidden py-2 pr-3 font-normal sm:table-cell">
+              <th scope="col" className="hidden py-2 pr-3 font-bold sm:table-cell">
                 Since
               </th>
               {admin ? (
-                <th scope="col" className="py-2 text-right font-normal">
+                <th scope="col" className="py-2 pr-2 text-right font-bold">
                   <span className="sr-only">Actions</span>
                 </th>
               ) : null}
@@ -114,12 +114,12 @@ export function MembersView({ initial }: { initial?: OrgMember[] }) {
               const you = m.user_id === auth.me?.user.id;
               const lastAdmin = m.role === "admin" && admins <= 1;
               return (
-                <tr key={m.user_id} className="border-b border-hairline" data-testid="member-row">
-                  <td className="py-3 pr-3">
+                <tr key={m.user_id} className="border-b border-bar-line" data-testid="member-row">
+                  <td className="py-3 pr-3 pl-2">
                     <span className="flex items-center gap-2.5">
                       {m.picture_url ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={m.picture_url} alt="" className="size-7 shrink-0 rounded-full object-cover" />
+                        <img src={m.picture_url} alt="" className="size-7 shrink-0 border border-ink object-cover" />
                       ) : (
                         <Initials name={m.name || m.email} />
                       )}
@@ -158,7 +158,7 @@ export function MembersView({ initial }: { initial?: OrgMember[] }) {
                     {formatShortDate(m.created_at)}
                   </td>
                   {admin ? (
-                    <td className="py-3 text-right">
+                    <td className="py-3 pr-2 text-right">
                       <Button
                         variant="ghost"
                         size="sm"

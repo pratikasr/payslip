@@ -44,7 +44,7 @@ export interface HomeData {
   requests?: { requests: PaymentRequest[]; counts: RequestCounts };
 }
 
-/** Where the company is: the one next step decides which quick action is gold. */
+/** Where the company is: the one next step decides which quick action is inked. */
 type Stage = "add-people" | "fund" | "run" | "unknown";
 
 function stageOf(
@@ -110,7 +110,7 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
         description={welcome + hint}
         className="mb-[18px]"
       />
-      {/* One gold action: the next step for this company. Actions that cannot work yet are hidden. */}
+      {/* One inked action: the next step for this company. Actions that cannot work yet are hidden. */}
       <ActionRow>
         {hasPeople && auth.can("manage_runs") ? (
           <Button asChild variant={stage === "run" ? "default" : "secondary"}>
@@ -185,7 +185,7 @@ function HomeBody({
     <div className="space-y-6">
       {hasPaid ? (
         <>
-          {/* The year's figure leads the page, on Paper with no card around it. */}
+          {/* The year's figure leads the page, in dot matrix on the sheet with no box around it. */}
           <PayrollHero runs={runs} />
           <div className="grid items-start gap-5 lg:grid-cols-2">
             <div className="grid gap-5">
@@ -275,7 +275,7 @@ function GetStarted({ wallet, contractors, runs }: { wallet?: Wallet; contractor
     },
   ];
   const done = steps.filter((s) => s.done).length;
-  // The first step not done yet is the one to do now; it alone gets the gold button.
+  // The first step not done yet is the one to do now; it alone gets the inked button.
   const next = steps.findIndex((s) => !s.done && !s.blocked);
   return (
     <Card aria-labelledby="get-started-title">
@@ -283,30 +283,41 @@ function GetStarted({ wallet, contractors, runs }: { wallet?: Wallet; contractor
         id="get-started-title"
         title="Get started"
         actions={
-          <span className="num text-[0.8125rem] text-muted-foreground">
+          <span className="num font-type text-[0.8125rem] font-bold text-muted-foreground">
             {done} of {steps.length} done
           </span>
         }
       />
       <Bar value={done / steps.length} label="Setup progress" className="mt-3" />
       {/* minmax(0, 1fr) tracks, so a long detail line truncates instead of widening the page. */}
-      <ol className="mt-4 grid grid-cols-1 gap-x-6 sm:grid-cols-2 xl:grid-cols-4">
+      {/* The setup is a sequence, so the steps are numbered, each in a box like a numbered field;
+          a step that is done is ticked. */}
+      <ol className="mt-4 grid grid-cols-1 border-t-2 border-ink sm:grid-cols-2 xl:grid-cols-4">
         {steps.map((s, i) => (
           <li
             key={s.title}
-            className="flex items-center gap-3 border-t border-hairline py-3 xl:flex-col xl:items-start"
+            className="flex items-center gap-3 border-b border-rule py-3 sm:odd:pr-4 sm:even:pl-4 xl:flex-col xl:items-start xl:border-b-0 xl:border-l xl:px-3 xl:first:border-l-0 xl:first:pl-0 xl:odd:pr-3 xl:even:pl-3"
           >
             <span className="flex min-w-0 flex-1 items-center gap-3 xl:w-full xl:flex-none xl:items-start">
               <span
                 className={cn(
-                  "grid size-6 shrink-0 place-items-center rounded-full border text-[0.8125rem]",
-                  s.done ? "border-transparent bg-success-bg text-success" : "border-border text-muted-foreground",
+                  "grid size-7 shrink-0 place-items-center border-2 border-ink font-type text-[0.9375rem] leading-none font-bold",
+                  s.done && "bg-ink text-paper",
                 )}
               >
-                {s.done ? <Check className="size-3.5" aria-hidden="true" /> : <span aria-hidden="true">{i + 1}</span>}
+                {s.done ? (
+                  <Check className="size-4" strokeWidth={3} aria-hidden="true" />
+                ) : (
+                  <span aria-hidden="true">{i + 1}</span>
+                )}
               </span>
               <span className="min-w-0 flex-1">
-                <span className={cn("block text-[0.9375rem]", s.done && "text-muted-foreground")}>
+                <span
+                  className={cn(
+                    "block font-type text-[0.9375rem] font-bold",
+                    s.done && "text-muted-foreground line-through decoration-1",
+                  )}
+                >
                   {s.title}
                   <span className="sr-only">{s.done ? " (done)" : " (to do)"}</span>
                 </span>
@@ -314,7 +325,7 @@ function GetStarted({ wallet, contractors, runs }: { wallet?: Wallet; contractor
               </span>
             </span>
             {s.done || s.blocked ? null : (
-              <Button asChild size="sm" variant={i === next ? "default" : "secondary"} className="xl:ml-9">
+              <Button asChild size="sm" variant={i === next ? "default" : "secondary"} className="xl:ml-10">
                 <Link href={s.href}>{s.action}</Link>
               </Button>
             )}
@@ -340,21 +351,22 @@ function ContractorsCard({ contractors, runs }: { contractors: Contractor[]; run
         title="Contractors"
         actions={<IconChip icon={Plus} href="/console/people?add=1" label="Add contractor" />}
       />
+      {/* A typed list of names and what each was last paid, ruled and on green bar like a ledger. */}
       <div
-        className="mt-2 flex justify-between border-b border-hairline pb-1.5 text-[0.8125rem] text-muted-foreground"
+        className="form-label mt-3 flex justify-between border-y-2 border-ink px-1 py-1.5 text-[0.75rem] font-bold"
         aria-hidden="true"
       >
         <span>Person</span>
         <span>Last paid</span>
       </div>
-      <ul>
+      <ul className="green-bar font-type">
         {shown.map((c) => {
           const lp = last.get(c.id);
           return (
-            <li key={c.id}>
+            <li key={c.id} className="border-b border-bar-line">
               <Link
                 href={`/console/people?person=${c.id}`}
-                className="-mx-2 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-[9px] transition-colors hover:bg-muted"
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-1 py-2 transition-colors hover:bg-muted"
               >
                 <Initials name={c.name} />
                 <span className="min-w-0">
@@ -378,12 +390,12 @@ function ContractorsCard({ contractors, runs }: { contractors: Contractor[]; run
             </li>
           );
         })}
-        <li>
+        <li data-plain="">
           <Link
             href="/console/people"
-            className="-mx-2 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg px-2 py-[9px] text-[0.9375rem] transition-colors hover:bg-muted"
+            className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 px-1 py-2.5 text-[0.9375rem] font-bold underline decoration-1 underline-offset-[3px] transition-colors hover:decoration-2"
           >
-            <Initials text={rest > 0 ? `+${rest}` : String(people.length)} className="bg-chip" />
+            <Initials text={rest > 0 ? `+${rest}` : String(people.length)} className="border-dashed no-underline" />
             View all people
           </Link>
         </li>
@@ -402,7 +414,7 @@ function HomeSkeleton() {
       </div>
       <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="space-y-3 rounded-xl border p-5">
+          <div key={i} className="space-y-3 border border-rule p-5">
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-6 w-32" />
             <Skeleton className="h-10 w-full" />

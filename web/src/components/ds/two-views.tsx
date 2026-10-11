@@ -131,7 +131,7 @@ export function VaultView({
       className={cn(
         "identity-vault carbon-paper relative order-2 flex min-w-0 flex-col border border-carbon-line text-carbon-ink shadow-[6px_6px_0_-1px_rgb(20_24_32_/_0.06)]",
         // The title keeps clear of the stamp.
-        "[&>div:first-of-type]:pr-24 sm:[&>div:first-of-type]:pr-32",
+        "[&>div:first-of-type]:pr-32 sm:[&>div:first-of-type]:pr-36",
         s.vault,
         s.rows,
         PAD,

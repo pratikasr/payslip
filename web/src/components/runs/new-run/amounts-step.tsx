@@ -70,7 +70,7 @@ export function AmountsStep({
       </p>
 
       <section aria-labelledby={`${periodId}-label`} className="mt-7">
-        <label id={`${periodId}-label`} htmlFor={periodId} className="text-[0.8125rem] text-strong">
+        <label id={`${periodId}-label`} htmlFor={periodId} className="form-label text-[0.75rem] font-bold">
           Pay period
         </label>
         <div className="mt-1.5 flex flex-wrap items-center gap-3">
@@ -79,7 +79,7 @@ export function AmountsStep({
               id={periodId}
               value={draft.month}
               onChange={(e) => setDraft((d) => setMonth(d, e.target.value))}
-              className="h-10 rounded-[10px] text-[0.9375rem]"
+              className="h-10 text-[0.9375rem]"
             >
               {!monthKnown ? <option value={draft.month}>{periodTitle(draft.from, draft.to)}</option> : null}
               {months.map((m) => (
@@ -101,9 +101,9 @@ export function AmountsStep({
                 value={draft.from}
                 onChange={(e) => setDraft((d) => ({ ...d, from: e.target.value }))}
                 aria-invalid={submitted && !!check.periodError}
-                className="h-10 w-[10.5rem] rounded-[10px]"
+                className="h-10 w-[10.5rem]"
               />
-              <span className="text-[0.8125rem] text-muted-foreground">to</span>
+              <span className="font-type text-[0.8125rem] text-muted-foreground">to</span>
               <label className="sr-only" htmlFor="period-end">
                 Period ends
               </label>
@@ -114,7 +114,7 @@ export function AmountsStep({
                 onChange={(e) => setDraft((d) => ({ ...d, to: e.target.value }))}
                 aria-invalid={submitted && !!check.periodError}
                 aria-describedby={check.periodError ? "period-error" : undefined}
-                className="h-10 w-[10.5rem] rounded-[10px]"
+                className="h-10 w-[10.5rem]"
               />
             </div>
           ) : null}
@@ -133,7 +133,7 @@ export function AmountsStep({
       <OverlapWarning runs={check.overlaps} draft={draft} setDraft={setDraft} showError={submitted} className="mt-6" />
 
       <section aria-label="Pay lines" className="mt-8">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-hairline pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 pb-3">
           <p className="text-[0.8125rem] text-muted-foreground">
             {draft.source
               ? `Amounts from the ${draft.source.label} run. Add this period's invoice references.`
@@ -157,7 +157,7 @@ export function AmountsStep({
 
         <div
           aria-hidden="true"
-          className="hidden grid-cols-[20px_minmax(0,1fr)_8.5rem_8.5rem] gap-3 py-2.5 text-[0.8125rem] text-muted-foreground sm:grid"
+          className="form-label hidden grid-cols-[20px_minmax(0,1fr)_8.5rem_8.5rem] gap-3 border-y-2 border-ink px-2 py-2.5 text-[0.75rem] font-bold sm:grid"
         >
           <span />
           <span>Contractor</span>
@@ -165,7 +165,8 @@ export function AmountsStep({
           <span>Invoice reference</span>
         </div>
 
-        <ul className="border-t border-hairline sm:border-t-0">
+        {/* The pay lines as rows of a form on green bar, each with a box to tick. */}
+        <ul className="green-bar border-t-2 border-ink sm:border-t-0 [&>li]:border-b-bar-line [&>li:last-child]:border-b-2 [&>li:last-child]:border-b-ink">
           {contractors.map((c) => {
             const l = draft.lines[c.id] ?? { include: false, amount: "", invoice: "" };
             const err = submitted && l.include ? check.lineErrors[c.id] : undefined;
@@ -175,7 +176,7 @@ export function AmountsStep({
               <li
                 key={c.id}
                 className={cn(
-                  "grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-hairline py-3 sm:grid-cols-[20px_minmax(0,1fr)_8.5rem_8.5rem] sm:items-center",
+                  "grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b px-2 py-3 sm:grid-cols-[20px_minmax(0,1fr)_8.5rem_8.5rem] sm:items-center",
                 )}
               >
                 <input
@@ -183,15 +184,17 @@ export function AmountsStep({
                   type="checkbox"
                   checked={l.include}
                   onChange={(e) => update(c.id, { include: e.target.checked })}
-                  className="size-4 self-center rounded accent-[var(--foreground)]"
+                  className="size-4 self-center accent-[var(--foreground)]"
                 />
                 <label htmlFor={`include-${c.id}`} className="flex min-w-0 items-center gap-3">
                   <Initials name={c.name} />
                   <span className="min-w-0">
-                    <span className={cn("block truncate text-[0.9375rem]", !l.include && "text-muted-foreground")}>
+                    <span
+                      className={cn("block truncate font-type text-[0.9375rem]", !l.include && "text-muted-foreground")}
+                    >
                       {c.name}
                     </span>
-                    <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                    <span className="block truncate font-type text-[0.8125rem] text-muted-foreground">
                       {l.include ? settlementText(c, coin) : "Not paid in this run"}
                     </span>
                     {requests?.get(c.id)?.length ? (
@@ -215,7 +218,7 @@ export function AmountsStep({
                     </label>
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[0.9375rem] text-muted-foreground"
+                      className="pointer-events-none absolute top-1/2 left-1 -translate-y-1/2 font-type text-[0.9375rem] text-muted-foreground"
                     >
                       $
                     </span>
@@ -228,7 +231,7 @@ export function AmountsStep({
                       placeholder="0.00"
                       onChange={(e) => update(c.id, { amount: e.target.value })}
                       onBlur={(e) => update(c.id, { amount: tidyAmount(e.target.value) })}
-                      className="money h-10 rounded-[10px] pl-6 text-right text-[0.9375rem] tracking-normal"
+                      className="money h-10 pl-5 text-right text-[0.9375rem] tracking-normal"
                       aria-invalid={amountBad}
                       aria-describedby={amountBad ? `line-error-${c.id}` : undefined}
                     />
@@ -247,7 +250,7 @@ export function AmountsStep({
                       onChange={(e) => update(c.id, { invoice: e.target.value })}
                       aria-invalid={invoiceBad}
                       aria-describedby={invoiceBad ? `line-error-${c.id}` : undefined}
-                      className="h-10 rounded-[10px] text-[0.9375rem]"
+                      className="h-10 text-[0.9375rem]"
                     />
                   </div>
                 </div>
@@ -274,9 +277,9 @@ export function AmountsStep({
 export function AmountsFooter({ check, onContinue }: { check: DraftCheck; onContinue: () => void }) {
   return (
     <>
-      <p className="min-w-0 text-[0.9375rem]" aria-live="polite">
+      <p className="min-w-0 font-type text-[0.9375rem]" aria-live="polite">
         <span className="text-muted-foreground">{plural(check.included.length, "contractor")}, </span>
-        <Usd cents={check.totalCents} />
+        <Usd cents={check.totalCents} className="font-bold" />
       </p>
       <Button size="lg" className="ml-auto" onClick={onContinue}>
         Continue

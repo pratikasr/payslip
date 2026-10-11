@@ -7,7 +7,6 @@ import { Coin, Usd, Zec } from "@/components/app/amount";
 import { useHealth } from "@/components/app/health-provider";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Initials } from "@/components/ds/avatar";
-import { Card } from "@/components/ds/card";
 import { KeyValues } from "@/components/ds/kv";
 import { Tag } from "@/components/ds/tag";
 import { SimulatedRate } from "@/components/ds/simulated-rate";
@@ -34,12 +33,12 @@ export interface Mismatch {
   run: Run | null;
 }
 
-/** A small gold pill with a lock: a mainnet quote's locked rate (Wise's locked-rate pill). */
+/** A typed box with a lock: a mainnet quote's locked rate. */
 export function RatePill({ children, title }: { children: React.ReactNode; title?: string }) {
   return (
     <span
       title={title}
-      className="inline-flex items-center gap-1.5 rounded-full bg-primary-soft px-2.5 py-1 text-[0.8125rem] text-foreground"
+      className="inline-flex items-center gap-1.5 border border-ink px-2 py-0.5 font-type text-[0.8125rem] font-bold text-foreground"
     >
       <Lock className="size-3.5" aria-hidden="true" />
       {children}
@@ -223,17 +222,17 @@ export function ReviewStep({
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
             aria-controls="review-lines"
-            className="inline-flex items-center gap-1 rounded-sm text-link hover:underline"
+            className="inline-flex items-center gap-1 font-bold text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
           >
             {plural(n, "contractor")} for {title}
             <ChevronDown className={cn("size-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
           </button>
           {open ? (
-            <ul id="review-lines" className="mt-2 border-t border-hairline">
+            <ul id="review-lines" className="green-bar mt-2 border-y-2 border-ink">
               {check.included.map((c) => {
                 const l = draft.lines[c.id];
                 return (
-                  <li key={c.id} className="flex items-center gap-3 border-b border-hairline py-2.5">
+                  <li key={c.id} className="flex items-center gap-3 border-b border-bar-line px-2 py-2 last:border-b-0">
                     <Initials name={c.name} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate" title={c.name}>
@@ -263,17 +262,25 @@ export function ReviewStep({
     <div>
       <FlowTitle>Review payroll for {title}</FlowTitle>
 
-      <Card className="mt-5 px-6 py-7 shadow-[0_2px_6px_rgba(14,14,45,0.05)] sm:px-6">
-        <p className="text-[0.8125rem] text-strong">Total for {plural(n, "contractor")}</p>
-        <Usd cents={check.totalCents} className={cn(TYPE.hero, "mt-2.5 block")} />
-      </Card>
-      <p className="mt-4 text-[0.9375rem] text-muted-foreground">
-        Each contractor gets one shielded payment that only they and your accountant can read.
-      </p>
-
-      <div className="mt-5 border-t border-hairline pt-5">
-        <KeyValues items={items} />
-      </div>
+      {/* The run printed as a summary sheet for approval: the total in dot matrix, then its rows. */}
+      <section aria-labelledby="review-sheet-title" className="paper mt-5 border-2 border-ink">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b-2 border-ink px-5 py-3.5 sm:px-6">
+          <h2 id="review-sheet-title" className="inked font-display text-[1.25rem] leading-tight font-bold">
+            Pay run summary
+          </h2>
+          <p className="form-label text-[0.75rem] text-muted-foreground">For approval</p>
+        </div>
+        <div className="px-5 pt-5 pb-5 sm:px-6">
+          <p className="form-label text-[0.75rem] font-bold text-strong">Total for {plural(n, "contractor")}</p>
+          <Usd cents={check.totalCents} className={cn(TYPE.hero, "mt-2.5 block")} />
+          <p className="mt-3 text-[0.875rem] text-muted-foreground">
+            Each contractor gets one shielded payment that only they and your accountant can read.
+          </p>
+        </div>
+        <div className="border-t border-ink px-5 py-5 sm:px-6">
+          <KeyValues items={items} />
+        </div>
+      </section>
 
       <OverlapWarning runs={check.overlaps} draft={draft} setDraft={setDraft} showError={submitted} className="mt-6" />
 
@@ -344,7 +351,7 @@ export function ReviewStep({
         />
       ) : null}
 
-      <div className="mt-6 flex flex-wrap gap-2.5 border-t border-hairline pt-6">
+      <div className="mt-6 flex flex-wrap gap-2.5 border-t-2 border-ink pt-6">
         <Button variant="secondary" size="lg" onClick={onBack} disabled={busy}>
           Back
         </Button>

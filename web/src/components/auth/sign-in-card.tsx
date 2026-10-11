@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert } from "lucide-react";
-import { LogoMark } from "@/components/app/logo";
+import { SlipHead } from "@/components/app/logo";
 import { Field } from "@/components/app/field";
 import { Card } from "@/components/ds/card";
 import { Button } from "@/components/ui/button";
@@ -88,8 +88,8 @@ export function SignInCard({
   };
 
   return (
-    <Card className="px-6 py-7 sm:px-8">
-      <LogoMark className="size-[30px]" />
+    <Card className="sheet-shadow px-6 py-7 sm:px-8">
+      <SlipHead label="Sign-in" />
       <h1 className={cn(TYPE.title, "mt-5")}>Sign in to Payslip</h1>
       <p className="mt-2 text-[0.9375rem] text-muted-foreground">
         Private payroll on Zcash. Sign in with the Google account your organisation invited
@@ -102,12 +102,15 @@ export function SignInCard({
         .
       </p>
       {problem ? (
-        <div role="alert" className="mt-5 flex items-start gap-2.5 rounded-xl bg-danger-bg px-4 py-3 text-[0.8125rem]">
+        <div
+          role="alert"
+          className="mt-5 flex items-start gap-2.5 border border-destructive bg-danger-bg px-4 py-3 text-[0.8125rem]"
+        >
           <CircleAlert className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
           <span>{problem}</span>
         </div>
       ) : null}
-      <div className="mt-6 grid gap-3 border-t border-hairline pt-6">
+      <div className="mt-6 grid gap-3 border-t border-ink pt-6">
         {google ? (
           <Button type="button" size="lg" onClick={withGoogle} disabled={busy !== null} className="w-full">
             <GoogleMark />
@@ -120,8 +123,10 @@ export function SignInCard({
           </p>
         )}
         {testLogin ? (
-          <form onSubmit={withEmail} className="grid gap-3 border-t border-hairline pt-4" aria-label="Test sign-in">
-            <p className="text-[0.8125rem] text-muted-foreground">Test sign-in (browser tests only)</p>
+          <form onSubmit={withEmail} className="grid gap-3 border-t border-ink pt-4" aria-label="Test sign-in">
+            <p className="form-label text-[0.75rem] font-bold text-muted-foreground">
+              Test sign-in (browser tests only)
+            </p>
             <Field id="signin-email" label="Email">
               <Input
                 id="signin-email"
@@ -152,7 +157,7 @@ export function SignInCard({
   );
 }
 
-/** Google's "G", drawn in one colour so it sits on the gold button like the other icons. */
+/** Google's "G", drawn in one colour so it sits on the ink button like the other icons. */
 function GoogleMark() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4">

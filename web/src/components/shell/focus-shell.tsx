@@ -36,15 +36,15 @@ export function FocusShell({
       <div className="paper feed-edges min-h-[calc(100dvh-3rem)]">
         <header role="banner" className="flex items-center gap-3.5 px-2.5 py-5 sm:px-10" data-print="hide">
           <LogoMark className="size-[26px]" />
-          <span aria-hidden="true" className="h-[22px] w-px bg-border" />
-          <span className="min-w-0 truncate text-[0.9375rem]">{context}</span>
+          <span aria-hidden="true" className="h-[22px] w-px bg-ink" />
+          <span className="min-w-0 truncate font-type text-[0.9375rem] font-bold">{context}</span>
           {/* The same eye as the console's top bar: amounts stay hidden here when it is on. */}
           <span className="ml-auto">
             <PrivacyToggle />
           </span>
           <Link
             href={closeHref}
-            className="inline-flex size-9 items-center justify-center text-strong hover:bg-muted pointer-coarse:size-11"
+            className="inline-flex size-9 items-center justify-center border-2 border-ink text-strong hover:bg-muted pointer-coarse:size-11"
             aria-label="Close"
           >
             <X className="size-5" aria-hidden="true" />
@@ -72,7 +72,7 @@ export function FocusShell({
           ) : null}
         </div>
         {footer ? (
-          <div className="paper fixed inset-x-0 bottom-0 z-30 border-t border-hairline" data-print="hide">
+          <div className="paper fixed inset-x-0 bottom-0 z-30 border-t-2 border-ink" data-print="hide">
             <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-4 py-3 sm:px-10">{footer}</div>
           </div>
         ) : null}
@@ -81,30 +81,46 @@ export function FocusShell({
   );
 }
 
-/** One step in the rail: done (tick), current (ink edge) or upcoming (muted). */
-export function RailStep({ state, children }: { state: "done" | "current" | "upcoming"; children: ReactNode }) {
+/**
+ * One step in the rail, numbered in a box like a numbered field on a form: ticked and filled in
+ * ink once done, ruled in ink for the current step, a dashed box for what is still to come.
+ */
+export function RailStep({
+  state,
+  number,
+  children,
+}: {
+  state: "done" | "current" | "upcoming";
+  number?: number;
+  children: ReactNode;
+}) {
   return (
     <div
       aria-current={state === "current" ? "step" : undefined}
       className={cn(
-        "flex items-center gap-2 border-l-2 py-[7px] pl-3.5 text-[0.9375rem]",
-        state === "current" && "border-foreground font-medium text-foreground",
-        state === "done" && "border-hairline text-strong",
-        state === "upcoming" && "border-hairline text-muted-foreground",
+        "flex items-center gap-3 py-[7px] font-type text-[0.9375rem]",
+        state === "current" && "font-bold text-foreground",
+        state === "done" && "text-strong",
+        state === "upcoming" && "text-muted-foreground",
       )}
     >
-      {state === "done" ? (
-        <svg viewBox="0 0 24 24" className="size-4 text-success" aria-hidden="true">
-          <path
-            d="m5 12.5 4.5 4.5L19 7.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      ) : null}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "grid size-7 shrink-0 place-items-center border-2 text-[0.875rem] leading-none font-bold",
+          state === "done" && "border-ink bg-ink text-paper",
+          state === "current" && "border-ink",
+          state === "upcoming" && "border-dashed border-faint",
+        )}
+      >
+        {state === "done" ? (
+          <svg viewBox="0 0 24 24" className="size-4">
+            <path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" strokeWidth="3" />
+          </svg>
+        ) : (
+          number
+        )}
+      </span>
       {children}
     </div>
   );

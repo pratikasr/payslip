@@ -14,7 +14,6 @@ import {
 import { api, toDisplayError, type ApiError, type Run } from "@/lib/api";
 import { Problem } from "./problem";
 import { plural, runTitle } from "./run-meta";
-import { TYPE } from "@/components/ds/type";
 
 /**
  * Cancel a run that never received money (waiting for a deposit, set aside on testnet, or stopped
@@ -55,7 +54,7 @@ export function CancelRun({
         Not going ahead?{" "}
         <button
           type="button"
-          className="rounded-sm text-link hover:underline"
+          className="font-type font-bold text-destructive underline decoration-1 underline-offset-[3px] hover:decoration-2"
           onClick={() => {
             setError(null);
             setOpen(true);
@@ -67,7 +66,9 @@ export function CancelRun({
       <Dialog open={open} onOpenChange={(o) => !busy && setOpen(o)}>
         <DialogContent className="gap-5 p-6 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className={TYPE.heading}>Cancel the {runTitle(run)} run?</DialogTitle>
+            <DialogTitle className="inked font-display text-[1.25rem] leading-tight font-bold">
+              Cancel the {runTitle(run)} run?
+            </DialogTitle>
             <DialogDescription className="text-[0.9375rem]">
               No money has reached this run and nobody has been paid. It stays on record as cancelled, and its{" "}
               {plural(run.lines.length, "person", "people")} can be edited or archived again.

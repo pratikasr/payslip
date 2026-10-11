@@ -115,7 +115,7 @@ export function InvitationsView({ initial }: { initial?: Invitation[] }) {
               </NativeSelect>
             </Field>
             {problem ? <Problem error={problem} /> : null}
-            <div className="border-t border-hairline pt-4">
+            <div className="border-t border-ink pt-4">
               <Button type="submit" disabled={sending || !email.trim()}>
                 {sending ? "Making the link" : "Make an invite link"}
               </Button>
@@ -129,8 +129,8 @@ export function InvitationsView({ initial }: { initial?: Invitation[] }) {
               For {made.email}, as {roleLabel(made.role).toLowerCase()}. It is shown once: copy it now and send it to
               them yourself.
             </p>
-            <div className="mt-3 flex items-center gap-1 rounded-lg bg-chip px-3 py-2">
-              <Sensitive className="min-w-0 flex-1 truncate font-mono text-[0.8125rem]" block>
+            <div className="mt-3 flex items-center gap-1 border border-bar-line bg-bar px-3 py-2">
+              <Sensitive className="min-w-0 flex-1 truncate font-type text-[0.8125rem]" block>
                 <span data-testid="invite-link">{made.link}</span>
               </Sensitive>
               <CopyButton value={made.link} label={`invite link for ${made.email}`} />
@@ -148,33 +148,35 @@ export function InvitationsView({ initial }: { initial?: Invitation[] }) {
           ))}
         </div>
       ) : list.length === 0 ? (
-        <p className="text-[0.9375rem] text-muted-foreground">No invitations yet.</p>
+        <p className="border-y-2 border-ink px-2 py-4 font-type text-[0.9375rem] text-muted-foreground">
+          No invitations yet. Invite someone above and their link shows here until they join.
+        </p>
       ) : (
-        <table className="w-full text-[0.9375rem]">
+        <table className="w-full border-collapse border-b-2 border-ink text-[0.875rem] sm:text-[0.9375rem]">
           <caption className="sr-only">Invitations sent</caption>
           <thead>
-            <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-              <th scope="col" className="py-2 pr-3 font-normal">
+            <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+              <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                 Email
               </th>
-              <th scope="col" className="py-2 pr-3 font-normal">
+              <th scope="col" className="py-2 pr-3 font-bold">
                 Role
               </th>
-              <th scope="col" className="py-2 pr-3 font-normal">
+              <th scope="col" className="py-2 pr-3 font-bold">
                 State
               </th>
-              <th scope="col" className="hidden py-2 pr-3 font-normal sm:table-cell">
+              <th scope="col" className="hidden py-2 pr-3 font-bold sm:table-cell">
                 Expires
               </th>
-              <th scope="col" className="py-2 text-right font-normal">
+              <th scope="col" className="py-2 pr-2 text-right font-bold">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
           <tbody>
             {list.map((inv) => (
-              <tr key={inv.id} className="border-b border-hairline" data-testid="invitation-row">
-                <td className="py-3 pr-3">{inv.email}</td>
+              <tr key={inv.id} className="border-b border-bar-line" data-testid="invitation-row">
+                <td className="py-3 pr-3 pl-2 font-bold [overflow-wrap:anywhere]">{inv.email}</td>
                 <td className="py-3 pr-3">{roleLabel(inv.role)}</td>
                 <td className="py-3 pr-3">
                   <Tag tone={STATUS[inv.status].tone}>{STATUS[inv.status].label}</Tag>
@@ -182,7 +184,7 @@ export function InvitationsView({ initial }: { initial?: Invitation[] }) {
                 <td className="hidden py-3 pr-3 text-muted-foreground sm:table-cell">
                   {inv.status === "pending" ? formatShortDate(inv.expires_at) : ""}
                 </td>
-                <td className="py-3 text-right">
+                <td className="py-3 pr-2 text-right">
                   {inv.status === "pending" ? (
                     <Button variant="ghost" size="sm" disabled={busy === inv.id} onClick={() => void revoke(inv)}>
                       Revoke

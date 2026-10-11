@@ -70,7 +70,7 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
     const el = document.getElementById(id);
     if (!el) return;
     el.scrollIntoView({ block: "center" });
-    // A gold wash marks where the visitor landed, then fades.
+    // A canary wash marks where the visitor landed, then fades.
     el.setAttribute("data-highlight", "");
     const t = setTimeout(() => el.removeAttribute("data-highlight"), 1800);
     return () => clearTimeout(t);
@@ -139,12 +139,14 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
               <CardHeader id="invites-title" title="Contractor invites" actions={<IconChip icon={FileKey2} />} />
               {contractors.data ? (
                 <>
-                  <div className={cn(TYPE.heading, "mt-1")}>
+                  <div className="mt-2 font-type text-[1.0625rem] font-bold">
                     {formatCount(shared.length)} of {formatCount(list.length)} shared
                   </div>
                   <Bar value={list.length ? shared.length / list.length : 0} label="Invites shared" className="mt-4" />
                   {list.length === 0 ? (
-                    <p className="mt-4 text-[0.9375rem] text-strong">Add people first; each gets their own key.</p>
+                    <p className="mt-4 font-type text-[0.9375rem] text-strong">
+                      Add people first; each gets their own key.
+                    </p>
                   ) : (
                     <InviteChecklist people={list} />
                   )}
@@ -163,35 +165,38 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
           <SectionHeader title="Viewing keys" id="keys-title" />
           <div className="-mx-1 overflow-x-auto px-1">
             {/* Fixed layout: a long name truncates in its column instead of widening the page. */}
-            <table className="w-full table-fixed border-collapse text-[0.9375rem]" aria-labelledby="keys-title">
+            <table
+              className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.9375rem]"
+              aria-labelledby="keys-title"
+            >
               <thead>
-                <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-                  <th scope="col" className="py-3 pr-3 font-normal">
+                <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+                  <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                     Holder
                   </th>
-                  <th scope="col" className="hidden w-[10rem] py-3 pr-3 font-normal lg:table-cell">
+                  <th scope="col" className="hidden w-[10rem] py-3 pr-3 font-bold lg:table-cell">
                     Access
                   </th>
-                  <th scope="col" className="hidden w-[15rem] py-3 pr-3 font-normal xl:table-cell">
+                  <th scope="col" className="hidden w-[15rem] py-3 pr-3 font-bold xl:table-cell">
                     Invite link
                   </th>
-                  <th scope="col" className="w-[5rem] py-3 text-right font-normal lg:w-[12.5rem]">
+                  <th scope="col" className="w-[5rem] py-2.5 pr-2 text-right font-bold lg:w-[12.5rem]">
                     <span className="sr-only">Actions</span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                <tr className="border-b border-hairline">
-                  <td className="h-[60px] w-full max-w-0 py-2 pr-3">
+                <tr className="border-b border-bar-line">
+                  <td className="h-[56px] w-full max-w-0 py-2 pr-3 pl-2">
                     <span className="flex items-center gap-3">
                       <span
                         aria-hidden="true"
-                        className="grid size-[26px] shrink-0 place-items-center rounded-full bg-chip text-strong"
+                        className="grid h-6 min-w-7 shrink-0 place-items-center border border-current text-strong"
                       >
                         <Landmark className="size-3.5" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block truncate">Treasury</span>
+                        <span className="block truncate font-bold">Treasury</span>
                         <span className="block truncate text-[0.8125rem] text-muted-foreground">Company</span>
                       </span>
                     </span>
@@ -205,7 +210,7 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
                   <td className="text-right">
                     <a
                       href="#auditor-package"
-                      className="rounded-sm text-[0.8125rem] whitespace-nowrap text-link hover:underline"
+                      className="text-[0.8125rem] font-bold whitespace-nowrap text-link underline decoration-1 underline-offset-[3px] hover:decoration-2"
                       onClick={(e) => {
                         e.preventDefault();
                         document
@@ -219,7 +224,7 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
                 </tr>
                 {!contractors.data
                   ? Array.from({ length: 3 }).map((_, i) => (
-                      <tr key={i} className="border-b border-hairline">
+                      <tr key={i} className="border-b border-bar-line">
                         <td colSpan={4} className="h-[60px]">
                           <Skeleton className="h-4 w-56" />
                         </td>
@@ -238,13 +243,13 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
                         <tr
                           key={c.id}
                           id={`person-${c.id}`}
-                          className="scroll-mt-24 border-b border-hairline transition-colors duration-700 data-[highlight]:bg-primary-soft"
+                          className="scroll-mt-24 border-b border-bar-line transition-colors duration-700 data-[highlight]:bg-carbon"
                         >
-                          <td className="h-[60px] w-full max-w-0 py-2 pr-3">
+                          <td className="h-[56px] w-full max-w-0 py-2 pr-3 pl-2">
                             <span className="flex min-w-0 items-center gap-3">
                               <Initials name={c.name} />
                               <span className="min-w-0">
-                                <span className="block truncate" title={c.name}>
+                                <span className="block truncate font-bold" title={c.name}>
                                   {c.name}
                                 </span>
                                 <span className="block truncate text-[0.8125rem] text-muted-foreground">
@@ -382,7 +387,7 @@ function AuditorPackage({
   return (
     <Card
       id="auditor-package"
-      className="flex scroll-mt-24 flex-col transition-shadow duration-700 data-[highlight]:ring-2 data-[highlight]:ring-primary-edge/60"
+      className="flex scroll-mt-24 flex-col transition-colors duration-700 data-[highlight]:outline-2 data-[highlight]:outline-offset-2 data-[highlight]:outline-ink data-[highlight]:outline-solid"
       aria-labelledby="auditor-title"
     >
       <CardHeader id="auditor-title" title="Auditor package" actions={<IconChip icon={Download} />} />
@@ -404,7 +409,7 @@ function AuditorPackage({
         <Skeleton className="mt-4 h-10 w-full" />
       )}
       <div className="mt-auto pt-4">
-        <div className="flex flex-wrap items-center gap-2 border-t border-hairline pt-3.5">
+        <div className="flex flex-wrap items-center gap-2 border-t border-ink pt-3.5">
           <Button variant="secondary" size="sm" onClick={download} disabled={!data}>
             <Download aria-hidden="true" />
             Download key file
@@ -469,7 +474,7 @@ function InviteDialog({
         {contractor && entry ? (
           <div className="grid gap-4 px-6 pb-6">
             {origin && !configuredPortalOrigin() && isPrivateOrigin(origin) ? (
-              <p className="rounded-lg bg-warning-bg px-3 py-2 text-[0.8125rem] text-strong" role="note">
+              <p className="carbon-paper border border-carbon-line px-3 py-2 text-[0.8125rem] text-strong" role="note">
                 This link opens only on this computer or its network ({origin.replace(/^https?:\/\//, "")}).
               </p>
             ) : null}
@@ -477,7 +482,7 @@ function InviteDialog({
               <QrCode value={link} label={`QR code of the invite link for ${contractor.name}`} size={260} />
             </Sensitive>
             <div className="space-y-1.5">
-              <label htmlFor="invite-link" className="text-[0.8125rem] font-medium">
+              <label htmlFor="invite-link" className="form-label text-[0.75rem] font-bold">
                 Invite link
               </label>
               <div className="flex items-center gap-1">
@@ -487,14 +492,14 @@ function InviteDialog({
                   value={link}
                   onFocus={(e) => e.currentTarget.select()}
                   className={cn(
-                    "h-9 min-w-0 flex-1 rounded-lg border bg-raised px-2.5 font-mono text-[0.8125rem] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+                    "h-9 min-w-0 flex-1 border border-bar-line bg-bar px-2.5 font-type text-[0.8125rem] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid",
                     SENSITIVE,
                   )}
                 />
                 <CopyButton value={link} label={`invite link for ${contractor.name}`} size="icon-sm" />
               </div>
             </div>
-            <Disclosure summary="Advanced: the viewing key itself" className="rounded-lg border px-3.5 py-2.5">
+            <Disclosure summary="Advanced: the viewing key itself" className="border border-rule px-3.5 py-2.5">
               <div className="grid gap-3">
                 <KeyField label="Viewing key" value={entry.ufvk} copyLabel={`viewing key for ${contractor.name}`} />
                 {entry.ufvk_wallet && entry.ufvk_wallet !== entry.ufvk ? (
@@ -508,7 +513,7 @@ function InviteDialog({
             </Disclosure>
           </div>
         ) : null}
-        <DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-4 sm:items-center sm:justify-between">
+        <DialogFooter className="mx-0 mb-0 px-6 py-4 sm:items-center sm:justify-between">
           <p className="text-[0.8125rem] text-muted-foreground">
             {contractor?.fvk_shared_at ? (
               <>
@@ -518,7 +523,7 @@ function InviteDialog({
                     {" "}
                     <button
                       type="button"
-                      className="rounded-sm text-link hover:underline"
+                      className="text-link hover:underline"
                       disabled={marking}
                       onClick={() => onUnmark(contractor)}
                     >
@@ -550,12 +555,12 @@ function KeyField({ label, value, copyLabel }: { label: string; value: string; c
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[0.8125rem] text-muted-foreground">{label}</span>
+        <span className="form-label text-[0.75rem] font-bold text-muted-foreground">{label}</span>
         <CopyButton value={value} label={copyLabel} />
       </div>
       <code
         className={cn(
-          "block max-h-24 overflow-y-auto rounded-md bg-raised p-2 font-mono text-[0.8125rem] break-all",
+          "block max-h-24 overflow-y-auto border border-bar-line bg-bar p-2 font-type text-[0.8125rem] break-all",
           SENSITIVE,
         )}
       >
@@ -571,8 +576,8 @@ function KeyField({ label, value, copyLabel }: { label: string; value: string; c
  */
 function LocalLinksNote({ origin }: { origin: string }) {
   return (
-    <div role="note" className="mb-5 rounded-xl bg-warning-bg px-4 py-3.5 text-[0.9375rem] sm:px-5">
-      <p className="text-foreground">Invite links open only on this computer or its network</p>
+    <div role="note" className="carbon-paper mb-5 border border-carbon-line px-4 py-3.5 text-[0.9375rem] sm:px-5">
+      <p className="font-type font-bold text-foreground">Invite links open only on this computer or its network</p>
       <p className="mt-1 text-[0.8125rem] text-strong [overflow-wrap:anywhere]">
         This console runs at {origin.replace(/^https?:\/\//, "")}, which a contractor&apos;s phone cannot reach. To send
         links they can open, whoever runs Payslip sets NEXT_PUBLIC_PAYSLIP_PORTAL_URL to a Payslip address contractors
@@ -587,19 +592,19 @@ function InviteChecklist({ people }: { people: Contractor[] }) {
   const shown = people.slice(0, 6);
   const rest = people.length - shown.length;
   return (
-    <ul className="mt-4 grid gap-x-5 gap-y-1.5 text-[0.9375rem] sm:grid-cols-2">
+    <ul className="mt-4 grid gap-x-5 gap-y-1.5 font-type text-[0.9375rem] sm:grid-cols-2">
       {shown.map((c) => (
         <li key={c.id} className="flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"
             className={cn(
-              "grid size-[18px] shrink-0 place-items-center rounded-full border",
-              c.fvk_shared_at ? "border-transparent bg-success-bg text-success" : "border-border",
+              "grid size-4 shrink-0 place-items-center border-[1.5px] border-ink",
+              c.fvk_shared_at && "bg-ink text-paper",
             )}
           >
-            {c.fvk_shared_at ? <Check className="size-3" /> : null}
+            {c.fvk_shared_at ? <Check className="size-3" strokeWidth={3} /> : null}
           </span>
-          <a href={`#person-${c.id}`} className="min-w-0 truncate rounded-sm hover:underline" title={c.name}>
+          <a href={`#person-${c.id}`} className="min-w-0 truncate hover:underline" title={c.name}>
             {c.name}
           </a>
           <span className="sr-only">{c.fvk_shared_at ? ", shared" : ", not shared"}</span>
@@ -619,13 +624,15 @@ function HowInvitesWork() {
   ];
   return (
     <div className="mt-auto pt-5">
-      <p className="border-t border-hairline pt-3.5 text-[0.8125rem] text-muted-foreground">How invites work</p>
+      <p className="form-label border-t border-ink pt-3.5 text-[0.75rem] font-bold text-muted-foreground">
+        How invites work
+      </p>
       <ol className="mt-2 grid gap-2 text-[0.8125rem] text-strong sm:grid-cols-3">
         {steps.map((step, i) => (
           <li key={step} className="flex gap-2">
             <span
               aria-hidden="true"
-              className="grid size-5 shrink-0 place-items-center rounded-full bg-chip text-[0.8125rem] text-muted-foreground"
+              className="grid size-5 shrink-0 place-items-center border-[1.5px] border-ink font-type text-[0.75rem] font-bold"
             >
               {i + 1}
             </span>

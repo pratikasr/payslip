@@ -20,7 +20,6 @@ import { lastPaidByContractor, settlementLabel } from "@/components/console/lib"
 import { ContractorDialog } from "@/components/console/people/contractor-dialog";
 import { ArchiveDialog, PersonDrawer } from "@/components/console/people/person-drawer";
 import { Problem } from "@/components/runs/problem";
-import { TYPE } from "@/components/ds/type";
 
 /**
  * Set or clear one search parameter without a server round trip (Next syncs useSearchParams).
@@ -121,12 +120,12 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
       ) : !contractors.data ? (
         <PeopleSkeleton />
       ) : list.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 border-t border-hairline py-12 sm:items-center sm:text-center">
-          <span className="grid size-11 place-items-center rounded-full bg-chip text-strong">
+        <div className="flex flex-col items-start gap-4 border-y-2 border-ink py-12 sm:items-center sm:text-center">
+          <span className="grid size-11 place-items-center border-2 border-ink text-strong">
             <UsersRound className="size-5" aria-hidden="true" />
           </span>
           <div className="max-w-md space-y-1.5">
-            <h2 className={TYPE.heading}>No contractors yet</h2>
+            <h2 className="font-type text-[1.0625rem] font-bold">No contractors yet</h2>
             <p className="text-[0.9375rem] text-muted-foreground">
               Each person gets a private account and a key to their own payslips.
             </p>
@@ -141,7 +140,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
           <div className="mb-2 flex flex-wrap items-center gap-3">
             <div className="relative min-w-0 flex-1 sm:max-w-xs">
               <Search
-                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                className="pointer-events-none absolute top-1/2 left-1 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
@@ -150,40 +149,40 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search people"
                 aria-label="Search people"
-                className="h-9 rounded-full border-border pl-9"
+                className="h-9 pl-7"
               />
             </div>
-            <span className="ml-auto text-[0.8125rem] text-muted-foreground" aria-live="polite">
+            <span className="ml-auto font-type text-[0.8125rem] text-muted-foreground" aria-live="polite">
               {q ? `${formatCount(shown.length)} of ${formatCount(list.length)}` : `${formatCount(list.length)} people`}
             </span>
           </div>
 
           {/* Fixed layout: a long name truncates in its column instead of widening the page. */}
-          <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+          <table className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.9375rem]">
             <caption className="sr-only">Contractors. Select a person to see their details and payments.</caption>
             <thead>
-              <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-                <th scope="col" className="py-3 pr-3 font-normal">
+              <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+                <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                   Name
                 </th>
-                <th scope="col" className="hidden w-[9.5rem] py-3 pr-3 font-normal lg:table-cell">
+                <th scope="col" className="hidden w-[8.5rem] py-3 pr-3 font-bold lg:table-cell">
                   Payout
                 </th>
-                <th scope="col" className="hidden w-[8rem] py-3 pr-3 font-normal md:table-cell">
+                <th scope="col" className="hidden w-[8rem] py-3 pr-3 font-bold md:table-cell">
                   Payslip access
                 </th>
-                <th scope="col" className="hidden w-[8.5rem] py-3 pr-3 text-right font-normal xl:table-cell">
+                <th scope="col" className="hidden w-[8.5rem] py-3 pr-3 text-right font-bold xl:table-cell">
                   Total paid
                 </th>
-                <th scope="col" className="w-[8rem] py-3 text-right font-normal sm:w-[9.5rem]">
+                <th scope="col" className="w-[8rem] py-2.5 pr-2 text-right font-bold sm:w-[11rem]">
                   Last paid
                 </th>
               </tr>
             </thead>
             <tbody>
               {shown.length === 0 ? (
-                <tr className="border-b border-hairline">
-                  <td colSpan={5} className="h-[52px] text-[0.8125rem] text-muted-foreground">
+                <tr className="border-b border-bar-line">
+                  <td colSpan={5} className="h-[52px] pl-2 text-[0.875rem] text-muted-foreground">
                     Nobody matches &ldquo;{query.trim()}&rdquo;.
                   </td>
                 </tr>
@@ -196,9 +195,9 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                       key={c.id}
                       onClick={() => open(c)}
                       data-state={active ? "selected" : undefined}
-                      className="group/row cursor-pointer border-b border-hairline transition-colors hover:bg-muted/60 data-[state=selected]:bg-muted"
+                      className="group/row cursor-pointer border-b border-bar-line transition-colors hover:bg-muted data-[state=selected]:bg-muted"
                     >
-                      <td className="h-[60px] w-full max-w-0 py-2 pr-3">
+                      <td className="h-[56px] w-full max-w-0 py-2 pr-3 pl-2">
                         <span className="flex min-w-0 items-center gap-3">
                           <Initials name={c.name} />
                           <span className="min-w-0 flex-1">
@@ -206,7 +205,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                               type="button"
                               data-person-open={c.id}
                               aria-haspopup="dialog"
-                              className="block max-w-full truncate rounded-sm text-left"
+                              className="block max-w-full truncate text-left font-bold"
                               title={c.name}
                             >
                               {c.name}
@@ -264,7 +263,7 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                           <span className="text-[0.8125rem] text-muted-foreground">None</span>
                         )}
                       </td>
-                      <td className="py-2 text-right">
+                      <td className="py-2 pr-2 text-right">
                         {lp ? (
                           <>
                             <Usd cents={lp.cents} className="block" />
@@ -324,10 +323,10 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
 function PeopleSkeleton() {
   return (
     <div role="status" aria-label="Loading people" className="space-y-3 pt-2">
-      <Skeleton className="h-9 w-72 rounded-full" />
+      <Skeleton className="h-9 w-72" />
       {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 border-b border-hairline py-3">
-          <Skeleton className="size-[26px] rounded-full" />
+        <div key={i} className="flex items-center gap-3 border-b border-bar-line py-3">
+          <Skeleton className="size-[26px]" />
           <Skeleton className="h-4 w-48" />
           <Skeleton className="ml-auto h-4 w-20" />
         </div>

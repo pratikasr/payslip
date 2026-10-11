@@ -93,39 +93,41 @@ export function AuditView({ initial }: { initial?: AuditEntry[] }) {
           ))}
         </div>
       ) : list.length === 0 ? (
-        <p className="text-[0.9375rem] text-muted-foreground">Nothing has been changed yet.</p>
+        <p className="border-y-2 border-ink px-2 py-4 font-type text-[0.9375rem] text-muted-foreground">
+          Nothing has been changed yet. Every change to members, roles and runs is written here.
+        </p>
       ) : (
         <>
-          <table className="w-full text-[0.9375rem]">
+          <table className="w-full border-collapse border-b-2 border-ink text-[0.875rem] sm:text-[0.9375rem]">
             <caption className="sr-only">Audit log, newest first</caption>
             <thead>
-              <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-                <th scope="col" className="py-2 pr-3 font-normal">
+              <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+                <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
                   When
                 </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
+                <th scope="col" className="py-2 pr-3 font-bold">
                   Who
                 </th>
-                <th scope="col" className="py-2 pr-3 font-normal">
+                <th scope="col" className="py-2 pr-3 font-bold">
                   What
                 </th>
-                <th scope="col" className="hidden py-2 font-normal md:table-cell">
+                <th scope="col" className="hidden py-2 font-bold md:table-cell">
                   Target
                 </th>
               </tr>
             </thead>
             <tbody>
               {list.map((e) => (
-                <tr key={e.id} className="border-b border-hairline align-top" data-testid="audit-row">
-                  <td className="py-2.5 pr-3 whitespace-nowrap text-muted-foreground">{formatDateTime(e.at)}</td>
+                <tr key={e.id} className="border-b border-bar-line align-top" data-testid="audit-row">
+                  <td className="py-2.5 pr-3 pl-2 whitespace-nowrap text-muted-foreground">{formatDateTime(e.at)}</td>
                   <td className="py-2.5 pr-3">
                     <span className="grid min-w-0">
-                      <span className="truncate">{e.user?.name || e.user?.email || "Unknown"}</span>
+                      <span className="truncate font-bold">{e.user?.name || e.user?.email || "Unknown"}</span>
                       <span className="text-[0.8125rem] text-muted-foreground">{roleLabel(e.role)}</span>
                     </span>
                   </td>
                   <td className="py-2.5 pr-3">{describe(e)}</td>
-                  <td className="hidden py-2.5 font-mono text-[0.8125rem] text-muted-foreground md:table-cell">
+                  <td className="hidden py-2.5 font-type text-[0.8125rem] text-muted-foreground md:table-cell">
                     {e.target ? (
                       <span title={e.target}>{e.target.length > 18 ? `${e.target.slice(0, 8)}…` : e.target}</span>
                     ) : (

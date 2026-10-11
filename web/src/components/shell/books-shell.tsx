@@ -35,7 +35,7 @@ export function BooksShell({
         mark={<Mark className="size-[22px]" />}
         name={companyName()}
         chip={health ? networkLabel(health.network) : undefined}
-        sub={sample ? <SampleTag /> : undefined}
+        sub={sample ? <SampleTag className="text-[0.75rem]" /> : undefined}
       />
     ),
     // A statements-only deployment has no payroll to switch to; neither does the contractors'

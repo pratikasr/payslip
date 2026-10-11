@@ -7,7 +7,7 @@ import { formatRate } from "@/lib/format";
 import { cn } from "cn";
 
 /**
- * The one way the app says a testnet rate is simulated: a small gold pill. Its number lives in
+ * The one way the app says a testnet rate is simulated: a typed note in a dashed box. Its number lives in
  * the note it opens, not on the page, because a million dollars per TAZ reads as a bug on camera
  * and makes every derived dollar figure look alarming. The note says what the rate is for (turning
  * payroll dollars into faucet coins) and what it is not (a price: fees are real and shown in TAZ).
@@ -28,7 +28,7 @@ export function SimulatedRate({
     <Popover>
       <PopoverTrigger
         className={cn(
-          "relative inline-flex h-[26px] shrink-0 items-center gap-1.5 rounded-full bg-primary-soft px-2.5 text-[0.8125rem] whitespace-nowrap text-foreground transition-colors outline-none hover:bg-[color-mix(in_oklch,var(--primary-soft),var(--primary)_18%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']",
+          "relative inline-flex h-6 shrink-0 items-center gap-1.5 border border-dashed border-current px-1.5 font-type text-[0.8125rem] font-bold whitespace-nowrap text-strong transition-colors outline-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring focus-visible:outline-solid pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2.5 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']",
           className,
         )}
       >
@@ -37,7 +37,7 @@ export function SimulatedRate({
         <span className="sr-only">, what this means</span>
       </PopoverTrigger>
       <PopoverContent aria-labelledby={titleId}>
-        <p id={titleId} className="text-[0.8125rem] font-medium text-foreground">
+        <p id={titleId} className="font-type text-[0.8125rem] font-bold text-foreground">
           A simulated testnet rate
         </p>
         <p className="mt-1 text-muted-foreground">
@@ -45,7 +45,7 @@ export function SimulatedRate({
           {rateE6 ? (
             <>
               {" "}
-              of <span className="money text-foreground">{formatRate(rateE6)}</span> per TAZ
+              of <span className="money font-type text-foreground">{formatRate(rateE6)}</span> per TAZ
             </>
           ) : null}
           , so free faucet coins can carry a demo payroll.

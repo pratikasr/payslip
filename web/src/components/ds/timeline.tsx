@@ -16,10 +16,11 @@ export interface TimelineItem {
 }
 
 /**
- * The vertical timeline: a dot per step on a thin rail, ink for what happened, an ink ring for
- * what is happening, grey for what has not, red for a failure, amber for a retry. The words carry
- * the state, so colour is never the only signal. Used by a payment's drawer and a run's audit
- * trail.
+ * The vertical timeline, typed like a log sheet: a small box per step on a dotted rail. A step
+ * that happened is a ticked box in ink, the one under way a box with an ink corner, what has not
+ * happened an empty dashed box, a failure a red box with a cross, a retry a canary box. The words
+ * carry the state, so the box is never the only signal. Used by a payment's drawer and a run's
+ * audit trail.
  */
 export function Timeline({ items, className, label }: { items: TimelineItem[]; className?: string; label?: string }) {
   return (
@@ -32,36 +33,28 @@ export function Timeline({ items, className, label }: { items: TimelineItem[]; c
               <span
                 aria-hidden="true"
                 className={cn(
-                  "absolute top-4 bottom-0 left-[6px] w-0.5 rounded-full",
-                  e.state === "done" ? "bg-foreground/35" : "bg-border",
+                  "absolute top-[22px] bottom-1 left-[6px] border-l-2 border-dotted",
+                  e.state === "done" ? "border-foreground/45" : "border-border",
                 )}
               />
             ) : null}
-            <span
-              aria-hidden="true"
-              className={cn(
-                "relative mt-1.5 size-2.5 justify-self-center rounded-full",
-                e.state === "done" && "bg-foreground",
-                e.state === "current" && "border-2 border-foreground bg-card",
-                e.state === "upcoming" && "bg-border",
-                e.state === "failed" && "bg-destructive",
-                e.state === "warning" && "bg-warning",
-              )}
-            />
+            <TimelineBox state={e.state} />
             <div className="min-w-0">
               <div
                 className={cn(
-                  "text-[0.9375rem] [overflow-wrap:anywhere]",
+                  "font-type text-[0.875rem] leading-[1.45] [overflow-wrap:anywhere]",
                   e.state === "upcoming" && "text-muted-foreground",
                 )}
               >
                 {e.title}
               </div>
               {e.detail ? (
-                <div className="mt-0.5 text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">{e.detail}</div>
+                <div className="mt-0.5 font-type text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">
+                  {e.detail}
+                </div>
               ) : null}
               {e.time ? (
-                <time dateTime={e.dateTime} className="mt-0.5 block text-[0.8125rem] text-muted-foreground">
+                <time dateTime={e.dateTime} className="mt-0.5 block font-type text-[0.8125rem] text-muted-foreground">
                   {e.time}
                 </time>
               ) : null}
@@ -70,5 +63,34 @@ export function Timeline({ items, className, label }: { items: TimelineItem[]; c
         );
       })}
     </ol>
+  );
+}
+
+/** The step's box: ticked, under way, empty, crossed or flagged. Decorative; the words say it. */
+function TimelineBox({ state }: { state: TimelineState }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "relative mt-[3px] grid size-3.5 place-items-center border-[1.5px]",
+        state === "done" && "border-foreground bg-foreground text-background",
+        state === "current" && "border-foreground bg-card",
+        state === "upcoming" && "border-dashed border-faint bg-card",
+        state === "failed" && "border-destructive bg-danger-bg text-destructive",
+        state === "warning" && "border-warning bg-warning-bg",
+      )}
+    >
+      {state === "done" ? (
+        <svg viewBox="0 0 12 12" className="size-2.5">
+          <path d="m2.5 6.2 2.2 2.2 4.8-5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      ) : state === "current" ? (
+        <span className="size-1.5 bg-foreground" />
+      ) : state === "failed" ? (
+        <svg viewBox="0 0 12 12" className="size-2.5">
+          <path d="m3 3 6 6M9 3l-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" />
+        </svg>
+      ) : null}
+    </span>
   );
 }

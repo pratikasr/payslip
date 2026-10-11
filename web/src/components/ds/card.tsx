@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { cn } from "cn";
 
 /**
- * A card: a piece of paper with a ruled edge and square corners (docs/DESIGN.md section 17). Only
- * for an object with a boundary (a balance, a run, a person); sections and page-level tables
- * flow on the sheet without one.
+ * A card: a box ruled in ink on the sheet, the way a printed form boxes one section (docs/DESIGN.md
+ * section 17). Square corners, no shadow. Only for an object with a boundary (a balance, a run, a
+ * person); sections and page-level tables flow on the sheet without one.
  */
 export function Card({
   children,
@@ -17,7 +17,7 @@ export function Card({
   as?: "section" | "div" | "article" | "li";
 } & Omit<React.HTMLAttributes<HTMLElement>, "className" | "children">) {
   return (
-    <Tag className={cn("paper min-w-0 border p-5 text-card-foreground sm:px-[22px]", className)} {...rest}>
+    <Tag className={cn("paper min-w-0 border border-ink p-5 text-card-foreground sm:px-[22px]", className)} {...rest}>
       {children}
     </Tag>
   );

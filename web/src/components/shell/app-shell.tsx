@@ -158,7 +158,7 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
               <DialogPrimitive.Portal>
                 <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/30 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
                 <DialogPrimitive.Content
-                  className="fixed inset-y-0 left-0 z-50 w-[272px] max-w-[85vw] overflow-y-auto bg-sidebar shadow-xl outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left"
+                  className="fixed inset-y-0 left-0 z-50 w-[272px] max-w-[85vw] overflow-y-auto border-r border-ink bg-sidebar outline-none data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left"
                   aria-describedby={undefined}
                 >
                   <DialogPrimitive.Title className="sr-only">Menu</DialogPrimitive.Title>
@@ -171,7 +171,7 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
                 </DialogPrimitive.Content>
               </DialogPrimitive.Portal>
             </DialogPrimitive.Root>
-            <div className="flex min-w-0 items-center gap-2 text-[0.9375rem] text-muted-foreground">
+            <div className="flex min-w-0 items-center gap-2 font-type text-[0.875rem] text-muted-foreground">
               {config.topLeft}
             </div>
             <div className="ml-auto flex items-center gap-1.5">
@@ -192,8 +192,9 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
 }
 
 /**
- * The sidebar's top block: mark, the name in the display face, and a small chip (the network).
- * `sub` is a quieter second line under the name, aligned with it (the "Sample data" tag on testnet).
+ * The sidebar's top block: the mark and the name in the display face on one line (never wrapped;
+ * a long name is cut with an ellipsis and its full text in the tooltip), then the network chip
+ * and any `sub` tags typed on the line under it (the "Sample data" tag on testnet).
  */
 export function SidebarBrand({
   name,
@@ -207,17 +208,26 @@ export function SidebarBrand({
   sub?: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 pb-1">
-      {mark}
-      <span className="inked col-start-2 line-clamp-2 min-w-0 font-display text-[1.0625rem] leading-tight font-bold break-words">
-        {name}
-      </span>
-      {chip ? (
-        <span className="col-start-3 bg-foreground px-1.5 py-1 font-type text-[0.75rem] leading-none font-bold tracking-[0.06em] text-background uppercase">
-          {chip}
+    <div className="grid gap-y-2 pb-1">
+      <div className="flex min-w-0 items-center gap-2">
+        {mark}
+        <span
+          className="inked min-w-0 truncate font-display text-[1.0625rem] leading-tight font-bold whitespace-nowrap"
+          title={typeof name === "string" ? name : undefined}
+        >
+          {name}
         </span>
+      </div>
+      {chip || sub ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {chip ? (
+            <span className="inline-flex h-5 items-center bg-foreground px-1.5 font-type text-[0.75rem] leading-none font-bold tracking-[0.08em] text-background uppercase">
+              {chip}
+            </span>
+          ) : null}
+          {sub}
+        </div>
       ) : null}
-      {sub ? <div className="col-span-2 col-start-2 mt-1 flex items-center">{sub}</div> : null}
     </div>
   );
 }

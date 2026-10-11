@@ -14,7 +14,6 @@ import { formatShortDate } from "@/lib/format";
 import { latestPeriodFirst, runPaidAt } from "@/lib/payroll";
 import { FilterChips } from "@/components/console/ui";
 import { Problem } from "./problem";
-import { TYPE } from "@/components/ds/type";
 import {
   confirmedCount,
   isPaying,
@@ -26,7 +25,7 @@ import {
   type RunFilterId,
 } from "./run-meta";
 
-/** The runs list: lifecycle chips with counts over a Mercury table that sits straight on the page. */
+/** The runs list: typed status filters with counts over a ledger of runs on green bar. */
 export function RunsList({ initial }: { initial?: Run[] }) {
   const runs = useResource((s) => api.runs(s), "console-runs", initial);
   const contractors = useResource((s) => api.contractors(s), "console-runs-contractors");
@@ -75,8 +74,8 @@ export function RunsList({ initial }: { initial?: Run[] }) {
           <FilterChips label="Filter runs by status" value={filter} onChange={setFilter} options={options} />
           <RunsTable runs={shown} />
           {shown.length === 0 ? (
-            <p className="border-b border-hairline py-6 text-[0.9375rem] text-muted-foreground">
-              No runs with this status.
+            <p className="border-b-2 border-ink px-2 py-6 font-type text-[0.9375rem] text-muted-foreground">
+              No runs with this status. Choose All to see every run.
             </p>
           ) : null}
         </>
@@ -88,23 +87,23 @@ export function RunsList({ initial }: { initial?: Run[] }) {
 function RunsTable({ runs }: { runs: Run[] }) {
   return (
     <div className="-mx-1 px-1">
-      <table className="w-full table-fixed border-collapse text-[0.9375rem]">
+      <table className="w-full table-fixed border-collapse border-b-2 border-ink text-[0.875rem] sm:text-[0.9375rem]">
         <caption className="sr-only">Payroll runs, latest pay period first. Open a run to see its payments.</caption>
         <thead>
-          <tr className="border-b border-hairline text-left text-[0.8125rem] text-muted-foreground">
-            <th scope="col" className="py-2.5 pr-3 font-normal">
+          <tr className="border-b-2 border-ink text-left text-[0.75rem]">
+            <th scope="col" className="py-2.5 pr-3 pl-2 font-bold">
               Period
             </th>
-            <th scope="col" className="hidden w-[5.5rem] py-2.5 pr-3 font-normal sm:table-cell">
+            <th scope="col" className="hidden w-[5.5rem] py-2.5 pr-3 font-bold sm:table-cell">
               People
             </th>
-            <th scope="col" className="w-[7.5rem] py-2.5 pr-3 text-right font-normal sm:w-[9.5rem] sm:pr-6">
+            <th scope="col" className="w-[7rem] py-2.5 pr-2 text-right font-bold sm:w-[9.5rem] sm:pr-6">
               Total
             </th>
-            <th scope="col" className="w-[7.5rem] py-2.5 pr-3 font-normal sm:w-[9rem]">
+            <th scope="col" className="hidden w-[9rem] py-2.5 pr-3 font-bold sm:table-cell">
               Status
             </th>
-            <th scope="col" className="hidden w-[7rem] py-2.5 font-normal lg:table-cell">
+            <th scope="col" className="hidden w-[7.5rem] py-2.5 pr-2 font-bold lg:table-cell">
               Paid on
             </th>
           </tr>
@@ -117,15 +116,19 @@ function RunsTable({ runs }: { runs: Run[] }) {
             return (
               <tr
                 key={r.id}
-                className="relative border-b border-hairline transition-colors hover:bg-raised has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
+                className="relative border-b border-bar-line transition-colors hover:bg-muted has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
               >
-                <td className="h-[58px] py-2 pr-3">
+                <td className="h-[58px] py-2 pr-3 pl-2">
                   <Link
                     href={`/console/runs/${r.id}`}
-                    className="block truncate text-foreground outline-none after:absolute after:inset-0 after:content-['']"
+                    className="block truncate font-bold text-foreground outline-none after:absolute after:inset-0 after:content-['']"
                   >
                     {runTitle(r)} payroll
                   </Link>
+                  {/* Phones have no Status column: the run's tag sits under its name. */}
+                  <span className="mt-1 block sm:hidden">
+                    <RunTag run={r} />
+                  </span>
                   <span className="block truncate text-[0.8125rem] text-muted-foreground">
                     <span className="sm:hidden">{plural(n, "person", "people")}, </span>
                     {paidAt ? <span className="lg:hidden">paid {formatShortDate(paidAt)}, </span> : null}
@@ -135,17 +138,17 @@ function RunsTable({ runs }: { runs: Run[] }) {
                 <td className="hidden py-2 pr-3 text-strong sm:table-cell">
                   <span className="num">{n}</span>
                 </td>
-                <td className="py-2 pr-3 text-right sm:pr-6">
+                <td className="py-2 pr-2 text-right sm:pr-6">
                   <Usd cents={r.total_usd_cents} />
                   {r.total_zat || r.status === "cancelled" ? null : (
                     <span className="block text-[0.8125rem] text-muted-foreground">Not funded yet</span>
                   )}
                 </td>
-                <td className="py-2 pr-3">
+                <td className="hidden py-2 pr-3 sm:table-cell">
                   <RunTag run={r} />
                   {isPaying(r) && n > 0 ? (
                     <span
-                      className="mt-1.5 block h-1 w-20 overflow-hidden rounded-full bg-chip"
+                      className="mt-1.5 block h-2 w-20 overflow-hidden border border-ink bg-card p-px"
                       role="progressbar"
                       aria-label={`${runTitle(r)} payments confirmed`}
                       aria-valuemin={0}
@@ -154,13 +157,13 @@ function RunsTable({ runs }: { runs: Run[] }) {
                       aria-valuetext={`${confirmed} of ${n} confirmed`}
                     >
                       <span
-                        className="block h-full rounded-full bg-viz"
+                        className="block h-full bg-viz"
                         style={{ width: `${Math.max(6, (confirmed / n) * 100)}%` }}
                       />
                     </span>
                   ) : null}
                 </td>
-                <td className="hidden py-2 whitespace-nowrap text-strong lg:table-cell">
+                <td className="hidden py-2 pr-2 whitespace-nowrap text-strong lg:table-cell">
                   {paidAt ? formatShortDate(paidAt) : <span className="text-muted-foreground">Not yet</span>}
                 </td>
               </tr>
@@ -176,7 +179,7 @@ function TableLoading() {
   return (
     <div role="status" aria-label="Loading payroll runs" className="mt-11">
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex h-[58px] items-center gap-6 border-b border-hairline">
+        <div key={i} className="flex h-[58px] items-center gap-6 border-b border-bar-line">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="hidden h-4 w-8 sm:block" />
           <Skeleton className="ml-auto h-4 w-24" />
@@ -190,8 +193,8 @@ function TableLoading() {
 function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
   const mayRun = useAuth().can("manage_runs");
   return (
-    <div className="flex flex-col items-start gap-4 border-t border-hairline py-12 sm:items-center sm:text-center">
-      <span className="grid size-11 place-items-center rounded-full bg-chip text-strong">
+    <div className="flex flex-col items-start gap-4 border-y-2 border-ink py-12 sm:items-center sm:text-center">
+      <span className="grid size-11 place-items-center border-2 border-ink text-strong">
         {hasPeople === false ? (
           <UsersRound className="size-5" aria-hidden="true" />
         ) : (
@@ -199,7 +202,9 @@ function EmptyRuns({ hasPeople }: { hasPeople: boolean | undefined }) {
         )}
       </span>
       <div className="max-w-md space-y-1.5">
-        <h2 className={TYPE.heading}>{hasPeople === false ? "Add the people you pay" : "No payroll runs yet"}</h2>
+        <h2 className="font-type text-[1.0625rem] font-bold">
+          {hasPeople === false ? "Add the people you pay" : "No payroll runs yet"}
+        </h2>
         <p className="text-[0.9375rem] text-muted-foreground">
           {hasPeople === false
             ? "A payroll run pays everyone on your people list in one shielded batch."

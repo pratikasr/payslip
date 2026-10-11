@@ -25,26 +25,22 @@ export function ErrorState({
   return (
     <div
       role="alert"
-      className={cn(
-        "rounded-lg border border-danger/30 bg-danger-bg text-foreground",
-        compact ? "p-3" : "p-4 sm:p-5",
-        className,
-      )}
+      className={cn("border border-destructive bg-card text-foreground", compact ? "p-3" : "p-4 sm:p-5", className)}
     >
       <div className="flex items-start gap-3">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-danger" aria-hidden="true" />
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <p className="font-medium">{title ?? (unreachable ? "Payslip service is offline" : error.message)}</p>
+          <p className="font-type font-bold">{title ?? (unreachable ? "Payslip service is offline" : error.message)}</p>
           {title || unreachable ? <p className="text-[0.8125rem]">{error.message}</p> : null}
           {error.hint ? (
             <p className="text-[0.8125rem] text-muted-foreground">
-              <span className="font-medium text-foreground">Fix: </span>
+              <span className="form-label text-[0.75rem] font-bold text-foreground">Fix: </span>
               <FixText text={error.hint} />
             </p>
           ) : null}
           {!unreachable && error.code && error.status ? (
             <p className="text-[0.8125rem] text-muted-foreground">
-              Error code <code className="font-mono">{error.code}</code>, HTTP {error.status}
+              Error code <code className="font-type">{error.code}</code>, HTTP {error.status}
             </p>
           ) : null}
         </div>
@@ -66,7 +62,7 @@ function FixText({ text }: { text: string }) {
   return (
     <>
       {m[1]}
-      <code className="rounded bg-card px-1.5 py-0.5 font-mono text-[0.8125rem] text-foreground">{m[2]}</code>
+      <code className="border border-rule bg-bar px-1.5 py-0.5 font-type text-[0.8125rem] text-foreground">{m[2]}</code>
       {m[3] ?? ""}
     </>
   );
@@ -90,7 +86,7 @@ export function EmptyState({
     <div className={cn("flex flex-col items-start gap-3 px-4 py-8 sm:px-6", className)}>
       {icon ? <div className="text-muted-foreground [&_svg]:size-5">{icon}</div> : null}
       <div className="space-y-1">
-        <p className="font-medium">{title}</p>
+        <p className="font-type font-bold">{title}</p>
         {children ? <div className="max-w-prose text-[0.8125rem] text-muted-foreground">{children}</div> : null}
       </div>
       {action}
@@ -172,15 +168,15 @@ export function Stat({
 }) {
   return (
     <div className={cn("min-w-0 space-y-1", className)}>
-      <dt className="text-[0.8125rem] text-muted-foreground">{label}</dt>
+      <dt className="form-label text-[0.75rem] font-bold text-muted-foreground">{label}</dt>
       <dd
         className={cn(
           size === "lg"
             ? cn(
-                TYPE.title,
-                "figure [&_[data-unit]]:text-[0.9375rem] [&_[data-unit]]:font-medium [&_[data-unit]]:tracking-normal",
+                TYPE.hero,
+                "figure [&_[data-unit]]:font-type [&_[data-unit]]:text-[0.9375rem] [&_[data-unit]]:tracking-normal",
               )
-            : TYPE.heading,
+            : "font-type text-[1.0625rem]",
         )}
       >
         {children}
@@ -213,14 +209,14 @@ export function Panel({
     <section
       id={id}
       aria-labelledby={title ? headingId : undefined}
-      className={cn("min-w-0 rounded-lg border bg-card", className)}
+      className={cn("paper min-w-0 border border-ink", className)}
       data-print="plain"
     >
       {title || actions ? (
         <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
           <div className="min-w-0 space-y-0.5">
             {title ? (
-              <h2 id={headingId} className="text-[0.8125rem] font-medium">
+              <h2 id={headingId} className="form-label text-[0.75rem] font-bold">
                 {title}
               </h2>
             ) : null}
