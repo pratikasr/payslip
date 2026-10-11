@@ -31,12 +31,14 @@ import {
   api,
   isEvmFunding,
   isZecFunding,
+  TREASURY_LOCKED_CODE,
   toDisplayError,
   type ApiError,
   type Funding,
   type Run,
   type Wallet,
 } from "@/lib/api";
+import { LockedPrompt } from "@/components/console/treasury-key/unlock";
 import { evmChainName, ORIGIN_CHAINS } from "@/lib/evm";
 import { formatDateTime, formatRate, formatZec, venueLabel } from "@/lib/format";
 import { feeReserveZat } from "@/lib/payroll";
@@ -94,6 +96,17 @@ function FundProblem({
   busy?: boolean;
   className?: string;
 }) {
+  // The treasury key is locked: an admin unlocks it here, then the same request is made again.
+  if (error.code === TREASURY_LOCKED_CODE) {
+    return (
+      <LockedPrompt
+        className={className}
+        what="so the run cannot be funded"
+        error={error}
+        onUnlocked={onRetry ? () => onRetry() : undefined}
+      />
+    );
+  }
   if (error.status === 404) {
     return (
       <Problem

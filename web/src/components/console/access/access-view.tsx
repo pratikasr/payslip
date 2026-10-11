@@ -32,7 +32,7 @@ import { TYPE } from "@/components/ds/type";
 import { AUDITOR_DOWNLOAD_KEY, inviteLink } from "@/components/console/lib";
 import { ArrowLink, Bar, IconChip, MiniStats } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
-import { accessTag } from "@/components/runs/run-meta";
+import { accessTag, needsReshare } from "@/components/runs/run-meta";
 
 const QrCode = dynamic(() => import("@/components/app/qr-code"), {
   ssr: false,
@@ -119,7 +119,8 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
     }
   };
 
-  const shared = list.filter((c) => c.fvk_shared_at);
+  // A person whose key changed under them counts as not shared until their new link goes out.
+  const shared = list.filter((c) => c.fvk_shared_at && !needsReshare(c));
 
   return (
     <>
@@ -254,7 +255,11 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
                                 </span>
                                 <span className="block truncate text-[0.8125rem] text-muted-foreground">
                                   <span className="lg:hidden">
-                                    {c.fvk_shared_at ? `Shared ${formatShortDate(c.fvk_shared_at)}` : "Not shared"}
+                                    {needsReshare(c)
+                                      ? "New key, share again"
+                                      : c.fvk_shared_at
+                                        ? `Shared ${formatShortDate(c.fvk_shared_at)}`
+                                        : "Not shared"}
                                   </span>
                                   <span className="hidden lg:inline">Contractor</span>
                                 </span>
@@ -305,7 +310,7 @@ export function AccessView({ initial }: { initial: { contractors?: Contractor[] 
                               >
                                 <QrIcon aria-hidden="true" />
                               </Button>
-                              {c.fvk_shared_at ? null : (
+                              {c.fvk_shared_at && !needsReshare(c) ? null : (
                                 <Button
                                   variant="secondary"
                                   size="sm"
@@ -515,7 +520,12 @@ function InviteDialog({
         ) : null}
         <DialogFooter className="mx-0 mb-0 px-6 py-4 sm:items-center sm:justify-between">
           <p className="text-[0.8125rem] text-muted-foreground">
-            {contractor?.fvk_shared_at ? (
+            {contractor && needsReshare(contractor) ? (
+              <>
+                Shared on {formatDate(contractor.fvk_shared_at)}, but the treasury key was replaced on{" "}
+                {formatDate(contractor.key_rotated_at)}: this is a new key. Send it again, then mark it.
+              </>
+            ) : contractor?.fvk_shared_at ? (
               <>
                 Marked as shared on {formatDate(contractor.fvk_shared_at)}.
                 {onUnmark ? (
@@ -536,7 +546,7 @@ function InviteDialog({
               "Not marked as shared yet."
             )}
           </p>
-          {contractor && !contractor.fvk_shared_at ? (
+          {contractor && (!contractor.fvk_shared_at || needsReshare(contractor)) ? (
             <Button onClick={() => onMark(contractor)} disabled={marking}>
               {marking ? "Saving" : "Mark as shared"}
             </Button>

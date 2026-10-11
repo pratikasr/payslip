@@ -20,6 +20,7 @@ import { lastPaidByContractor, settlementLabel } from "@/components/console/lib"
 import { ContractorDialog } from "@/components/console/people/contractor-dialog";
 import { ArchiveDialog, PersonDrawer } from "@/components/console/people/person-drawer";
 import { Problem } from "@/components/runs/problem";
+import { needsReshare, RESHARE_LABEL } from "@/components/runs/run-meta";
 
 /**
  * Set or clear one search parameter without a server round trip (Next syncs useSearchParams).
@@ -245,7 +246,15 @@ export function PeopleView({ initial }: { initial: { contractors?: Contractor[];
                       </td>
                       <td className="hidden truncate pr-3 text-strong lg:table-cell">{settlementLabel(c, coin)}</td>
                       <td className="hidden pr-3 md:table-cell">
-                        {c.fvk_shared_at ? (
+                        {needsReshare(c) ? (
+                          <Tag
+                            tone="warning"
+                            className="h-auto py-1 whitespace-normal"
+                            title={`The treasury key was replaced on ${formatShortDate(c.key_rotated_at)}; send their new invite link.`}
+                          >
+                            {RESHARE_LABEL}
+                          </Tag>
+                        ) : c.fvk_shared_at ? (
                           <span className="inline-flex items-center gap-2 whitespace-nowrap">
                             <Tag>Shared</Tag>
                             <span className="text-[0.8125rem] text-muted-foreground">

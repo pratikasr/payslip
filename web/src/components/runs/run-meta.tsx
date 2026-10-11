@@ -1,5 +1,14 @@
 import { ShieldedMark, StatusTag, type StatusInfo } from "@/components/ds/status";
-import type { Contractor, Funding, FundingStatus, PayLine, PayLineStatus, Run, RunStatus } from "@/lib/api";
+import {
+  TREASURY_LOCKED_CODE,
+  type Contractor,
+  type Funding,
+  type FundingStatus,
+  type PayLine,
+  type PayLineStatus,
+  type Run,
+  type RunStatus,
+} from "@/lib/api";
 import { formatDate, formatPeriodLabel } from "@/lib/format";
 
 /*
@@ -46,9 +55,22 @@ const CLOSED_TAGS: Record<string, TagInfo> = {
   failed: { label: "Swap failed", tone: "danger", help: "The venue could not swap the deposit. Get a new quote." },
 };
 
+/** A run the service parked because the treasury key is locked: it goes on once an admin unlocks it. */
+const PARKED_TAG: TagInfo = {
+  label: "Waiting for unlock",
+  tone: "warning",
+  help: "Waiting for the treasury to be unlocked. An admin unlocks it from the treasury key page.",
+};
+
+/** True for a run the service parked on `treasury_locked`: nothing failed, the key is locked. */
+export function parkedForUnlock(run: Pick<Run, "status"> & Partial<Pick<Run, "error">>): boolean {
+  return run.status === "failed" && run.error?.code === TREASURY_LOCKED_CODE;
+}
+
 /** The run's state in one word: its status, or what happened to its funding when that is the news. */
-export function runTag(run: Pick<Run, "status" | "funding"> | RunStatus): TagInfo {
+export function runTag(run: (Pick<Run, "status" | "funding"> & Partial<Pick<Run, "error">>) | RunStatus): TagInfo {
   const r = typeof run === "string" ? { status: run, funding: null } : run;
+  if (parkedForUnlock(r)) return PARKED_TAG;
   if (fundingClosed(r)) {
     if (r.funding!.venue === "treasury")
       return {
@@ -61,7 +83,13 @@ export function runTag(run: Pick<Run, "status" | "funding"> | RunStatus): TagInf
   return RUN_TAGS[r.status] ?? { label: r.status, tone: "neutral", help: "" };
 }
 
-export function RunTag({ run, className }: { run: Pick<Run, "status" | "funding">; className?: string }) {
+export function RunTag({
+  run,
+  className,
+}: {
+  run: Pick<Run, "status" | "funding"> & Partial<Pick<Run, "error">>;
+  className?: string;
+}) {
   return <StatusTag status={runTag(run)} className={className} />;
 }
 
@@ -90,6 +118,7 @@ const FAILURE_TITLES: Record<string, string> = {
   funding_expired: "The quote expired before a deposit arrived",
   deposit_incomplete: "The deposit was smaller than the quote",
   venue_failed: "The venue could not complete the swap",
+  treasury_locked: "Waiting for the treasury to be unlocked",
 };
 
 /** What to call a failed run's problem, in plain words. */
@@ -125,7 +154,12 @@ export function lineTag(line: PayLine, run?: Pick<Run, "status">): TagInfo {
   // An error on a line still in progress is a warning: the service is still working on it.
   if (line.error && isLineWarning(line))
     return {
-      label: line.error.code === "waiting_for_funds" ? "Waiting for funds" : "Retrying",
+      label:
+        line.error.code === "waiting_for_funds"
+          ? "Waiting for funds"
+          : line.error.code === TREASURY_LOCKED_CODE
+            ? "Waiting for unlock"
+            : "Retrying",
       tone: "warning",
       dot: true,
       help: line.error.message,
@@ -226,8 +260,28 @@ const ZEC_FUNDING_TAGS: Partial<Record<FundingStatus, TagInfo>> = {
   },
 };
 
-/** Whether a contractor holds their payslip key: shared (with the day) or not yet. */
-export function accessTag(c: Pick<Contractor, "fvk_shared_at">): TagInfo {
+/**
+ * True when the treasury key was replaced after this person's viewing key was shared: the key
+ * they hold no longer reads their payslips, so their new invite link must go out again.
+ */
+export function needsReshare(c: Pick<Contractor, "fvk_shared_at" | "key_rotated_at">): boolean {
+  if (!c.fvk_shared_at || !c.key_rotated_at) return false;
+  const shared = Date.parse(c.fvk_shared_at);
+  const rotated = Date.parse(c.key_rotated_at);
+  return Number.isFinite(shared) && Number.isFinite(rotated) && rotated > shared;
+}
+
+/** The words People uses for a person whose viewing key changed under them. */
+export const RESHARE_LABEL = "New viewing key, share again";
+
+/** Whether a contractor holds their payslip key: shared (with the day), not yet, or to share again. */
+export function accessTag(c: Pick<Contractor, "fvk_shared_at" | "key_rotated_at">): TagInfo {
+  if (needsReshare(c))
+    return {
+      label: "Share again",
+      tone: "warning",
+      help: "The treasury key was replaced, so their viewing key changed. Send their new invite link.",
+    };
   return c.fvk_shared_at
     ? { label: "Shared", tone: "neutral", help: "Their invite link was sent; they can read their own payslips." }
     : { label: "Not shared", tone: "neutral", help: "Send their invite link so they can read their payslips." };

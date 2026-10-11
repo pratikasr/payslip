@@ -29,6 +29,7 @@ import { api, type Run } from "@/lib/api";
 import { Usd, Zec } from "@/components/app/amount";
 import { latestFillRate, runStateLabel, zatToCents } from "@/components/console/lib";
 import { ConsoleSearch } from "@/components/console/search";
+import { TreasuryLockedStamp } from "@/components/console/treasury-key/locked-stamp";
 import { plural, runTitle } from "@/components/runs/run-meta";
 import { companyMark, companyName } from "@/lib/company";
 import { networkLabel } from "@/lib/format";
@@ -131,6 +132,8 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
     topLeft: (
       <>
         <NetworkBadge className="hidden sm:inline-flex" />
+        {/* While the key is locked the stamp says so on every page, beside the network. */}
+        <TreasuryLockedStamp />
         <ConsoleSearch />
       </>
     ),

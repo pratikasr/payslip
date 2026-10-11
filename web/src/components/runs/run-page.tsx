@@ -30,17 +30,19 @@ import { PayLinesTable } from "./pay-lines-table";
 import { PrivacyView } from "./privacy-view";
 import { RunViews } from "./run-views";
 import { Problem } from "./problem";
+import { LockedPrompt } from "@/components/console/treasury-key/unlock";
 import {
   archivedLineIds,
-  canCancel,
   atSimulatedRate,
+  canCancel,
   confirmedCount,
-  failureTitle,
   estimateZat,
+  failureTitle,
   fundingClosed,
   isPaying,
   liveQuoteRate,
   newerRun,
+  parkedForUnlock,
   plural,
   RunTag,
   runTitle,
@@ -410,7 +412,14 @@ function NextAction({ run, archived, onRun }: { run: Run; archived: number; onRu
   let warn = run.status === "failed";
   // Pay is offered only once the approvals are in; the service refuses it before then.
   let payBlocked = false;
-  if (fundingClosed(run)) {
+  // The service parked the run on a locked treasury key: nothing failed, it waits for an admin.
+  const parked = parkedForUnlock(run);
+  if (parked) {
+    title = "Waiting for the treasury to be unlocked";
+    text = "The treasury key is locked, so the service parked this run. It goes on once an admin unlocks the key.";
+    action = "Resume";
+    warn = false;
+  } else if (fundingClosed(run)) {
     // The quote can no longer be paid: say what happened, not "waiting for your deposit".
     const status = run.funding!.status;
     title =
@@ -469,6 +478,7 @@ function NextAction({ run, archived, onRun }: { run: Run; archived: number; onRu
       <div className="min-w-0 flex-1">
         <h2 className="font-type text-[0.9375rem] font-bold text-foreground">{title}</h2>
         <p className="mt-0.5 text-[0.8125rem] [overflow-wrap:anywhere] text-muted-foreground">{text}</p>
+        {parked ? <LockedPrompt className="mt-3" what="so the run is parked" error={run.error} /> : null}
         {isPaying(run) ? (
           <div
             className="mt-3 h-2.5 overflow-hidden border border-ink bg-card p-px"

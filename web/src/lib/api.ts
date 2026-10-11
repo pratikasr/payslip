@@ -82,6 +82,56 @@ export interface Health {
    * on older services.
    */
   approvals_required?: number;
+  /**
+   * The treasury key's state (docs/API.md, Treasury key): `no_key` until an admin creates one
+   * from the console, `locked` until an admin unlocks it, `unlocked` for payroll, or
+   * `unlocked_by_env` when PAYSLIP_SEED_PASSPHRASE unlocked it at start. Absent on services
+   * from before the key was managed from the console.
+   */
+  treasury?: TreasuryKeyState;
+}
+
+/* ---------- Treasury key (the company's spending key, encrypted in the browser) ---------- */
+
+export type TreasuryKeyState = "unlocked_by_env" | "unlocked" | "locked" | "no_key";
+
+/** GET /api/treasury/key: how the key is kept and whether this server can sign with it now. */
+export interface TreasuryKey {
+  state: TreasuryKeyState;
+  /** When an unlock ends (RFC 3339); null unless `state` is `unlocked`. */
+  unlocked_until: string | null;
+  /** The treasury's unified address; null while there is no key. */
+  address: string | null;
+  birthday_height: number | null;
+  /** Where the encrypted key sits on the service host, and its format ("age"). */
+  storage: { path: string; format: string } | null;
+  created_at: string | null;
+  /** Counts up on each replacement; 0 or 1 for the first key. */
+  key_version: number | null;
+}
+
+/** POST /api/treasury/key: the age-armored ciphertext the browser made; the passphrase unlocks it at once. */
+export interface NewTreasuryKey {
+  ciphertext: string;
+  passphrase?: string;
+}
+
+export interface ReplaceTreasuryKey {
+  ciphertext: string;
+  passphrase: string;
+  /** Everything in the old treasury is moved to the new one. */
+  sweep_to: "new";
+}
+
+/** The service refused because the treasury key is locked; an admin unlocks it. */
+export const TREASURY_LOCKED_CODE = "treasury_locked";
+/** The service has no treasury key yet; an admin creates one from the console. */
+export const NO_TREASURY_KEY_CODE = "no_treasury_key";
+/** A create was refused because a key already exists; replace it instead. */
+export const KEY_EXISTS_CODE = "key_exists";
+
+export function isTreasuryLocked(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.code === TREASURY_LOCKED_CODE;
 }
 
 /** The signed-in person and their membership (GET /api/me). */
@@ -165,6 +215,12 @@ export interface Contractor {
   fvk_shared_at: string | null;
   /** The usual pay in cents, prefilled into a scheduled draft; null when none. Absent on older services. */
   default_amount_usd_cents?: number | null;
+  /**
+   * When this person's viewing key last changed (the treasury key was replaced, so every account
+   * is derived afresh): newer than `fvk_shared_at` means the key they hold no longer reads their
+   * payslips and must be shared again. Null when never; absent on older services.
+   */
+  key_rotated_at?: string | null;
   created_at: string;
 }
 
@@ -909,6 +965,24 @@ export const api = {
   runLog: (runId: string, signal?: AbortSignal) =>
     json<{ events: RunLogEvent[] }>(`/api/runs/${id(runId)}/log`, { signal }).then((r) => r.events),
   runEventsUrl: (runId: string) => `${apiBase()}/api/runs/${id(runId)}/events`,
+
+  /** The treasury key's state, address and storage (docs/API.md, Treasury key). */
+  treasuryKey: (signal?: AbortSignal) => json<TreasuryKey>("/api/treasury/key", { signal }),
+  /** Unlocks the key for `hours` (the service's default when absent); 401 wrong_passphrase on a wrong one. */
+  unlockTreasury: (passphrase: string, hours?: number) =>
+    json<TreasuryKey>("/api/treasury/unlock", { method: "POST", body: hours ? { passphrase, hours } : { passphrase } }),
+  lockTreasury: () => json<TreasuryKey>("/api/treasury/lock", { method: "POST", body: {} }),
+  /** Creates the key from a ciphertext the browser encrypted; 409 key_exists when one is there. */
+  createTreasuryKey: (input: NewTreasuryKey) => json<TreasuryKey>("/api/treasury/key", { method: "POST", body: input }),
+  /** Replaces the key and sweeps the old treasury into the new one; 409 treasury_locked while locked. */
+  replaceTreasuryKey: (input: ReplaceTreasuryKey) =>
+    json<TreasuryKey>("/api/treasury/key/replace", { method: "POST", body: input }),
+  /** Sends everything in the treasury to a shielded address outside Payslip; needs the key unlocked. */
+  moveTreasury: (toAddress: string) =>
+    json<{ txid: string | null; amount_zat: number | null; explorer_url?: string | null }>("/api/treasury/move", {
+      method: "POST",
+      body: { to_address: toAddress },
+    }),
 
   /** Who is signed in and their role; 404 when sign-in is off. */
   me: (signal?: AbortSignal) => json<Me>("/api/me", { signal }),

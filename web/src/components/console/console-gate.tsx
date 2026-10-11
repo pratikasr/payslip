@@ -7,6 +7,7 @@ import { useHealth } from "@/components/app/health-provider";
 import { SlipHead } from "@/components/app/logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import { TreasuryOnboarding } from "@/components/console/treasury-key/onboarding";
 import { Card } from "@/components/ds/card";
 import { Button } from "@/components/ui/button";
 import { TYPE } from "@/components/ds/type";
@@ -21,12 +22,16 @@ import { cn } from "cn";
  *
  * With sign-in on, a person who signed in but was never invited sees who they are and what to
  * do, never an empty console (the service refuses every call for them anyway).
+ *
+ * A service with no treasury key yet (`treasury: "no_key"`) has nothing to fund or pay from:
+ * the console is the sheet on which an admin creates the key, and nothing else until then.
  */
 export function ConsoleGate({ children }: { children: ReactNode }) {
-  const { mode, loading } = useHealth();
+  const { mode, loading, treasury } = useHealth();
   const auth = useAuth();
   if (auth.required && auth.me && !auth.me.membership) return <NotAMember email={auth.me.user.email} />;
   if (mode === "statements") return <StatementsOnly />;
+  if (treasury === "no_key") return <TreasuryOnboarding />;
   if (mode === undefined && loading) {
     return (
       <div

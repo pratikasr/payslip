@@ -30,7 +30,7 @@ import { latestPeriodFirst, lineConfirmedAt } from "@/lib/payroll";
 import { linesWithRuns, runStateLabel, settlementLabel } from "@/components/console/lib";
 import { Drawer, DrawerTitle } from "@/components/console/ui";
 import { Problem } from "@/components/runs/problem";
-import { accessTag, LineStatus, runTitle } from "@/components/runs/run-meta";
+import { accessTag, LineStatus, needsReshare, RESHARE_LABEL, runTitle } from "@/components/runs/run-meta";
 import { TYPE } from "@/components/ds/type";
 import { cn } from "cn";
 
@@ -115,7 +115,12 @@ function PersonBody({
 
       <div className="mt-4 flex flex-wrap gap-1.5">
         <Tag>{settlementLabel(c, coin)}</Tag>
-        <StatusTag status={{ ...accessTag(c), label: c.fvk_shared_at ? "Payslips shared" : "Payslips not shared" }} />
+        <StatusTag
+          status={{
+            ...accessTag(c),
+            label: needsReshare(c) ? RESHARE_LABEL : c.fvk_shared_at ? "Payslips shared" : "Payslips not shared",
+          }}
+        />
       </div>
 
       <div className="mt-5">
@@ -171,7 +176,13 @@ function PersonBody({
         <Row label="Default amount">
           <DefaultAmount contractor={c} onSaved={onSaved} />
         </Row>
-        <Row label="Payslip access">{c.fvk_shared_at ? `Shared ${formatDate(c.fvk_shared_at)}` : "Not shared yet"}</Row>
+        <Row label="Payslip access">
+          {needsReshare(c)
+            ? `Shared ${formatDate(c.fvk_shared_at)}; new key since ${formatDate(c.key_rotated_at)}, share again`
+            : c.fvk_shared_at
+              ? `Shared ${formatDate(c.fvk_shared_at)}`
+              : "Not shared yet"}
+        </Row>
         <Row label="Added">{formatDate(c.created_at)}</Row>
       </dl>
       <Disclosure summary="Technical details" className="mt-4">
