@@ -1,92 +1,43 @@
-import Link from "next/link";
-import { Check } from "lucide-react";
 import { cn } from "cn";
-import { Button } from "@/components/ui/button";
-import { GITHUB_URL } from "@/components/marketing/data";
-import { DemoLink } from "@/components/marketing/demo-link";
-import { Container, SectionHeading } from "@/components/marketing/parts";
+import { GITHUB_URL, PRICING } from "@/components/marketing/data";
+import { OutLink, Section } from "@/components/marketing/parts";
+import { t, textLink } from "@/components/marketing/classes";
 
-/* Pricing as decided in docs/LAUNCH.md and the README. */
-const PLANS = [
-  {
-    name: "Self-hosted",
-    price: "Free",
-    unit: "MIT licensed",
-    who: "Teams that run the service themselves.",
-    points: ["Every feature in this repository", "Your keys stay on your server", "No fee on swaps"],
-    cta: { label: "Read the code", href: GITHUB_URL, external: true },
-  },
-  {
-    name: "Hosted",
-    price: "$19",
-    unit: "per active contractor per month",
-    who: "Teams paying 5 to 50 contractors.",
-    points: ["Runs, statements and proofs, hosted", "0.25% on the USDC to ZEC funding swap", "Contractors never pay"],
-    featured: true,
-    cta: { label: "Try the live demo", href: "/console", demo: true },
-  },
-  {
-    name: "Accountant",
-    price: "Free",
-    unit: "always",
-    who: "Anyone a client shares viewing keys with.",
-    points: ["Reconciliation for every run", "Xero and QuickBooks exports", "No spending power, ever"],
-    cta: { label: "Open the books", href: "/books" },
-  },
-];
-
+/* Pricing as the README states it, set against the $49 products. */
 export function Pricing() {
   return (
-    <section id="pricing" aria-labelledby="pricing-title" className="scroll-mt-4 pb-20 sm:pb-24">
-      <Container>
-        <SectionHeading
-          id="pricing-title"
-          title="Pricing"
-          lead="Deel and Rise list $49 per contractor per month for contractor payroll (their pricing pages, 5 Oct 2026), and paid in crypto through either, every salary is still public on chain."
-        />
-        <ul className="mt-10 grid gap-4 md:grid-cols-3">
-          {PLANS.map((p) => (
-            <li
-              key={p.name}
-              className={cn(
-                "flex flex-col rounded-xl border bg-card p-6",
-                p.featured && "border-primary-edge shadow-[0_0_0_1px_var(--primary-edge)]",
-              )}
-            >
-              <h3 className="text-[15px] font-[500]">{p.name}</h3>
-              <p className="mt-1 text-sm text-muted-foreground">{p.who}</p>
-              <p className="mt-6">
-                <span className="figure block text-[2.5rem] leading-none font-[380] tracking-[-0.03em]">{p.price}</span>
-                <span className="mt-2 block text-sm text-muted-foreground">{p.unit}</span>
-              </p>
-              <ul className="mt-6 flex-1 space-y-2.5 text-[15px]">
-                {p.points.map((pt) => (
-                  <li key={pt} className="flex items-start gap-2.5">
-                    <Check className="mt-[3px] size-4 shrink-0 text-strong" aria-hidden="true" />
-                    {pt}
-                  </li>
-                ))}
-              </ul>
-              <Button asChild variant="secondary" className="mt-7 self-start">
-                {"demo" in p.cta ? (
-                  <DemoLink />
-                ) : p.cta.external ? (
-                  <a href={p.cta.href} target="_blank" rel="noreferrer">
-                    {p.cta.label}
-                    <span className="sr-only"> (opens in a new tab)</span>
-                  </a>
-                ) : (
-                  <Link href={p.cta.href}>{p.cta.label}</Link>
-                )}
-              </Button>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-5 text-[13px] text-muted-foreground">
-          Contractors and accountants never pay. The swap fee is collected through NEAR Intents app fees and folded into
-          the run&apos;s fill rate, so the books stay exact.
-        </p>
-      </Container>
-    </section>
+    <Section id="pricing" title="Pricing">
+      <div className="mt-10 grid grid-cols-2 border-t border-ink pt-8 md:mt-14">
+        <div className="pr-4 md:pr-10">
+          <h3 className="text-[15px] font-medium">Payslip, hosted</h3>
+          <p className="mt-4 font-display text-[30px] leading-none font-[580] tracking-[-0.02em] md:text-[44px] xl:text-[64px]">
+            ${PRICING.hostedUsd}
+          </p>
+          <p className={cn(t.body, "mt-4 max-w-[26rem]")}>
+            Per active contractor per month. Every payment is shielded.
+          </p>
+        </div>
+        <div className="border-l border-mist pl-4 md:pl-10">
+          <h3 className="text-[15px] font-medium">{PRICING.competitors}</h3>
+          <p className="mt-4 font-display text-[30px] leading-none font-[580] tracking-[-0.02em] text-ash md:text-[44px] xl:text-[64px]">
+            ${PRICING.competitorUsd}
+          </p>
+          <p className={cn(t.body, "mt-4 max-w-[26rem] text-ash")}>
+            Per contractor per month for contractor payroll. Paid in crypto through either, every salary is public on
+            chain.
+          </p>
+        </div>
+      </div>
+      <p className={cn(t.body, "mt-10 max-w-[40rem]")}>
+        Hosted runs add {PRICING.swapFee} on the USDC to ZEC funding swap, folded into the run&apos;s fill rate so the
+        books stay exact. Self-hosting is free under the MIT license. Contractors and accountants never pay.{" "}
+        <OutLink href={GITHUB_URL} className={textLink}>
+          Read the code
+        </OutLink>
+      </p>
+      <p className={cn(t.small, "mt-3 text-ash")}>
+        {PRICING.competitors} prices from their pricing pages, checked {PRICING.checked}.
+      </p>
+    </Section>
   );
 }

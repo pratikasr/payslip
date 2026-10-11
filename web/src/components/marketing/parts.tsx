@@ -1,57 +1,54 @@
 import type { ReactNode } from "react";
-import { ArrowUpRight } from "lucide-react";
 import { cn } from "cn";
-import { truncateMiddle } from "@/lib/format";
+import { formatHeight, truncateMiddle } from "@/lib/format";
 import { explorerTx } from "@/components/marketing/data";
+import { t } from "@/components/marketing/classes";
 
-/** The landing page's content column: Mercury's ~1024px measure with a 16px phone gutter. */
+/** The page's column: 1200px at most, a 16px gutter on phones, left-aligned content. */
 export function Container({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("mx-auto w-full max-w-[66rem] px-4 sm:px-6", className)}>{children}</div>;
+  return <div className={cn("mx-auto w-full max-w-[75rem] px-4 md:px-8", className)}>{children}</div>;
 }
 
-/**
- * Mercury's section opener: a hairline across the column, then a light 28 to 32px title.
- * `lead` is one short sentence under it.
- */
-export function SectionHeading({
+/** A section: a display heading and, when given, one short lead under it. */
+export function Section({
   id,
   title,
   lead,
+  children,
   className,
-  rule = true,
 }: {
   id: string;
   title: ReactNode;
   lead?: ReactNode;
+  children: ReactNode;
   className?: string;
-  rule?: boolean;
 }) {
   return (
-    <div className={cn(rule && "border-t pt-10 sm:pt-12", className)}>
-      <h2
-        id={id}
-        className="max-w-[34rem] text-[1.75rem] leading-[1.15] font-[450] tracking-[-0.015em] text-balance sm:text-[2rem]"
-      >
-        {title}
-      </h2>
-      {lead ? (
-        <p className="mt-3 max-w-[40rem] text-[0.9375rem] leading-relaxed text-muted-foreground sm:text-base">{lead}</p>
-      ) : null}
-    </div>
+    <section id={id} aria-labelledby={`${id}-title`} className={cn("scroll-mt-20 py-11 md:py-16 xl:py-20", className)}>
+      <Container>
+        <h2 id={`${id}-title`} className={cn(t.h2, "max-w-[22ch]")}>
+          {title}
+        </h2>
+        {lead ? <div className={cn(t.lead, "mt-4 max-w-[38rem] md:mt-5")}>{lead}</div> : null}
+        {children}
+      </Container>
+    </section>
   );
 }
 
-/** A txid, middle-truncated, linked to the testnet explorer in a new tab. */
+/** A txid, middle-truncated unless `full`, linked to the testnet explorer in a new tab. */
 export function TxLink({
   txid,
   className,
   head = 6,
   tail = 4,
+  children,
 }: {
   txid: string;
   className?: string;
   head?: number;
   tail?: number;
+  children?: ReactNode;
 }) {
   return (
     <a
@@ -61,34 +58,28 @@ export function TxLink({
       title={txid}
       data-txid={txid}
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-sm font-mono text-[0.8125rem] whitespace-nowrap text-link underline-offset-4 hover:underline",
+        t.data,
+        "rounded-[3px] whitespace-nowrap text-ink underline decoration-ash/40 decoration-1 underline-offset-[3px] transition-colors hover:decoration-ink",
         className,
       )}
     >
-      {truncateMiddle(txid, head, tail)}
-      <ArrowUpRight className="size-3.5 shrink-0" aria-hidden="true" />
+      {children ?? truncateMiddle(txid, head, tail)}
       <span className="sr-only"> (transaction on the Zcash testnet explorer, opens in a new tab)</span>
     </a>
   );
 }
 
-/** A link that leaves the site: a small arrow, and a new tab announced to screen readers. */
+/** A block height, set as chain data. */
+export function Height({ height, className }: { height: number; className?: string }) {
+  return <span className={cn(t.data, "tabular-nums", className)}>{formatHeight(height)}</span>;
+}
+
+/** A link that leaves the site, announced to screen readers as opening a new tab. */
 export function OutLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={cn("inline-flex items-center gap-1 rounded-sm underline-offset-4 hover:underline", className)}
-    >
+    <a href={href} target="_blank" rel="noreferrer" className={className}>
       {children}
-      <ArrowUpRight className="size-3.5 shrink-0" aria-hidden="true" />
       <span className="sr-only"> (opens in a new tab)</span>
     </a>
   );
-}
-
-/** The gold dot that marks something shielded. */
-export function GoldDot({ className }: { className?: string }) {
-  return <span aria-hidden="true" className={cn("inline-block size-2 shrink-0 rounded-full bg-primary", className)} />;
 }

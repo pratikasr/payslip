@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Mono, Inter } from "next/font/google";
+import { Bricolage_Grotesque, IBM_Plex_Mono, Instrument_Sans, Inter } from "next/font/google";
 import { PresenterMode } from "@/components/app/presenter-mode";
 import { ThemeProvider } from "@/components/app/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
@@ -9,6 +9,16 @@ import "./globals.css";
 // Inter with its optical-size axis stands in for Mercury's Arcadia (proprietary): light weights for
 // titles and money, 400 for body. IBM Plex Mono for keys and transaction ids.
 const inter = Inter({ subsets: ["latin"], axes: ["opsz"], variable: "--font-inter", display: "swap" });
+// The identity faces (docs/DESIGN.md section 16), used by the landing page until the app-wide
+// switch: Bricolage Grotesque for display, with its optical size axis (font-optical-sizing picks
+// the display cut at large sizes and the text cut at small ones), and Instrument Sans for text.
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  axes: ["opsz"],
+  variable: "--font-bricolage",
+  display: "swap",
+});
+const instrument = Instrument_Sans({ subsets: ["latin"], variable: "--font-instrument", display: "swap" });
 const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
@@ -34,7 +44,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${inter.variable} ${plexMono.variable}`}>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${inter.variable} ${bricolage.variable} ${instrument.variable} ${plexMono.variable}`}
+    >
       <head>
         {/* Presenter mode before first paint; see src/lib/presenter.ts. */}
         <script dangerouslySetInnerHTML={{ __html: presenterBootScript }} />

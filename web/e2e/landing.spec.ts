@@ -1,6 +1,9 @@
 /*
-  The landing page (/): every section renders, the product accordion opens each item and swaps
-  its card, the phone menu works, and every transaction link opens the testnet explorer.
+  The landing page (/): every section is present in the order of docs/DESIGN.md section 16, the
+  hero shows one real payment in its two views (the explorer's hides what the chain hides, the
+  key's reads it), the reveal plays once and not at all with reduced motion, every transaction
+  link opens the testnet explorer, every focus stop shows, the phone menu works and the header
+  stays reachable.
 
   The page is static; the calls to action ask the service which kind of deployment it is, so the
   web app (E2E_BASE_URL) and its service (E2E_API_URL) run.
@@ -8,128 +11,213 @@
 */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 
 const EXPLORER_TX = /^https:\/\/testnet\.zecblock\.com\/tx\/([0-9a-f]{64})$/;
 
-const ACCORDION = [
-  { title: "Shielded payroll runs", card: /^Sep 2026 payroll, run 09019bd8/ },
-  { title: "Payslips your contractors can prove", card: /^Payslip for Amara Okafor, verified on Zcash$/ },
-  { title: "Books your accountant can reconcile", card: /^Reconciliation of run 09019bd8/ },
-  { title: "Open source, MIT", card: /repository on GitHub/ },
-];
+/** The payment the hero opens on: Amara Okafor's September pay, the judge kit's proof. */
+const HERO_TXID = "b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3";
 
-test("every section is present", async ({ page }) => {
+const docs = (...path: string[]) => JSON.parse(readFileSync(join(process.cwd(), "..", "docs", ...path), "utf8"));
+
+async function demoLink(): Promise<{ name: string; href: string }> {
+  const mode = (await (await fetch(`${API}/api/health`)).json()).mode;
+  return mode === "statements"
+    ? { name: "Import the judge kit", href: "/books" }
+    : { name: "Try the live demo", href: "/console" };
+}
+
+test("every section is present, in order", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: "Radically private payroll" })).toBeVisible();
-  for (const name of [
-    /^Everything payroll needs\.\s*Nobody else sees it\.$/,
-    /^Real payments, on a real chain\./,
-    "Three steps from USDC to payslips",
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Private to the world. Transparent to your accountant.",
+  );
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText([
     "Who sees what",
-    "Security model, in four lines",
+    "How a payroll run works",
+    "Every payment, open to check",
     "Pricing",
-    "Questions, answered",
-    "Private to the world, transparent to your accountant.",
-  ]) {
-    await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
-  }
+    "Check it yourself",
+  ]);
 
   // The nav's anchors land on sections.
   const nav = page.getByRole("navigation", { name: "Main" });
   for (const [label, id] of [
-    ["Product", "product"],
     ["How it works", "how-it-works"],
-    ["Security", "security"],
+    ["Payments", "proof"],
     ["Pricing", "pricing"],
+    ["Check it yourself", "check"],
   ]) {
     await expect(nav.getByRole("link", { name: label })).toHaveAttribute("href", `#${id}`);
     await expect(page.locator(`#${id}`)).toBeAttached();
   }
 
-  // Hero: both calls to action (the console on a full deployment, Books and the judge kit on a
-  // statements-only one), the disclaimer, and a payroll whose amounts stay sealed.
+  // The calls to action: the console on a full deployment, Books and the judge kit on a
+  // statements-only one.
   const main = page.getByRole("main");
-  const mode = (await (await fetch(`${API}/api/health`)).json()).mode;
-  const demo =
-    mode === "statements"
-      ? { name: "Import the judge kit", href: "/books" }
-      : { name: "Try the live demo", href: "/console" };
+  const demo = await demoLink();
   await expect(main.getByRole("link", { name: demo.name }).first()).toHaveAttribute("href", demo.href);
-  await expect(main.getByRole("link", { name: "Check a payslip" })).toHaveAttribute("href", "/verify");
-  await expect(page.getByText("Payslip is open-source software, not a bank.")).toBeVisible();
-  const sealed = page.getByRole("figure", { name: "Sep 2026 payroll", exact: true });
-  await expect(sealed).toContainText("Amara Okafor");
-  await expect(sealed).toContainText("Run 09019bd8");
-  await expect(sealed).toContainText("6 payments at height 4,466,912");
-  await expect(sealed.getByText("Amount sealed")).toHaveCount(4);
-  await expect(sealed).not.toContainText("$");
+  await expect(main.getByRole("link", { name: "Check it yourself" })).toHaveAttribute("href", "#check");
 
-  // Who sees what: four parties, three columns.
-  const table = page.getByRole("table", { name: "What each party holds, sees and cannot see" });
-  await expect(table.getByRole("columnheader")).toHaveText(["Party", "Holds", "Sees", "Cannot see"]);
-  await expect(table.getByRole("rowheader")).toHaveText(["Company", "Contractor", "Accountant", "Everyone else"]);
+  // The three people, each with a figure from the September run and the accounts their key opens.
+  const people = page.locator("#who-sees-what");
+  await expect(people.getByRole("heading", { level: 3 })).toHaveText([
+    "The company",
+    "The contractor",
+    "The accountant",
+  ]);
+  for (const figure of ["$30,375.50", "$4,800.00", "$2,126.26"]) await expect(people).toContainText(figure);
+  await expect(people.getByRole("img", { name: "Reads Amara Okafor's account only" })).toBeVisible();
 
-  // Pricing tiers and the comparison line.
+  // How a run works: four steps, numbered because they are a sequence.
+  await expect(page.locator("#how-it-works ol > li h3")).toHaveText([/Fund$/, /Allocate$/, /Pay$/, /Read back$/]);
+  await expect(page.locator("#how-it-works")).toContainText(
+    "PS1|09019bd8-d31d-400b-a779-050afeb3083e|2026-09|INV-2026-014|480000|1350000000000",
+  );
+
+  // Pricing against the $49 products.
   const pricing = page.locator("#pricing");
-  await expect(pricing.getByRole("heading", { level: 3 })).toHaveText(["Self-hosted", "Hosted", "Accountant"]);
-  await expect(pricing).toContainText("Deel and Rise list $49 per contractor per month");
+  await expect(pricing.getByRole("heading", { level: 3 })).toHaveText(["Payslip, hosted", "Deel and Rise"]);
+  await expect(pricing).toContainText("$19");
+  await expect(pricing).toContainText("$49");
 
-  // The FAQ is always expanded: six questions, every answer on the page.
-  const faq = page.locator("#faq");
-  await expect(faq.locator("dt")).toHaveCount(6);
-  for (const answer of await faq.locator("dd").all()) await expect(answer).toBeVisible();
+  // Check it yourself: the judge kit's path and the app's own entry points.
+  const check = page.locator("#check");
+  await expect(check.getByRole("link", { name: /^docs\/judge\/judge-kit-testnet\.json/ })).toHaveAttribute(
+    "href",
+    /\/blob\/main\/docs\/judge\/judge-kit-testnet\.json$/,
+  );
+  await expect(check).toContainText("Choose Load the judge kit");
+  await expect(check).toContainText("Choose Try it with a demo key");
+  await expect(check.getByRole("link", { name: "Open Books" })).toHaveAttribute("href", "/books");
+  await expect(check.getByRole("link", { name: "Open the portal" })).toHaveAttribute("href", "/portal");
+  await expect(check.getByRole("link", { name: "Check the proof" })).toHaveAttribute("href", /^\/verify#pp1/);
 
-  // Footer: the four columns and the hackathon note.
+  // Footer: the three columns, the disclaimer and the hackathon note.
   const footer = page.getByRole("contentinfo");
-  for (const col of ["Product", "Docs on GitHub", "Security", "License"]) {
+  for (const col of ["Product", "Docs on GitHub", "License"]) {
     await expect(footer.getByRole("navigation", { name: col })).toBeVisible();
   }
+  await expect(footer).toContainText("Payslip is open-source software, not a bank.");
   await expect(footer).toContainText("Zcash track");
 });
 
-test("the product accordion opens each item and swaps its card", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test("the hero shows one payment in two views", async ({ page }) => {
   await page.goto("/");
-  const section = page.locator("#product");
+  const views = page.getByRole("figure", { name: /^One payment, two views/ });
+  const vault = views.getByRole("group", { name: "What the explorer shows" });
+  const paper = views.getByRole("group", { name: "What Amara's viewing key shows" });
 
-  for (let i = 0; i < ACCORDION.length; i++) {
-    const button = section.getByRole("button", { name: ACCORDION[i].title });
-    if (i > 0) await button.click();
-    await expect(button).toHaveAttribute("aria-expanded", "true");
-    await expect(section.getByRole("region", { name: ACCORDION[i].title })).toBeVisible();
-    await expect(section.getByRole("figure", { name: ACCORDION[i].card })).toBeVisible();
-    for (let j = 0; j < ACCORDION.length; j++) {
-      if (j === i) continue;
-      await expect(section.getByRole("button", { name: ACCORDION[j].title })).toHaveAttribute("aria-expanded", "false");
-      await expect(section.getByRole("region", { name: ACCORDION[j].title })).toBeHidden();
-      await expect(section.getByRole("figure", { name: ACCORDION[j].card })).toBeHidden();
-    }
+  // Both views head with the same transaction, in the same block, at the same moment.
+  for (const side of [vault, paper]) {
+    await expect(side).toContainText(HERO_TXID.slice(0, 32));
+    await expect(side).toContainText(HERO_TXID.slice(32));
+    await expect(side).toContainText("4,466,912");
+    await expect(side).toContainText("5 Oct 2026, 08:13 UTC");
   }
 
-  // Activating the open item closes it.
-  const last = section.getByRole("button", { name: ACCORDION[3].title });
-  await last.click();
-  await expect(last).toHaveAttribute("aria-expanded", "false");
-  await expect(section.getByRole("region", { name: ACCORDION[3].title })).toBeHidden();
+  // The explorer's view hides the amount, sender, recipient and memo, and names no one.
+  await expect(vault).toContainText("2 actions");
+  await expect(vault.getByText("Hidden on chain")).toHaveCount(6);
+  for (const secret of ["$", "TAZ", "Amara", "Sample company", "INV-2026-014"]) {
+    await expect(vault).not.toContainText(secret);
+  }
 
-  // By keyboard too.
-  const first = section.getByRole("button", { name: ACCORDION[0].title });
-  await first.focus();
-  await page.keyboard.press("Enter");
-  await expect(first).toHaveAttribute("aria-expanded", "true");
+  // The key's view reads them.
+  for (const value of ["$4,800.00", "0.00355556 TAZ", "Sample company", "Amara Okafor", "INV-2026-014"]) {
+    await expect(paper).toContainText(value);
+  }
+  await expect(paper).not.toContainText("Hidden on chain");
+  await expect(page.getByText("Sample company on Zcash testnet.")).toBeVisible();
+
+  // Each view links to its own check: the explorer, and the judge kit's proof of this payment.
+  await expect(vault.getByRole("link", { name: /^Open it on testnet\.zecblock\.com/ })).toHaveAttribute(
+    "href",
+    `https://testnet.zecblock.com/tx/${HERO_TXID}`,
+  );
+  const kit = docs("judge", "judge-kit-testnet.json") as { payment_proof: { txid: string; token: string } };
+  expect(kit.payment_proof.txid).toBe(HERO_TXID);
+  await expect(paper.getByRole("link", { name: "Check the payment proof" })).toHaveAttribute(
+    "href",
+    `/verify#${kit.payment_proof.token}`,
+  );
 });
 
-test("on a phone the card sits inside the open item", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+/** Animations on the two-view panel (the thread and the bars), finished or not. */
+const panelAnimations = (page: Page) =>
+  page.evaluate(() =>
+    document
+      .getAnimations()
+      .filter((a) => ((a.effect as KeyframeEffect | null)?.target as Element | null)?.closest("figure"))
+      .map((a) => a.playState),
+  );
+
+test("the reveal plays once, and not at all with reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  const section = page.locator("#product");
-  await section.getByRole("button", { name: ACCORDION[2].title }).click();
-  const region = section.getByRole("region", { name: ACCORDION[2].title });
-  await expect(region.getByRole("figure", { name: ACCORDION[2].card })).toBeVisible();
-  await expect(region).toContainText("Reconciled");
+  expect(await panelAnimations(page)).toEqual([]);
+  await expect(page.getByRole("group", { name: "What Amara's viewing key shows" })).toContainText("$4,800.00");
+
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.reload();
+  expect((await panelAnimations(page)).length).toBeGreaterThan(0);
+  await expect.poll(async () => (await panelAnimations(page)).every((s) => s === "finished")).toBe(true);
+});
+
+test("every transaction link opens the testnet explorer", async ({ page }) => {
+  await page.goto("/");
+  const links = await page.locator("a[href]").evaluateAll((as) =>
+    as.map((a) => ({
+      href: a.getAttribute("href") ?? "",
+      target: a.getAttribute("target"),
+      txid: a.getAttribute("data-txid"),
+    })),
+  );
+  const txLinks = links.filter((l) => l.txid !== null || /[0-9a-f]{64}/.test(l.href));
+  // Hero (2), the allocation step (1), and the three runs' allocations (3) and payments (18).
+  expect(txLinks.length).toBeGreaterThanOrEqual(24);
+  for (const l of txLinks) {
+    const m = EXPLORER_TX.exec(l.href);
+    expect(m, `${l.href} is not a testnet explorer link`).not.toBeNull();
+    expect(l.txid).toBe(m![1]);
+    expect(l.target).toBe("_blank");
+  }
+
+  // Every transaction of the judge kit's wallet is in the payments table, and only those.
+  const proof = page.locator("#proof a[data-txid]");
+  await expect(proof).toHaveCount(21);
+  const wallet = docs("proof", "demo-wallet-runs.json") as {
+    runs: { allocation: { txid: string }; lines: { txid: string }[] }[];
+  };
+  const listed = new Set(await proof.evaluateAll((as) => as.map((a) => a.getAttribute("data-txid"))));
+  for (const run of wallet.runs) {
+    expect(listed.has(run.allocation.txid), run.allocation.txid).toBe(true);
+    for (const line of run.lines) expect(listed.has(line.txid), line.txid).toBe(true);
+  }
+  await expect(page.locator("#proof")).toContainText("18 shielded payments and 3 allocations");
+});
+
+test("every focus stop on the page shows focus", async ({ page }) => {
+  await page.goto("/", { waitUntil: "networkidle" });
+  const seen = new Set<string>();
+  for (let i = 0; i < 120; i++) {
+    await page.keyboard.press("Tab");
+    const stop = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || el === document.body) return null;
+      const s = getComputedStyle(el);
+      const visible = s.outlineStyle !== "none" && parseFloat(s.outlineWidth) > 0;
+      const index = [...document.querySelectorAll("a[href], button, [tabindex]")].indexOf(el);
+      const path = `${index} ${el.tagName} ${(el.textContent ?? "").trim().slice(0, 40)}`;
+      return { path, visible };
+    });
+    if (!stop || seen.has(stop.path)) break;
+    seen.add(stop.path);
+    expect(stop.visible, `no visible focus on ${stop.path}`).toBe(true);
+  }
+  expect(seen.size).toBeGreaterThan(40);
 });
 
 test("the phone menu opens, jumps to a section and closes", async ({ page }) => {
@@ -142,13 +230,16 @@ test("the phone menu opens, jumps to a section and closes", async ({ page }) => 
 
   await button.click();
   await expect(button).toHaveAttribute("aria-expanded", "true");
-  await expect(nav.getByRole("link")).toHaveText(["Product", "How it works", "Security", "Pricing", /^GitHub/]);
+  await expect(nav.getByRole("link")).toHaveText([
+    "How it works",
+    "Payments",
+    "Pricing",
+    "Check it yourself",
+    /^GitHub/,
+  ]);
   const panel = page.locator(`[id="${await button.getAttribute("aria-controls")}"]`);
-  await expect(panel.getByRole("link", { name: /^(Try the live demo|Import the judge kit)$/ })).toHaveAttribute(
-    "href",
-    /^\/(console|books)$/,
-  );
-  await expect(panel.getByRole("link", { name: "Check a payslip" })).toHaveAttribute("href", "/verify");
+  const demo = await demoLink();
+  await expect(panel.getByRole("link", { name: demo.name })).toHaveAttribute("href", demo.href);
 
   // Escape closes it and puts focus back on the button.
   await page.keyboard.press("Escape");
@@ -163,37 +254,6 @@ test("the phone menu opens, jumps to a section and closes", async ({ page }) => 
 
   // No sideways scrolling on a 375px screen.
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBe(0);
-});
-
-test("every transaction link opens the testnet explorer", async ({ page }) => {
-  await page.goto("/");
-  const links = await page.locator("a[href]").evaluateAll((as) =>
-    as.map((a) => ({
-      href: a.getAttribute("href") ?? "",
-      target: a.getAttribute("target"),
-      txid: a.getAttribute("data-txid"),
-    })),
-  );
-  const txLinks = links.filter((l) => l.txid !== null || /[0-9a-f]{64}/.test(l.href));
-  // Hero (4), payslip card (1), the demo wallet's three runs (18) and the USDC conversion (1).
-  expect(txLinks.length).toBeGreaterThanOrEqual(24);
-  for (const l of txLinks) {
-    const m = EXPLORER_TX.exec(l.href);
-    expect(m, `${l.href} is not a testnet explorer link`).not.toBeNull();
-    expect(l.txid).toBe(m![1]);
-    expect(l.target).toBe("_blank");
-  }
-  // Every payment of the judge kit's wallet listed in the proof strip is linked, and only those
-  // (plus the public USDC conversion leg, which is labelled as public).
-  const proof = page.locator("#proof a[data-txid]");
-  await expect(proof).toHaveCount(19);
-  const kit = JSON.parse(readFileSync(join(process.cwd(), "..", "docs", "proof", "demo-wallet-runs.json"), "utf8")) as {
-    runs: { lines: { txid: string; height: number }[] }[];
-  };
-  const listed = new Set(await proof.evaluateAll((as) => as.map((a) => a.getAttribute("data-txid"))));
-  for (const line of kit.runs.flatMap((r) => r.lines)) expect(listed.has(line.txid), line.txid).toBe(true);
-  await expect(page.locator("#proof")).toContainText("conversion leg is public by design");
-  await expect(page.locator("#proof")).toContainText("18");
 });
 
 test("the phone header stays reachable after scrolling", async ({ page }) => {

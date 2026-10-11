@@ -1,14 +1,13 @@
-import { formatRate, formatUsd, formatZec } from "@/lib/format";
 import { cn } from "cn";
+import { formatUsd, formatZec } from "@/lib/format";
 
 /*
-  Server-rendered twins of Usd and Zec from src/components/app/amount.tsx, with the same markup
-  and the same .money class (so privacy mode blurs them too). The app's versions read the network
-  from the health provider on the client; the landing page is static, its figures are from a
-  testnet run, and it ships no client code for them.
+  Server-rendered figures for the static landing page, with the app's .money class (so privacy
+  mode would blur them too): dollars with raised cents, coin at 8 decimals with the last four in
+  Ash, as in the app.
 */
 
-export function UsdFigure({ cents, className }: { cents: number; className?: string }) {
+export function Usd({ cents, className }: { cents: number; className?: string }) {
   const text = formatUsd(cents);
   const i = text.lastIndexOf(".");
   return (
@@ -19,18 +18,12 @@ export function UsdFigure({ cents, className }: { cents: number; className?: str
   );
 }
 
-/** Testnet coins are TAZ. Eight decimals, the last four dimmed, as in the app. */
-export function TazFigure({ zat, className }: { zat: number; className?: string }) {
+export function Coin({ zat, unit, className }: { zat: number; unit: string; className?: string }) {
   const full = formatZec(zat);
   return (
-    <span className={cn("money", className)} title={`${full} TAZ`}>
+    <span className={cn("money tracking-normal", className)} title={`${full} ${unit}`}>
       {full.slice(0, -4)}
-      <span className="money-tail">{full.slice(-4)}</span>
-      <span className="ml-1 tracking-normal text-muted-foreground">TAZ</span>
+      <span className="text-ash">{full.slice(-4)}</span> {unit}
     </span>
   );
-}
-
-export function RateFigure({ e6, className }: { e6: number; className?: string }) {
-  return <span className={cn("money", className)}>{formatRate(e6)} per TAZ</span>;
 }

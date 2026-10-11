@@ -1,159 +1,126 @@
-import type { ReactNode } from "react";
-import { ArrowDown, KeyRound } from "lucide-react";
+import { Fragment, type ReactNode } from "react";
 import { cn } from "cn";
-import { Tag } from "@/components/ds/tag";
 import { SEP_RUN, payLineMemo } from "@/components/marketing/data";
-import { TazFigure, UsdFigure } from "@/components/marketing/money";
-import { Container, SectionHeading } from "@/components/marketing/parts";
-import { lp } from "@/components/marketing/classes";
+import { Coin, Usd } from "@/components/marketing/money";
+import { Height, Section, TxLink } from "@/components/marketing/parts";
+import { t } from "@/components/marketing/classes";
 
-const run = SEP_RUN;
-const line = run.lines[0];
+const run = SEP_RUN.run;
+const amara = run.lines[0];
 
-const STEPS: { title: string; body: string; art: ReactNode }[] = [
+/* A run is a sequence, so the steps are numbered. Each carries what the chain holds for it. */
+const STEPS: { title: string; body: string; evidence: ReactNode }[] = [
   {
-    title: "Fund in USDC",
-    body: "Enter each contractor's pay in dollars and send USDC from your own wallet. NEAR Intents swaps it to ZEC, and the fill rate becomes the dollar basis of every line.",
-    art: <FundArt />,
+    title: "Fund",
+    body: "Enter each person's pay in dollars. Fund the run with ZEC from your own wallet, or in USDC through NEAR Intents; the rate at funding becomes the dollar basis for every line.",
+    evidence: (
+      <Facts
+        rows={[
+          ["Funded", <Usd key="f" cents={SEP_RUN.fundedCents} />],
+          ["Received", <Coin key="r" zat={SEP_RUN.acquiredZat} unit="TAZ" />],
+        ]}
+        note="A fixed simulated rate stands in for NEAR Intents on testnet."
+      />
+    ),
   },
   {
-    title: "Pay, shielded",
-    body: "Payslip sends one shielded payment per contractor, each from that person's own account. The encrypted memo carries the period, the invoice and the dollar basis.",
-    art: <MemoArt />,
+    title: "Allocate",
+    body: "One shielded transaction from the treasury fills each contractor's own payroll account with their pay and its network fee.",
+    evidence: (
+      <Facts
+        rows={[
+          ["Transaction", <TxLink key="t" txid={run.allocation.txid} />],
+          ["Block", <Height key="b" height={run.allocation.height} />],
+        ]}
+        note={`${run.lines.length} contractor accounts filled at once.`}
+      />
+    ),
   },
   {
-    title: "Share keys, not spreadsheets",
-    body: "Each contractor gets the viewing key to their own account; your accountant gets all of them. Statements and the reconciliation are read straight from the chain.",
-    art: <KeysArt />,
+    title: "Pay",
+    body: "Each payroll account sends one shielded payment to its contractor. The encrypted memo carries the period, the invoice and the dollar amount.",
+    evidence: (
+      <div>
+        <p className={cn(t.data, "text-ink [overflow-wrap:anywhere]")}>
+          {payLineMemo(amara)
+            .split("|")
+            .map((part, i) => (
+              <Fragment key={i}>
+                {i > 0 ? (
+                  <>
+                    |<wbr />
+                  </>
+                ) : null}
+                {part}
+              </Fragment>
+            ))}
+        </p>
+        <p className={cn(t.small, "mt-2 text-ash")}>
+          {amara.name}&apos;s memo as her key decrypts it. {run.lines.length} payments in block{" "}
+          <Height height={amara.height} className="text-ash" />.
+        </p>
+      </div>
+    ),
+  },
+  {
+    title: "Read back",
+    body: "Viewing keys read the payments back from the chain: a payslip for each contractor, and for your accountant a reconciliation of funded against paid.",
+    evidence: (
+      <Facts
+        rows={[
+          ["Paid", <Usd key="p" cents={SEP_RUN.paidCents} />],
+          ["Variance", <Usd key="v" cents={SEP_RUN.varianceCents} />],
+          ["Fees and unspent", <Usd key="e" cents={SEP_RUN.explainedCents} />],
+        ]}
+        note="One cent of rounding across six lines."
+      />
+    ),
   },
 ];
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-4 pb-20 sm:pb-24">
-      <Container>
-        <SectionHeading id="how-title" title="Three steps from USDC to payslips" />
-        <ol className="mt-10 grid gap-10 md:grid-cols-3 md:gap-6">
-          {STEPS.map((s, i) => (
-            <li key={s.title} className="min-w-0">
-              <div className="flex h-[232px] items-center justify-center overflow-hidden rounded-xl bg-raised p-5">
-                {s.art}
-              </div>
-              <h3 className="mt-5 text-base font-[500]">
-                <span className="mr-2 text-muted-foreground tabular-nums">{i + 1}</span>
+    <Section
+      id="how-it-works"
+      title="How a payroll run works"
+      lead={`Four steps, each one on chain. The figures are the sample company's ${run.periodLabel} run.`}
+    >
+      <ol className="mt-10 md:mt-14">
+        {STEPS.map((s, i) => (
+          <li
+            key={s.title}
+            className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-5 border-t border-mist py-7 md:grid-cols-[3rem_minmax(0,1fr)_minmax(0,1fr)] md:gap-x-8 md:py-9 xl:grid-cols-[4rem_minmax(0,1.1fr)_minmax(0,1fr)]"
+          >
+            <span aria-hidden="true" className={cn(t.h3, "text-ash tabular-nums")}>
+              {i + 1}
+            </span>
+            <div className="min-w-0">
+              <h3 className={t.h3}>
+                <span className="sr-only">Step {i + 1}: </span>
                 {s.title}
               </h3>
-              <p className="mt-1.5 text-[15px] leading-relaxed text-muted-foreground">{s.body}</p>
-            </li>
-          ))}
-        </ol>
-        <p className="mt-8 text-[13px] text-muted-foreground">
-          Figures from run {run.short}, the demo company&apos;s September payroll on Zcash testnet (open it in Books
-          with the judge kit), where a fixed-rate testnet venue stands in for NEAR Intents.
-        </p>
-      </Container>
-    </section>
-  );
-}
-
-function Mini({ children, className }: { children: ReactNode; className?: string }) {
-  return (
-    <div
-      className={cn(
-        "w-full max-w-[17rem] rounded-xl border bg-card p-4 text-left shadow-[0_18px_40px_-24px_rgba(30,30,42,0.35)]",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function FundArt() {
-  return (
-    <Mini>
-      <p className="text-xs text-muted-foreground">You fund</p>
-      <p className="mt-1 flex items-baseline justify-between gap-2">
-        <UsdFigure cents={run.fundedCents} className="text-[1.375rem] font-[400]" />
-        <span className="text-xs text-muted-foreground">USD</span>
-      </p>
-      <div className="my-2.5 flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="grid size-6 place-items-center rounded-full bg-chip">
-          <ArrowDown className="size-3.5" aria-hidden="true" />
-        </span>
-        Swapped at the fill rate
-      </div>
-      <p className="text-xs text-muted-foreground">The run receives</p>
-      <p className="mt-1 text-[1.0625rem]">
-        <TazFigure zat={run.acquiredZat} />
-      </p>
-      <div className="mt-3">
-        <Tag>Simulated rate</Tag>
-      </div>
-    </Mini>
-  );
-}
-
-function MemoArt() {
-  return (
-    <Mini className="space-y-3">
-      <div className="flex items-center justify-between gap-2 text-xs">
-        <span className="text-muted-foreground">Explorer sees</span>
-        <span className="inline-flex items-center gap-2">
-          <span className={cn(lp.bar, lp.onLight, "w-16")} aria-hidden="true" />
-          Shielded
-        </span>
-      </div>
-      <div className="rounded-lg bg-raised p-2.5">
-        <p className="text-[11px] text-muted-foreground">Memo, decrypted with a viewing key</p>
-        <p className="mt-1 font-mono text-[11px] leading-snug break-all text-strong">{payLineMemo(line)}</p>
-      </div>
-      <dl className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-4 text-xs">
-        <div>
-          <dt className="text-muted-foreground">Period</dt>
-          <dd className="mt-0.5">{run.periodLabel}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Invoice</dt>
-          <dd className="mt-0.5 whitespace-nowrap">{line.invoice}</dd>
-        </div>
-        <div className="text-right">
-          <dt className="text-muted-foreground">Basis</dt>
-          <dd className="mt-0.5">
-            <UsdFigure cents={line.usdCents} />
-          </dd>
-        </div>
-      </dl>
-    </Mini>
-  );
-}
-
-function KeysArt() {
-  const rows: { who: string; key: string; gold?: boolean }[] = [
-    { who: "Company", key: "Spending key, stays on the host", gold: true },
-    { who: line.name, key: "Viewing key, own account only" },
-    { who: "Accountant", key: `${run.lines.length + 1} viewing keys, every account` },
-  ];
-  return (
-    <Mini className="p-2">
-      <ul>
-        {rows.map((r) => (
-          <li key={r.who} className="flex items-center gap-3 rounded-lg px-2 py-2.5">
-            <span
-              className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-lg border",
-                r.gold ? "border-primary-edge bg-primary-soft" : "bg-raised",
-              )}
-            >
-              <KeyRound className={cn("size-4", r.gold ? "text-primary-edge" : "text-strong")} aria-hidden="true" />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm">{r.who}</span>
-              <span className="block truncate text-xs text-muted-foreground">{r.key}</span>
-            </span>
+              <p className={cn(t.body, "mt-2 max-w-[34rem]")}>{s.body}</p>
+            </div>
+            <div className="col-start-2 min-w-0 md:col-start-auto md:pt-1">{s.evidence}</div>
           </li>
         ))}
-      </ul>
-    </Mini>
+      </ol>
+    </Section>
+  );
+}
+
+function Facts({ rows, note }: { rows: [string, ReactNode][]; note?: string }) {
+  return (
+    <div>
+      <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[15px]">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-ash">{k}</dt>
+            <dd className="min-w-0 tabular-nums">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {note ? <p className={cn(t.small, "mt-2 text-ash")}>{note}</p> : null}
+    </div>
   );
 }

@@ -1,122 +1,130 @@
 import Link from "next/link";
+import { cn } from "cn";
 import { formatHeight } from "@/lib/format";
-import { DEMO_PAYMENTS, DEMO_RUNS, TESTNET_CONVERSION, repoFile, type ProofRun } from "@/components/marketing/data";
-import { Container, OutLink, TxLink } from "@/components/marketing/parts";
-
-const STATS: { value: string; label: string }[] = [
-  { value: String(DEMO_PAYMENTS), label: "Shielded payroll payments, every one readable with the judge kit" },
-  { value: "MIT", label: "Open source, every line on GitHub" },
-  { value: "USDC", label: "Funds each run, through NEAR Intents" },
-  { value: "Shielded", label: "Settled in Zcash's Ironwood pool" },
-];
+import { DEMO_PAYMENTS, DEMO_RUNS, HERO_PAYMENT, runTotalCents, type ProofRun } from "@/components/marketing/data";
+import { Usd } from "@/components/marketing/money";
+import { Height, Section, TxLink } from "@/components/marketing/parts";
+import { t, textLink } from "@/components/marketing/classes";
 
 /**
- * Mercury's stats band, with only what can be checked: the demo wallet's payroll payments are
- * listed under it, each linked to the explorer, and all of them open in Books with the judge kit.
+ * Every payment of the sample company's three runs, split the way the identity splits a payment:
+ * what the viewing keys read (who, how much, which invoice) and what the explorer shows (the
+ * block and the transaction). Every transaction opens in the testnet explorer.
  */
-export function ProofStrip() {
+export function Proof() {
   return (
-    <section id="proof" aria-labelledby="proof-title" className="scroll-mt-4 py-20 sm:py-24">
-      <Container>
-        <h2
-          id="proof-title"
-          className="mx-auto max-w-[40rem] text-center text-[1.75rem] leading-[1.15] font-[450] tracking-[-0.015em] text-balance sm:text-[2.25rem]"
-        >
-          Real payments, on a real chain. <span className="text-muted-foreground sm:block">Check every one.</span>
-        </h2>
-
-        <dl className="mt-12 grid grid-cols-2 gap-y-10 lg:grid-cols-4">
-          {STATS.map((s, i) => (
-            <div
-              key={s.label}
-              className={
-                "flex flex-col items-center px-3 text-center sm:px-6 " +
-                (i % 2 === 1 ? "border-l " : "") +
-                (i === 2 ? "lg:border-l " : "")
-              }
-            >
-              <dt className="mt-2 max-w-[13rem] text-sm leading-snug text-muted-foreground sm:text-[15px]">
-                {s.label}
-              </dt>
-              <dd className="figure order-first text-[2.25rem] leading-none font-[400] tracking-[-0.03em] sm:text-[3.25rem]">
-                {s.value}
-              </dd>
-            </div>
-          ))}
-        </dl>
-
-        <div className="mt-16 grid gap-10 lg:grid-cols-3 lg:gap-8">
-          {DEMO_RUNS.map((r) => (
-            <RunLedger key={r.runId} run={r} />
-          ))}
-        </div>
-
-        <div className="mt-8 grid gap-2 text-sm text-muted-foreground">
-          <p>
-            All three runs are the demo company&apos;s, paid on Zcash testnet on 5 Oct 2026. Read them, with every
-            amount and the reconciliation, in{" "}
-            <Link href="/books" className="rounded-sm text-link underline underline-offset-4">
-              Books with the judge kit
-            </Link>
-            .
-          </p>
-          <p>
-            A contractor paid in USDC, from an earlier test wallet (conversion simulated on testnet):{" "}
-            <TxLink txid={TESTNET_CONVERSION.txid} /> at{" "}
-            <span className="num">{formatHeight(TESTNET_CONVERSION.height)}</span>. This conversion leg is public by
-            design: the explorer shows the amount sent to the venue&apos;s deposit address. Every payroll payment above
-            is shielded.
-          </p>
-          <p>
-            Timings and every record:{" "}
-            <OutLink href={repoFile("docs/DEMO.md")} className="text-link">
-              docs/DEMO.md
-            </OutLink>
-          </p>
-        </div>
-      </Container>
-    </section>
-  );
-}
-
-function RunLedger({ run }: { run: ProofRun }) {
-  return (
-    <div className="min-w-0">
-      <table className="w-full text-sm">
-        <caption className="pb-3 text-left">
-          <span className="text-[15px] text-foreground">{run.periodLabel} payroll</span>
-          <span className="mt-0.5 block text-[13px] text-muted-foreground">
-            Run {run.runId.slice(0, 8)}, paid {run.date}. Names come from Payslip&apos;s records; the explorer shows
-            none.
-          </span>
+    <Section
+      id="proof"
+      title="Every payment, open to check"
+      lead={
+        <>
+          The sample company&apos;s three payrolls: {DEMO_PAYMENTS} shielded payments and {DEMO_RUNS.length}{" "}
+          allocations, paid on Zcash testnet on {DEMO_RUNS[0].date}. Names and amounts come from the viewing keys; the
+          explorer shows each transaction and its block, and nothing else.
+        </>
+      }
+    >
+      <p className="mt-6 text-[13px] text-ash">{HERO_PAYMENT.label}</p>
+      <table className="mt-4 w-full border-collapse text-left text-[15px]">
+        <caption className="sr-only">
+          The sample company&apos;s payroll payments on Zcash testnet: who was paid and how much, from the viewing keys,
+          and each transaction and block, from the explorer
         </caption>
         <thead>
-          <tr className="border-b text-left text-[13px] text-muted-foreground">
-            <th scope="col" className="h-9 pr-2 font-normal">
+          <tr className="hidden text-[13px] text-ash sm:table-row">
+            <th scope="colgroup" colSpan={3} className="pb-2 font-normal">
+              From the viewing keys
+            </th>
+            <th scope="colgroup" colSpan={2} className="border-l border-mist pb-2 pl-4 font-normal md:pl-6">
+              On the explorer
+            </th>
+          </tr>
+          <tr className="border-y border-ink text-[13px]">
+            <th scope="col" className="py-2.5 pr-4 font-medium">
               Paid to
             </th>
-            <th scope="col" className="px-2 font-normal">
-              Transaction
+            <th scope="col" className="hidden py-2.5 pr-4 font-medium sm:table-cell">
+              Invoice
             </th>
-            <th scope="col" className="pl-2 text-right font-normal">
-              Height
+            <th scope="col" className="py-2.5 pr-4 text-right font-medium">
+              Amount
+            </th>
+            <th scope="col" className="hidden border-l border-mist py-2.5 pr-4 pl-4 font-medium sm:table-cell md:pl-6">
+              Block
+            </th>
+            <th scope="col" className="py-2.5 font-medium">
+              Transaction
             </th>
           </tr>
         </thead>
-        <tbody>
-          {run.lines.map((l) => (
-            <tr key={l.txid} className="border-b border-hairline">
-              <th scope="row" className="h-11 pr-2 text-left font-normal whitespace-nowrap">
-                {l.name}
-              </th>
-              <td className="px-2">
-                <TxLink txid={l.txid} />
-              </td>
-              <td className="num pl-2 text-right whitespace-nowrap text-muted-foreground">{formatHeight(l.height)}</td>
-            </tr>
-          ))}
-        </tbody>
+        {DEMO_RUNS.map((run) => (
+          <RunRows key={run.runId} run={run} />
+        ))}
       </table>
-    </div>
+      <p className={cn(t.small, "mt-6 max-w-[40rem] text-ash")}>
+        Read them with every amount and the reconciliation in{" "}
+        <Link href="/books" className={textLink}>
+          Books with the judge kit
+        </Link>
+        .
+      </p>
+    </Section>
+  );
+}
+
+function RunRows({ run }: { run: ProofRun }) {
+  return (
+    <tbody>
+      <tr className="border-b border-mist">
+        {/* The run's heading spans the key columns: three from 640px, two on a phone without Invoice. */}
+        <th scope="rowgroup" colSpan={3} className="hidden pt-8 pr-4 pb-3 align-bottom font-normal sm:table-cell">
+          <RunHeading run={run} />
+        </th>
+        <th scope="rowgroup" colSpan={2} className="pt-8 pr-4 pb-3 align-bottom font-normal sm:hidden">
+          <RunHeading run={run} />
+        </th>
+        <td className="hidden border-l border-mist pt-8 pr-4 pb-3 pl-4 align-bottom sm:table-cell md:pl-6">
+          <Height height={run.allocation.height} className="text-ash" />
+        </td>
+        <td className="pt-8 pb-3 align-bottom">
+          <span className="block text-[13px] text-ash">Allocation</span>
+          <TxLink txid={run.allocation.txid} />
+        </td>
+      </tr>
+      {run.lines.map((l) => (
+        <tr key={l.txid} className="border-b border-mist align-top">
+          <th scope="row" className="py-2.5 pr-4 font-normal">
+            <span className="block">{l.name}</span>
+            <span className="block text-[13px] text-ash sm:hidden">{l.invoice}</span>
+          </th>
+          <td className="hidden py-2.5 pr-4 text-ash sm:table-cell">{l.invoice}</td>
+          <td className="py-2.5 pr-4 text-right whitespace-nowrap">
+            <Usd cents={l.usdCents} />
+          </td>
+          <td className="hidden border-l border-mist py-2.5 pr-4 pl-4 sm:table-cell md:pl-6">
+            <Height height={l.height} />
+          </td>
+          <td className="py-2.5">
+            <TxLink txid={l.txid} />
+            <span className={cn(t.data, "block text-ash sm:hidden")}>
+              <span className="sr-only">Block </span>
+              {formatHeight(l.height)}
+            </span>
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  );
+}
+
+function RunHeading({ run }: { run: ProofRun }) {
+  return (
+    <>
+      <span className={cn(t.h3, "block")}>{run.periodLabel} payroll</span>
+      <span className="mt-1 block text-[13px] text-ash">
+        Run {run.runId.slice(0, 8)}, <Usd cents={runTotalCents(run)} className="tracking-normal" /> to{" "}
+        {run.lines.length} people. Allocated from the treasury in one transaction.
+      </span>
+    </>
   );
 }

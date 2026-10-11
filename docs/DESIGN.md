@@ -647,3 +647,52 @@ Icons are drawn at stroke 1.5 everywhere in the app (`LucideProvider` in AppShel
 **Shell.** The "Viewing as" role switcher shows on testnet; on mainnet only on a build with `NEXT_PUBLIC_PAYSLIP_DEMO=1` (for the recorded demo), so a contractor's invite link on a real deployment shows only their portal. The network badge and the demo bar are live regions only while degraded or offline, and "syncing" shows only when the wallet is more than 10 blocks behind. Console page titles describe the page ("Company home", "Sep 2026 payroll", "Payroll runs"), and an unknown console address shows "Page not found" inside the shell.
 
 **Adopted outside the console, and still to adopt.** Books' reconciliation tag now uses `StatusTag`, the portal's simulated-rate label is the shared `SimulatedRate`, and the portal's list dates (`monthDay` in `components/portal/portal-data.ts`) read "5 Oct" like the rest of the app instead of "Oct 5". Still to switch: `components/portal/portal-states.tsx` (`SettlementTag`'s Shielded tag to `ShieldedMark`), `components/books/ledger-view.tsx` (`StatusTags` and its Shielded tag to `StatusTag` and `ShieldedMark`), `components/books/run-detail.tsx` (the "Simulated rate" text and tag to `SimulatedRate`), `components/books/books-page.tsx` (its raw `details` to `Disclosure`), `components/books/books-data.ts` (`shortRange`'s own month table to `lib/format.ts`) and `components/verify/public-payslip.tsx` (the "Simulated rate" text to `SimulatedRate`).
+
+## 16. Identity: one payment, two views (11 Oct 2026; supersedes the visual direction in section 15, keeps its structure)
+
+The owner judged the Mercury-informed look clean but generic: a console shape any fintech could ship, with nothing that only Payslip can show. This section sets Payslip's own identity. Section 15's structure (the three products, routes, the Run payroll flow, the status vocabulary) stays.
+
+### The idea
+
+Every screen that shows a payment can show it two ways: what the public explorer sees (a shielded transaction: txid, block, action count, and nothing else) and what the viewing key sees (the payslip: who, how much, for which period and invoice). Payslip's identity is that pair, side by side, joined by the one thing they share, the txid. The landing page opens on it with a real transaction; the run page and the payslip carry it as a strip; the contractor portal shows it on every payslip.
+
+### Tokens
+
+Colour, five names, light theme first:
+
+| Name | Hex | Use |
+| --- | --- | --- |
+| Paper | #FFFFFF | the key's view: pages, payslips, the console |
+| Vault | #1C2230 | the explorer's view: the dark panel, redaction bars live only here; also the text ink on paper |
+| Gold | #F4B728 | the thread between the two views, primary actions, the shielded mark; as text on paper use #8A6400 |
+| Ash | #5C6472 on paper, #8B93A5 on vault | secondary text |
+| Mist | #EEF1F5 on paper, #2A3242 on vault | hairlines, surfaces, tracks |
+
+Dark theme: Paper becomes #14181F and Vault panels become #0F1218 with Mist #262C38; Gold unchanged.
+
+Type, three roles:
+
+| Role | Face | Notes |
+| --- | --- | --- |
+| Display | Bricolage Grotesque (variable, optical size axis), weight 500 to 600, tight leading | headlines, the company name, the big money figure on a page. Use the optical size: large sizes get the display cut, small sizes the text cut. |
+| Text | Instrument Sans, 400 and 500, `font-feature-settings: "tnum"` wherever figures align | all UI and body text; replaces Inter |
+| Data | IBM Plex Mono, 400 | txids, keys, block heights, addresses, memos; never for prose |
+
+Scale (px): 13, 15, 17, 22, 30, 44, 64 at 1440; the two largest steps drop one step at 768 and two at 375. Line length under 80 characters. Sentence case everywhere; no all-caps labels; no middle-dot joined strings (write a sentence or use a comma); no arrows appended to links.
+
+### Layout principles
+
+1. The split is the brand. The two-view pair is a full-width panel: vault on the left, paper on the right, the txid repeated at the top of both in Plex Mono, a gold hairline joining them. On a phone the panels stack, vault first.
+2. Redaction bars only ever appear on the vault side, and only for what the chain hides: amount, sender, recipient, memo. They are Mist-on-Vault blocks the width of the hidden value, never a blur.
+3. One orchestrated motion per page: the paper side resolves from redaction bars into values once, on load (landing) or when a key opens a statement (portal). Everything else moves only in answer to a click. Reduced motion shows the final state.
+4. No card kit. Sections flow on Paper with space; a border appears only where it encodes a boundary (the vault panel, a payslip's edge, a table). One radius (12px) for panels, 999px for pills.
+5. Gold is scarce: the thread, the primary action, the shielded mark, the active tab. Never a gold wash or gradient.
+6. Numbers are typeset: display face for the headline figure with raised cents, tabular text face in tables, Plex Mono for chain data.
+
+### Landing page
+
+Order: header; hero with the headline "Private to the world. Transparent to your accountant." and the two-view panel on a real payment; the three people (company, contractor, accountant) as one strip with a sentence and a real figure each; how a run works as a four-step sequence (fund, allocate, pay, read back), numbered because it is a sequence; proof table from the mainnet run (testnet sample until then, labelled); pricing against the $49 products; check it yourself with the judge kit; footer. Left-aligned throughout; the headline is display at 64, two lines.
+
+### Console, portal, books
+
+Tokens and type apply everywhere. The run page's explorer strip becomes a two-view panel above the tabs. The payslip document gets a vault panel titled "What the world sees" with the explorer link. The console home leads with the company name in the display face and the paid-this-year figure. The demo bar stays as the sample-company notice on testnet.
