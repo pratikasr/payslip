@@ -187,17 +187,31 @@ export function AppShell({ config, children }: { config: ShellConfig; children: 
   );
 }
 
-/** The sidebar's top block: mark, name and a small chip (Mercury's org switcher with "Pro"). */
-export function SidebarBrand({ name, chip, mark }: { name: ReactNode; chip?: ReactNode; mark?: ReactNode }) {
+/**
+ * The sidebar's top block: mark, name and a small chip (Mercury's org switcher with "Pro"). `sub`
+ * is a quieter second line under the name, aligned with it (the "Sample data" tag on testnet).
+ */
+export function SidebarBrand({
+  name,
+  chip,
+  mark,
+  sub,
+}: {
+  name: ReactNode;
+  chip?: ReactNode;
+  mark?: ReactNode;
+  sub?: ReactNode;
+}) {
   return (
-    <div className="flex items-center gap-2 pb-1">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 pb-1">
       {mark}
-      <span className="min-w-0 truncate font-[450]">{name}</span>
+      <span className="col-start-2 min-w-0 truncate font-[450]">{name}</span>
       {chip ? (
-        <span className="ml-auto rounded-md bg-foreground px-1.5 py-1 text-[11px] leading-none font-medium text-background">
+        <span className="col-start-3 rounded-md bg-foreground px-1.5 py-1 text-[11px] leading-none font-medium text-background">
           {chip}
         </span>
       ) : null}
+      {sub ? <div className="col-span-2 col-start-2 mt-1 flex items-center">{sub}</div> : null}
     </div>
   );
 }

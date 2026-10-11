@@ -13,6 +13,12 @@ import { expect, test, type Page } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
 const SCAN = 180_000;
+/** The company the build was made for (NEXT_PUBLIC_PAYSLIP_COMPANY_NAME), "Payslip Labs" by default. */
+const COMPANY = process.env.E2E_COMPANY_NAME?.trim() || "Payslip Labs";
+
+async function network(): Promise<string> {
+  return (await (await fetch(`${API}/api/health`)).json()).network;
+}
 
 interface ExportedKey {
   role: string;
@@ -118,7 +124,10 @@ test("an invite link unlocks the portal and the key leaves the address bar", asy
   await expect.poll(() => new URL(page.url()).hash).toBe("");
   expect(page.url()).not.toContain(key.ufvk.slice(0, 20));
 
-  // Home: paid this year, the last payment with its privacy tag, and the latest payslips.
+  // Home: who paid (the company, with the sample line on testnet), paid this year, the last
+  // payment with its privacy tag, and the latest payslips.
+  await expect(page.getByTestId("portal-paid-by")).toHaveText(`Paid to you by ${COMPANY}`);
+  await expect(page.getByTestId("portal-sample-line")).toHaveCount((await network()) === "testnet" ? 1 : 0);
   const paid = page.getByRole("region", { name: /^Paid to you in \d{4}$/ });
   await expect(paid).toContainText(/\$[\d,]+\.\d{2}/);
   await expect(paid).toContainText("received");
@@ -162,6 +171,11 @@ test("a payslip opens as a document that matches the chain and prints cleanly", 
   const line = statement.lines.find((l: { txid: string }) => l.txid === txid);
   expect(line).toBeTruthy();
   const doc = page.getByRole("article");
+  // The header names the employer; on testnet the footer says the company is a sample.
+  await expect(doc.getByTestId("payslip-paid-by")).toHaveText(`Paid by ${COMPANY}`);
+  const testnet = (await network()) === "testnet";
+  await expect(doc.getByTestId("payslip-sample-line")).toHaveCount(testnet ? 1 : 0);
+  if (testnet) await expect(doc.getByTestId("payslip-sample-line")).toContainText("Sample company on Zcash testnet");
   await expect(doc).toContainText(txid);
   await expect(doc).toContainText(line.invoice_ref);
   await expect(doc).toContainText((line.height as number).toLocaleString("en-US"));
@@ -174,6 +188,9 @@ test("a payslip opens as a document that matches the chain and prints cleanly", 
   await expect(doc).toBeVisible();
   await expect(page.getByRole("button", { name: "Download PDF" })).toBeHidden();
   await expect(page.getByRole("navigation", { name: "Main" })).toBeHidden();
+  // The PDF keeps the employer and, on testnet, the sample line.
+  await expect(doc.getByTestId("payslip-paid-by")).toBeVisible();
+  if (testnet) await expect(doc.getByTestId("payslip-sample-line")).toBeVisible();
   const docBox = await doc.boundingBox();
   expect(docBox!.width).toBeGreaterThan(500);
   await page.emulateMedia({ media: "screen" });

@@ -17,13 +17,13 @@ import {
 } from "lucide-react";
 import { Usd, Zec } from "@/components/app/amount";
 import { CopyButton } from "@/components/app/copy-button";
-import { LogoMark } from "@/components/app/logo";
 import { Tag } from "@/components/ds/tag";
 import { useDocumentTitle } from "@/components/portal/document-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApiError, UNREACHABLE_CODE, api, toDisplayError, type VerifiedProof } from "@/lib/api";
+import { companyMark, companyName } from "@/lib/company";
 import {
   formatDate,
   formatDateTime,
@@ -289,14 +289,17 @@ export function PublicPayslip() {
     );
   }
 
+  const Mark = companyMark();
   return (
     <div className={styles.page}>
       <style>{PRINT_CSS}</style>
       <div className={styles.card}>
-        <p className="mb-5 flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
-          <LogoMark className="size-5 text-foreground" />
-          <span>
-            <span className="text-foreground">Payslip</span> · Payment proof
+        {/* The masthead names the issuer and the company it was issued for, on screen and on paper. */}
+        <p className="mb-5 flex items-start gap-2 text-[0.8125rem] text-muted-foreground" data-testid="verify-issuer">
+          <Mark className="mt-px size-5 shrink-0 text-foreground" />
+          <span className="text-pretty">
+            Payment proof issued through <span className="text-foreground">Payslip</span> for{" "}
+            <span className="text-foreground">{companyName()}</span>
           </span>
         </p>
         {body}

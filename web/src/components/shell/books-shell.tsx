@@ -3,9 +3,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, Download, Scale, TableProperties } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
-import { LogoMark } from "@/components/app/logo";
 import { NetworkBadge } from "@/components/app/network-badge";
 import { AppShell, SidebarBrand, type ShellConfig } from "@/components/shell/app-shell";
+import { SampleTag, useSampleCompany } from "@/components/shell/sample-tag";
+import { companyMark, companyName } from "@/lib/company";
 import { networkLabel } from "@/lib/format";
 import { isPortalOrigin } from "@/lib/public-url";
 
@@ -25,12 +26,16 @@ export function BooksShell({
   const { health, mode } = useHealth();
   const [portalOnly, setPortalOnly] = useState(false);
   useEffect(() => setPortalOnly(isPortalOrigin()), []);
+  const Mark = companyMark();
+  const sample = useSampleCompany();
   const config: ShellConfig = {
+    // The same company block as the console: these are its books.
     brand: (
       <SidebarBrand
-        mark={<LogoMark className="size-[22px]" />}
-        name="Payslip"
+        mark={<Mark className="size-[22px]" />}
+        name={companyName()}
         chip={health ? networkLabel(health.network) : undefined}
+        sub={sample ? <SampleTag /> : undefined}
       />
     ),
     // A statements-only deployment has no payroll to switch to; neither does the contractors'

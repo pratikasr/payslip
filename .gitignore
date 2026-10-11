@@ -39,3 +39,6 @@ scripts/demo/out/
 # python
 __pycache__/
 *.pyc
+
+# agent worktrees
+.claude/worktrees/

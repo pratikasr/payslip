@@ -33,7 +33,7 @@ function networkLine(net: string | undefined, offline: boolean): { long: string;
     return { long: "Payslip on Zcash mainnet. Payments here are real.", short: "Mainnet", tone: "bg-success" };
   if (net === "testnet")
     return {
-      long: "You are in the Payslip demo on Zcash testnet. Nothing here is real money.",
+      long: "Sample company on Zcash testnet. Nothing here is real money.",
       short: "Testnet",
       tone: "bg-primary",
     };

@@ -17,6 +17,8 @@ import { join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 
 const API = (process.env.E2E_API_URL ?? "http://127.0.0.1:8080").replace(/\/+$/, "");
+/** The company the build was made for (NEXT_PUBLIC_PAYSLIP_COMPANY_NAME), "Payslip Labs" by default. */
+const COMPANY = process.env.E2E_COMPANY_NAME?.trim() || "Payslip Labs";
 const KIT_PATH = join(process.cwd(), "..", "docs", "judge", "judge-kit-testnet.json");
 const PUBLIC_KIT_PATH = join(process.cwd(), "public", "judge-kit-testnet.json");
 
@@ -28,6 +30,10 @@ interface KitKey {
 
 async function serviceMode(): Promise<string> {
   return (await (await fetch(`${API}/api/health`)).json()).mode ?? "full";
+}
+
+async function network(): Promise<string> {
+  return (await (await fetch(`${API}/api/health`)).json()).network;
 }
 
 interface KeyEntry {
@@ -110,6 +116,14 @@ test("the judge kit loads with one click and names every payment by its key file
     `scanned from block ${kit.birthday_height.toLocaleString("en-US")}`,
   );
   await expect(page.getByTestId("books-key-chip")).toContainText("7 keys · Treasury and 6 contractors");
+  // The header names the company above the title, and the sidebar too; the subtitle says the
+  // company is a sample on testnet and says nothing of the kind on mainnet.
+  await expect(page.getByTestId("books-company")).toHaveText(COMPANY);
+  await expect(page.locator("aside").filter({ hasText: COMPANY }).first()).toBeVisible();
+  const testnet = (await network()) === "testnet";
+  await expect(page.getByTestId("books-sample-line")).toHaveCount(testnet ? 1 : 0);
+  if (testnet) await expect(page.getByTestId("books-sample-line")).toHaveText("Sample company on Zcash testnet.");
+  await expect(page.getByText("Sample data", { exact: true })).toHaveCount(testnet ? 1 : 0);
   // Funding records were read, so no warning about the Treasury key, on any kind of deployment.
   await expect(page.getByText(/No funding record was found/)).toHaveCount(0);
   await expect(page.getByTestId("books-headline")).toContainText("every dollar accounted for");
