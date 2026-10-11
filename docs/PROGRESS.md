@@ -2,6 +2,16 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 11 Oct 2026, the identity across the console, portal and Books (DESIGN.md section 16)
+
+- Built on a branch for review: e1eafc5 (the identity app-wide), 3ef3b96 (the pages that came with sign-in), then main merged twice (475043c, cff0a6c) so the branch carries sign-in, the pay schedule and requests, and main's switch to Geist.
+- Tokens: the five identity colours are the app's root tokens in light and dark (the Mercury palette is gone); `.identity-vault` marks the explorer's side. Gold stays for the thread, the primary action, the shielded mark and the active tab: progress and chart bars are ink on Mist, tags and avatars are Mist.
+- Type: Geist for display and text, Geist Mono for chain data (main's setup, applied app-wide). Five sizes in `web/src/components/ds/type.ts`; titles and headline money are Geist 600 at line-height 1.05, tracked -0.02em to 30px and -0.035em from 44px; body 400 at line-height 1.55; money and tables tabular. Geist Mono is not preloaded, so each route preloads one font file.
+- Two views: one shared component, `web/src/components/ds/two-views.tsx`, used by the landing hero, the run page (the allocation and each payment, txid joined across the seam to the person it paid), the payslip document and the public proof (a "What the world sees" vault panel, redaction bars level with each value; both views print). Console home leads with the company name and the year's figure in the display role. Copy: no middle-dot strings, no arrows on links. Icons at stroke 1.5 from one provider in the root layout.
+- Not done: action counts on the run page, payslip and proof. The service reports none for a run's transactions or a proof; it needs to count each transaction's actions from its wallet database and return them (DESIGN.md section 16, Applied across the app).
+- Checks: web typecheck, lint, prettier, production build; browser suite 44 passed with 4 skipped (auth.spec runs through its script), wallet-fund 2 and zec-fund 1 against the fixtures, `scripts/e2e-requests.sh` 4 of 4, `scripts/e2e-signin.sh` 4 of 4; demo.spec not run (it pays on testnet from a clean database). axe-core 4.13 on 21 console, portal, Books and proof views at 375 and 1440 in light and dark: 84 pages, 0 violations. Lighthouse 13.5.0 mobile on the production build: / 97, /console 94, /books 92, /portal 92 performance; accessibility and best practices 100 on all four. 102 screenshots at 375 and 1440, light and dark, with no horizontal scroll (kept outside the repo).
+- Next: the owner reviews and merges.
+
 ## 11 Oct 2026, pay schedule and payment requests (launch plan, second wave)
 
 - Built on a branch for review, then merged with main's sign-in work on the branch. ADR-028 in docs/TECH-DECISIONS.md records the period rules and the request rules; docs/API.md has the Pay schedule and Payment requests sections, the contractor's `default_amount_usd_cents`, and `include_requests` and `request_ids` on `POST /api/runs`.
