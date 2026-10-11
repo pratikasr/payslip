@@ -177,6 +177,7 @@ async fn start_full_with(adjust: impl FnOnce(&mut Config)) -> (Service, Pool) {
         venue,
         executor: Some(executor),
         contractor_lock: tokio::sync::Mutex::new(()),
+        schedule_lock: tokio::sync::Mutex::new(()),
         lwd: tokio::sync::Mutex::new(payslip::wallet::lwd::connect(&cfg.lightwalletd_url).unwrap()),
         last_wallet: std::sync::Mutex::new(None),
         prices: Arc::new(payslip::prices::Prices::new(None, None)),
@@ -194,16 +195,30 @@ async fn start_full_with(adjust: impl FnOnce(&mut Config)) -> (Service, Pool) {
     (service, db)
 }
 
+/// A real testnet unified address (shielded receivers), distinct per seed, so a contractor's
+/// record passes the same checks a PATCH re-runs on it.
+fn testnet_address(seed: u8) -> String {
+    let params = Network::TestNetwork;
+    let ufvk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[seed; 32], zip32::AccountId::ZERO)
+        .unwrap()
+        .to_unified_full_viewing_key();
+    let (ua, _) = ufvk
+        .default_address(zcash_keys::keys::UnifiedAddressRequest::SHIELDED)
+        .unwrap();
+    payslip::payer::encode_ua_r0(&params, &ua).unwrap()
+}
+
 async fn contractor(pool: &Pool, i: u32) -> String {
     db::insert_contractor(
         pool,
         &NewContractor {
             name: format!("Contractor {i}"),
             email: None,
-            unified_address: format!("utest1contractor{i}"),
+            unified_address: testnet_address(i as u8),
             settlement_choice: "hold_zec".into(),
             payout_chain: None,
             payout_address: None,
+            default_amount_usd_cents: None,
         },
         i,
         4_467_000,
@@ -767,4 +782,517 @@ async fn a_run_over_the_cap_is_refused_at_creation() {
         )
         .await;
     assert_eq!(st, 201, "{v}");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Payment requests and the pay schedule (ADR-028)
+
+impl Service {
+    async fn put(&self, path: &str, body: Value) -> (u16, Value) {
+        let r = self
+            .http
+            .put(format!("{}{path}", self.base))
+            .header("content-type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap();
+        let s = r.status().as_u16();
+        (s, r.json().await.unwrap_or(Value::Null))
+    }
+
+    async fn patch(&self, path: &str, body: Value) -> (u16, Value) {
+        let r = self
+            .http
+            .patch(format!("{}{path}", self.base))
+            .header("content-type", "application/json")
+            .body(body.to_string())
+            .send()
+            .await
+            .unwrap();
+        let s = r.status().as_u16();
+        (s, r.json().await.unwrap_or(Value::Null))
+    }
+}
+
+fn fingerprint(ufvk: &str) -> String {
+    ViewingKey::parse(&ZcashNetwork::Testnet, ufvk).unwrap().fingerprint
+}
+
+/// A contractor whose viewing key is `testnet_ufvk(seed)`, as the portal resolves it.
+async fn keyed_contractor(pool: &Pool, i: u32, seed: u8) -> (String, String) {
+    let id = contractor(pool, i).await;
+    let key = testnet_ufvk(seed);
+    db::set_contractor_fingerprint(pool, &id, &fingerprint(&key))
+        .await
+        .unwrap();
+    (id, key)
+}
+
+fn request_body(key: &str, cents: i64, inv: &str, start: &str, end: &str) -> Value {
+    json!({"ufvk": key, "amount_usd_cents": cents, "period_start": start, "period_end": end, "invoice_ref": inv})
+}
+
+/// The portal endpoints exist on a statements-only deployment (a contractor can reach them),
+/// but it knows no keys; the payer's request and schedule endpoints are gated like the rest.
+#[tokio::test]
+async fn statements_mode_gates_the_payer_request_endpoints_and_knows_no_keys() {
+    let s = start().await;
+    let (st, v) = s
+        .post(
+            "/api/portal/requests",
+            request_body(&testnet_ufvk(1), 480_000, "INV-1", "2026-10-01", "2026-10-31"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (404, "unknown_key"), "{v}");
+    assert!(v["error"]["hint"].as_str().unwrap().contains("statements only"));
+    let (st, v) = s
+        .post("/api/portal/requests/list", json!({"ufvk": testnet_ufvk(1)}))
+        .await;
+    assert_eq!((st, code(&v)), (404, "unknown_key"), "{v}");
+    for path in ["/api/requests", "/api/schedule", "/api/requests?status=submitted"] {
+        let (st, v) = s.get(path).await;
+        assert_eq!((st, code(&v)), (404, "statements_only"), "{path}: {v}");
+    }
+    let (st, v) = s.post("/api/requests/abc/approve", json!({})).await;
+    assert_eq!((st, code(&v)), (404, "statements_only"), "{v}");
+    let (st, v) = s
+        .put("/api/schedule", json!({"cadence": "monthly", "pay_day": "last"}))
+        .await;
+    assert_eq!((st, code(&v)), (404, "statements_only"), "{v}");
+}
+
+/// A contractor's key maps to them by fingerprint; any other key is `unknown_key`; the fields
+/// are checked as a pay line's are.
+#[tokio::test]
+async fn a_request_is_keyed_by_the_contractors_viewing_key_and_validated() {
+    let (s, pool) = start_full().await;
+    let (id, key) = keyed_contractor(&pool, 1, 1).await;
+    let (st, v) = s
+        .post(
+            "/api/portal/requests",
+            request_body(&testnet_ufvk(2), 480_000, "INV-1", "2026-10-01", "2026-10-31"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (404, "unknown_key"), "{v}");
+    assert!(has_hint(&v));
+    for (body, want) in [
+        (
+            request_body(&key, 0, "INV-1", "2026-10-01", "2026-10-31"),
+            "invalid_amount",
+        ),
+        (
+            request_body(&key, 1_000_000_001, "INV-1", "2026-10-01", "2026-10-31"),
+            "invalid_amount",
+        ),
+        (
+            request_body(&key, 100, "INV-1", "2026-10-31", "2026-10-01"),
+            "invalid_period",
+        ),
+        (
+            request_body(&key, 100, "", "2026-10-01", "2026-10-31"),
+            "invalid_invoice_ref",
+        ),
+        (
+            request_body(&key, 100, "a|b", "2026-10-01", "2026-10-31"),
+            "invalid_invoice_ref",
+        ),
+        (
+            request_body(&key, 100, &"x".repeat(65), "2026-10-01", "2026-10-31"),
+            "invoice_ref_too_long",
+        ),
+    ] {
+        let (st, v) = s.post("/api/portal/requests", body).await;
+        assert_eq!((st, code(&v)), (400, want), "{v}");
+        assert!(has_hint(&v));
+    }
+    let mut body = request_body(&key, 100, "INV-1", "2026-10-01", "2026-10-31");
+    body["due_date"] = json!("soon");
+    let (st, v) = s.post("/api/portal/requests", body.clone()).await;
+    assert_eq!((st, code(&v)), (400, "invalid_due_date"), "{v}");
+    body["due_date"] = json!("2026-11-05");
+    body["recurring"] = json!("yearly");
+    let (st, v) = s.post("/api/portal/requests", body.clone()).await;
+    assert_eq!((st, code(&v)), (400, "invalid_recurring"), "{v}");
+    body["recurring"] = json!("monthly");
+    body["note"] = json!("  October retainer  ");
+    let (st, v) = s.post("/api/portal/requests", body).await;
+    assert_eq!(st, 201, "{v}");
+    assert_eq!(v["status"], json!("submitted"));
+    assert_eq!(v["contractor_id"], json!(id));
+    assert_eq!(v["contractor_name"], json!("Contractor 1"));
+    assert_eq!(v["note"], json!("October retainer"));
+    assert_eq!(v["recurring"], json!("monthly"));
+    assert_eq!(v["due_date"], json!("2026-11-05"));
+    assert_eq!(v["txid"], Value::Null);
+    // The contractor's list shows it.
+    let (st, mine) = s.post("/api/portal/requests/list", json!({"ufvk": key})).await;
+    assert_eq!(st, 200, "{mine}");
+    assert_eq!(mine["contractor"]["name"], json!("Contractor 1"));
+    assert_eq!(mine["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(mine["requests"][0]["id"], v["id"]);
+}
+
+/// The payer's queue: submitted to approved (with a note) or rejected; the decision rules.
+#[tokio::test]
+async fn requests_are_approved_or_rejected_from_the_queue() {
+    let (s, pool) = start_full().await;
+    let (_, key) = keyed_contractor(&pool, 1, 1).await;
+    let mut ids = vec![];
+    for inv in ["R-1", "R-2", "R-3"] {
+        let (st, v) = s
+            .post(
+                "/api/portal/requests",
+                request_body(&key, 50_000, inv, "2026-10-01", "2026-10-31"),
+            )
+            .await;
+        assert_eq!(st, 201, "{v}");
+        ids.push(v["id"].as_str().unwrap().to_string());
+    }
+    let (st, v) = s.get("/api/requests?status=submitted").await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["requests"].as_array().unwrap().len(), 3);
+    assert_eq!(v["counts"]["submitted"], json!(3));
+    let (st, v) = s.get("/api/requests?status=paid").await;
+    assert_eq!((st, v["requests"].as_array().unwrap().len()), (200, 0));
+    let (st, v) = s.get("/api/requests?status=done").await;
+    assert_eq!((st, code(&v)), (400, "invalid_status"));
+
+    let (st, v) = s
+        .post(&format!("/api/requests/{}/approve", ids[0]), json!({"note": "Thanks"}))
+        .await;
+    assert_eq!((st, v["status"].as_str()), (200, Some("approved")), "{v}");
+    assert_eq!(v["decision_note"], json!("Thanks"));
+    assert!(v["decided_at"].is_string());
+    // Approving again is a no-op; rejecting an approved request that no run took is allowed.
+    let (st, v) = s.post(&format!("/api/requests/{}/approve", ids[0]), json!({})).await;
+    assert_eq!((st, v["status"].as_str()), (200, Some("approved")));
+    let (st, v) = s
+        .post(
+            &format!("/api/requests/{}/reject", ids[1]),
+            json!({"note": "Not this month"}),
+        )
+        .await;
+    assert_eq!((st, v["status"].as_str()), (200, Some("rejected")), "{v}");
+    assert_eq!(v["decision_note"], json!("Not this month"));
+    let (st, v) = s.post(&format!("/api/requests/{}/approve", ids[1]), json!({})).await;
+    assert_eq!((st, code(&v)), (409, "request_decided"), "{v}");
+    let (st, v) = s.post("/api/requests/nope/approve", json!({})).await;
+    assert_eq!((st, code(&v)), (404, "not_found"));
+    let (st, v) = s
+        .post(
+            &format!("/api/requests/{}/reject", ids[2]),
+            json!({"note": "x".repeat(1001)}),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "note_too_long"), "{v}");
+    // The contractor sees the outcomes and the payer's notes.
+    let (_, mine) = s.post("/api/portal/requests/list", json!({"ufvk": key})).await;
+    let statuses: Vec<&str> = mine["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(statuses, vec!["submitted", "rejected", "approved"]);
+    let (_, all) = s.get("/api/requests").await;
+    assert_eq!(all["counts"], json!({"submitted": 1, "approved": 1}));
+}
+
+/// Approved requests join a run made by hand: onto the contractor's own line when the body has
+/// one, else as a line of their own; discarding the draft gives them back.
+#[tokio::test]
+async fn approved_requests_join_a_run_for_their_period() {
+    let (s, pool) = start_full().await;
+    let (a, key_a) = keyed_contractor(&pool, 1, 1).await;
+    let (b, key_b) = keyed_contractor(&pool, 2, 2).await;
+    let c = contractor(&pool, 3).await;
+    let mut approved = vec![];
+    for (key, inv, cents) in [(&key_a, "A-1", 30_000), (&key_b, "B-1", 40_000), (&key_b, "B-2", 5_000)] {
+        let (_, v) = s
+            .post(
+                "/api/portal/requests",
+                request_body(key, cents, inv, "2026-10-01", "2026-10-31"),
+            )
+            .await;
+        let id = v["id"].as_str().unwrap().to_string();
+        let (st, _) = s.post(&format!("/api/requests/{id}/approve"), json!({})).await;
+        assert_eq!(st, 200);
+        approved.push(id);
+    }
+    // A request for another period, and one still submitted, are not taken.
+    let (_, other) = s
+        .post(
+            "/api/portal/requests",
+            request_body(&key_a, 1, "A-NOV", "2026-11-01", "2026-11-30"),
+        )
+        .await;
+    s.post(
+        &format!("/api/requests/{}/approve", other["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .await;
+    s.post(
+        "/api/portal/requests",
+        request_body(&key_a, 1, "A-LATER", "2026-10-01", "2026-10-31"),
+    )
+    .await;
+
+    let mut body = run_body(
+        "2026-10-01",
+        "2026-10-31",
+        &[(&a, 99_000, "A-EDITED"), (&c, 10_000, "C-1")],
+        "k-req",
+    );
+    body["include_requests"] = json!(true);
+    let (st, run) = s.post("/api/runs", body).await;
+    assert_eq!(st, 201, "{run}");
+    let lines = run["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 3, "{run}");
+    let line_a = lines.iter().find(|l| l["contractor_id"] == json!(a)).unwrap();
+    assert_eq!(
+        line_a["amount_usd_cents"],
+        json!(99_000),
+        "the payer's own line is kept"
+    );
+    let line_b = lines.iter().find(|l| l["contractor_id"] == json!(b)).unwrap();
+    assert_eq!(line_b["amount_usd_cents"], json!(45_000), "two requests make one line");
+    assert_eq!(line_b["invoice_ref"], json!("B-1, B-2"));
+    let (_, v) = s.get("/api/requests?status=approved").await;
+    let taken: Vec<(&str, bool, bool)> = v["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            (
+                r["invoice_ref"].as_str().unwrap(),
+                r["run_id"] == run["id"],
+                r["line_id"].is_string(),
+            )
+        })
+        .collect();
+    assert!(taken.contains(&("A-1", true, true)), "{taken:?}");
+    assert!(taken.contains(&("B-1", true, true)));
+    assert!(taken.contains(&("B-2", true, true)));
+    assert!(taken.contains(&("A-NOV", false, false)));
+    let (_, log) = s.get(&format!("/api/runs/{}/log", run["id"].as_str().unwrap())).await;
+    assert!(log["events"].as_array().unwrap().iter().any(|e| e["message"]
+        .as_str()
+        .unwrap()
+        .contains("3 approved payment requests taken")));
+    // A request already in a run cannot be rejected, and cannot join another run.
+    let (st, v) = s
+        .post(&format!("/api/requests/{}/reject", approved[0]), json!({}))
+        .await;
+    assert_eq!((st, code(&v)), (409, "request_in_run"), "{v}");
+    let mut again = run_body("2026-10-01", "2026-10-31", &[(&c, 1, "C-2")], "k-req-2");
+    again["allow_overlap"] = json!(true);
+    again["request_ids"] = json!([approved[0]]);
+    let (st, v) = s.post("/api/runs", again).await;
+    assert_eq!((st, code(&v)), (409, "request_not_available"), "{v}");
+    // Discarding the draft releases them for the next run.
+    let (st, _) = s
+        .delete(
+            &format!("/api/runs/{}", run["id"].as_str().unwrap()),
+            Some("application/json"),
+            "",
+        )
+        .await;
+    assert_eq!(st, 204);
+    let (_, v) = s.get("/api/requests?status=approved").await;
+    assert!(v["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["run_id"].is_null() && r["line_id"].is_null()));
+    // Exactly the named ones: the rest wait.
+    let mut named = run_body("2026-10-01", "2026-10-31", &[(&c, 1, "C-3")], "k-req-3");
+    named["request_ids"] = json!([approved[1]]);
+    let (st, run) = s.post("/api/runs", named).await;
+    assert_eq!(st, 201, "{run}");
+    assert_eq!(run["lines"].as_array().unwrap().len(), 2);
+    let (_, v) = s.get("/api/requests?status=approved").await;
+    let in_run: Vec<&str> = v["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["run_id"] == run["id"])
+        .map(|r| r["invoice_ref"].as_str().unwrap())
+        .collect();
+    assert_eq!(in_run, vec!["B-1"]);
+    let mut unknown = run_body("2026-12-01", "2026-12-31", &[(&c, 1, "C-4")], "k-req-4");
+    unknown["request_ids"] = json!(["nope"]);
+    let (st, v) = s.post("/api/runs", unknown).await;
+    assert_eq!((st, code(&v)), (400, "unknown_request"), "{v}");
+}
+
+/// A contractor's default amount: set, cleared, validated, and left alone by other edits.
+#[tokio::test]
+async fn a_contractors_default_amount_is_edited_through_patch() {
+    let (s, pool) = start_full().await;
+    let id = contractor(&pool, 1).await;
+    let path = format!("/api/contractors/{id}");
+    let (st, v) = s.get(&path).await;
+    assert_eq!((st, &v["default_amount_usd_cents"]), (200, &Value::Null));
+    let (st, v) = s.patch(&path, json!({"default_amount_usd_cents": 480_000})).await;
+    assert_eq!((st, &v["default_amount_usd_cents"]), (200, &json!(480_000)), "{v}");
+    let (_, v) = s.patch(&path, json!({"name": "Renamed"})).await;
+    assert_eq!(v["default_amount_usd_cents"], json!(480_000), "absent leaves it: {v}");
+    for bad in [json!(0), json!(-5), json!(12.5), json!("4800"), json!(1_000_000_001)] {
+        let (st, v) = s.patch(&path, json!({"default_amount_usd_cents": bad})).await;
+        assert_eq!((st, code(&v)), (400, "invalid_default_amount"), "{bad}: {v}");
+    }
+    let (_, v) = s.patch(&path, json!({"default_amount_usd_cents": null})).await;
+    assert_eq!(v["default_amount_usd_cents"], Value::Null, "null clears it: {v}");
+}
+
+fn today() -> time::Date {
+    time::OffsetDateTime::now_utc().date()
+}
+
+fn iso(d: time::Date) -> String {
+    payslip::schedule::iso(d)
+}
+
+/// This calendar month as a period.
+fn this_month() -> (String, String) {
+    let first = time::Date::from_calendar_date(today().year(), today().month(), 1).unwrap();
+    let last = first.replace_day(first.month().length(first.year())).unwrap();
+    (iso(first), iso(last))
+}
+
+/// A monthly schedule whose pay day is today, drafting on the day: the draft is due at once.
+fn due_today() -> Value {
+    let day = today().day();
+    json!({
+        "cadence": "monthly",
+        "pay_day": if day <= 28 { day.to_string() } else { "last".into() },
+        "draft_days_before": 0,
+    })
+}
+
+/// Saving a schedule inside its draft window drafts the period at once, with one line per
+/// contractor who has a default amount or an approved request; the schedule then moves on and
+/// names the draft until it is paid.
+#[tokio::test]
+async fn the_schedule_drafts_from_defaults_and_approved_requests() {
+    let (s, pool) = start_full().await;
+    let (st, v) = s.get("/api/schedule").await;
+    assert_eq!((st, &v["schedule"]), (200, &Value::Null));
+    let (st, v) = s
+        .put("/api/schedule", json!({"cadence": "yearly", "pay_day": "1"}))
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_cadence"), "{v}");
+    let (st, v) = s
+        .put("/api/schedule", json!({"cadence": "weekly", "pay_day": "25"}))
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_pay_day"), "{v}");
+    let (st, v) = s
+        .put(
+            "/api/schedule",
+            json!({"cadence": "monthly", "pay_day": "last", "draft_days_before": 40}),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_draft_days"), "{v}");
+
+    let (a, key_a) = keyed_contractor(&pool, 1, 1).await;
+    let b = contractor(&pool, 2).await;
+    let _nobody = contractor(&pool, 3).await;
+    for (id, cents) in [(&a, 100_000), (&b, 250_000)] {
+        let (st, _) = s
+            .patch(
+                &format!("/api/contractors/{id}"),
+                json!({"default_amount_usd_cents": cents}),
+            )
+            .await;
+        assert_eq!(st, 200);
+    }
+    let (start, end) = this_month();
+    // An approved request from A for this month replaces A's default amount.
+    let (_, r) = s
+        .post(
+            "/api/portal/requests",
+            request_body(&key_a, 123_400, "A-OCT", &start, &end),
+        )
+        .await;
+    s.post(
+        &format!("/api/requests/{}/approve", r["id"].as_str().unwrap()),
+        json!({}),
+    )
+    .await;
+
+    let (st, v) = s.put("/api/schedule", due_today()).await;
+    assert_eq!(st, 200, "{v}");
+    let sched = &v["schedule"];
+    assert_eq!(sched["cadence"], json!("monthly"));
+    assert_eq!(sched["draft_days_before"], json!(0));
+    assert_eq!(sched["active"], json!(true));
+    let drafted = &sched["drafted"];
+    assert_eq!(drafted["period_start"], json!(start), "{v}");
+    assert_eq!(drafted["period_end"], json!(end));
+    assert_eq!(drafted["pay_day"], json!(iso(today())));
+    assert_eq!(drafted["status"], json!("draft"));
+    assert_eq!(sched["overdue"], json!(false));
+    // The next period is the month after; its pay day and draft day are reported.
+    assert!(sched["next_period_start"].as_str().unwrap() > end.as_str(), "{v}");
+    assert!(sched["next_pay_day"].is_string() && sched["drafts_on"].is_string());
+
+    let run_id = drafted["run_id"].as_str().unwrap();
+    let (st, run) = s.get(&format!("/api/runs/{run_id}")).await;
+    assert_eq!((st, run["status"].as_str()), (200, Some("draft")), "{run}");
+    let lines = run["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 2, "A by request, B by default, nobody for C: {run}");
+    let line_a = lines.iter().find(|l| l["contractor_id"] == json!(a)).unwrap();
+    assert_eq!(line_a["amount_usd_cents"], json!(123_400));
+    assert_eq!(line_a["invoice_ref"], json!("A-OCT"));
+    let line_b = lines.iter().find(|l| l["contractor_id"] == json!(b)).unwrap();
+    assert_eq!(line_b["amount_usd_cents"], json!(250_000));
+    assert_eq!(line_b["invoice_ref"], json!(format!("{start} to {end}")));
+    let (_, v) = s.get("/api/requests?status=approved").await;
+    assert_eq!(v["requests"][0]["run_id"], json!(run_id), "the request is in the draft");
+    let (_, log) = s.get(&format!("/api/runs/{run_id}/log")).await;
+    assert!(log["events"].as_array().unwrap().iter().any(|e| e["message"]
+        .as_str()
+        .unwrap()
+        .starts_with("Drafted by the pay schedule")));
+
+    // Saving again does not draft the period twice: it is covered, so the schedule moves on.
+    let (st, v) = s.put("/api/schedule", due_today()).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["schedule"]["drafted"]["run_id"], json!(run_id));
+    let (_, runs) = s.get("/api/runs").await;
+    assert_eq!(runs["runs"].as_array().unwrap().len(), 1);
+    let (st, v) = s.get("/api/schedule").await;
+    assert_eq!((st, v["schedule"]["drafted"]["run_id"].as_str()), (200, Some(run_id)));
+}
+
+/// A run made by hand that covers the period is left alone: no draft, the schedule moves on and
+/// names that run instead.
+#[tokio::test]
+async fn the_schedule_skips_a_period_a_run_already_covers() {
+    let (s, pool) = start_full().await;
+    let a = contractor(&pool, 1).await;
+    let (st, _) = s
+        .patch(
+            &format!("/api/contractors/{a}"),
+            json!({"default_amount_usd_cents": 1000}),
+        )
+        .await;
+    assert_eq!(st, 200);
+    let (start, end) = this_month();
+    let (st, by_hand) = s
+        .post("/api/runs", run_body(&start, &end, &[(&a, 777, "HAND")], "k-hand"))
+        .await;
+    assert_eq!(st, 201, "{by_hand}");
+    let (st, v) = s.put("/api/schedule", due_today()).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["schedule"]["drafted"]["run_id"], by_hand["id"]);
+    let (_, runs) = s.get("/api/runs").await;
+    assert_eq!(runs["runs"].as_array().unwrap().len(), 1, "no second run");
+    assert!(v["schedule"]["next_period_start"].as_str().unwrap() > end.as_str());
+    // Switched off, the schedule drafts nothing more.
+    let mut off = due_today();
+    off["active"] = json!(false);
+    let (st, v) = s.put("/api/schedule", off).await;
+    assert_eq!((st, v["schedule"]["active"].as_bool()), (200, Some(false)), "{v}");
 }

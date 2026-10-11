@@ -19,7 +19,7 @@ use super::AppStateRef;
 use crate::{
     db::{self, NewLine, NewRun, RunInsert, RunRow},
     error::{ApiError, ApiResult},
-    memo,
+    memo, requests,
     runs::{run_over_cap, validate_period, FundMethod, FundRequest},
 };
 
@@ -57,6 +57,12 @@ struct CreateRun {
     /// run, such as a bonus or a correction).
     #[serde(default)]
     allow_overlap: bool,
+    /// Take every approved payment request for the period into the run: onto its contractor's
+    /// line when the body has one, else as a line of its own.
+    #[serde(default)]
+    include_requests: bool,
+    /// Exactly these approved requests instead (what the payer kept on the Amounts step).
+    request_ids: Option<Vec<String>>,
 }
 
 /// SHA-256 of a create request's canonical form: the period, and each line's contractor, amount
@@ -240,6 +246,55 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
             invoice_ref: invoice,
         });
     }
+    // Approved payment requests for the period: the ones named, or all of them.
+    let taken = match &input.request_ids {
+        Some(ids) => {
+            let found = requests::by_ids(&s.db, ids).await?;
+            for id in ids {
+                let r = found.iter().find(|r| &r.id == id).ok_or_else(|| {
+                    ApiError::bad_request(
+                        "unknown_request",
+                        format!("Payment request {id} does not exist."),
+                        "Reload the requests and try again.",
+                    )
+                })?;
+                let in_period = r.period_start <= input.period_end && r.period_end >= input.period_start;
+                if r.status != "approved" || r.run_id.is_some() || r.contractor_archived || !in_period {
+                    let why = if r.run_id.is_some() {
+                        "in another run".to_string()
+                    } else if !in_period {
+                        "for another period".to_string()
+                    } else if r.contractor_archived {
+                        "from an archived contractor".to_string()
+                    } else {
+                        r.status.clone()
+                    };
+                    return Err(ApiError::conflict(
+                        "request_not_available",
+                        format!(
+                            "The request {} from {} is {why} and cannot join this run.",
+                            r.invoice_ref, r.contractor_name
+                        ),
+                        "Reload the requests: only approved requests for this period that no run has taken can join.",
+                    ));
+                }
+            }
+            found
+        }
+        None if input.include_requests => {
+            requests::approved_for_period(&s.db, &input.period_start, &input.period_end).await?
+        }
+        None => vec![],
+    };
+    let draft_lines = requests::merge_lines(lines, &taken);
+    let lines: Vec<NewLine> = draft_lines.iter().map(|l| l.line.clone()).collect();
+    if lines.len() > MAX_LINES {
+        return Err(ApiError::bad_request(
+            "too_many_lines",
+            format!("With the payment requests, this run would pay more than {MAX_LINES} contractors."),
+            "Split the payroll into two runs.",
+        ));
+    }
     // PAYSLIP_MAX_RUN_USD_CENTS (ADR-025): said at creation, and checked again at funding.
     if let Some(cap) = s.cfg.max_run_usd_cents {
         let total: u64 = lines.iter().map(|l| l.amount_usd_cents).sum();
@@ -255,7 +310,22 @@ async fn create(State(s): State<AppStateRef>, Json(input): Json<CreateRun>) -> A
         allow_overlap: input.allow_overlap,
     };
     match db::create_run(&s.db, &run, &lines).await? {
-        RunInsert::Created(id) => Ok((StatusCode::CREATED, Json(view(&s, &id).await?))),
+        RunInsert::Created(id) => {
+            requests::link(&s.db, &id, &draft_lines).await?;
+            if !taken.is_empty() {
+                db::log_event(
+                    &s.db,
+                    &id,
+                    &format!(
+                        "{} approved payment request{} taken into the run",
+                        taken.len(),
+                        if taken.len() == 1 { "" } else { "s" }
+                    ),
+                )
+                .await?;
+            }
+            Ok((StatusCode::CREATED, Json(view(&s, &id).await?)))
+        }
         // Lost a race with a submission carrying the same key.
         RunInsert::KeyExists(existing) => replay(&s, &existing, &hash).await,
         RunInsert::Overlaps(runs) => Err(overlap_error(&input.period_start, &input.period_end, &runs)),

@@ -6,7 +6,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::AppStateRef;
 use crate::{
@@ -36,7 +36,20 @@ pub struct ContractorInput {
     settlement_choice: Option<String>,
     payout_chain: Option<String>,
     payout_address: Option<String>,
+    /// The usual pay in cents for a scheduled draft: a number sets it, `null` clears it, absent
+    /// leaves it as it is (so `null` must survive deserialisation, which `present` ensures).
+    #[serde(default, deserialize_with = "present")]
+    default_amount_usd_cents: Option<serde_json::Value>,
 }
+
+/// Keeps a JSON `null` as `Some(Value::Null)`: a field sent as null is a request to clear it,
+/// unlike a field left out.
+fn present<'de, D: Deserializer<'de>>(d: D) -> Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(d).map(Some)
+}
+
+/// $10,000,000.00, the ceiling for one pay line.
+const MAX_DEFAULT_CENTS: i64 = 1_000_000_000;
 
 const PAYOUT_CHAINS: &[&str] = &["base", "arb", "eth", "sol"];
 
@@ -128,6 +141,24 @@ fn validate(network: &ZcashNetwork, input: ContractorInput, base: Option<&Contra
     } else {
         (None, None)
     };
+    let default_amount_usd_cents = match &input.default_amount_usd_cents {
+        None => base.and_then(|b| b.default_amount_usd_cents),
+        Some(serde_json::Value::Null) => None,
+        Some(v) => {
+            let cents = v
+                .as_i64()
+                .filter(|_| v.is_i64() || v.is_u64())
+                .filter(|c| (1..=MAX_DEFAULT_CENTS).contains(c))
+                .ok_or_else(|| {
+                    ApiError::bad_request(
+                        "invalid_default_amount",
+                        "The default amount must be a whole number of cents above zero and at most $10,000,000.",
+                        "Send default_amount_usd_cents as an integer, for example 480000 for $4,800.00, or null to clear it.",
+                    )
+                })?;
+            Some(cents)
+        }
+    };
     Ok(NewContractor {
         name,
         email,
@@ -135,6 +166,7 @@ fn validate(network: &ZcashNetwork, input: ContractorInput, base: Option<&Contra
         settlement_choice: settlement,
         payout_chain,
         payout_address,
+        default_amount_usd_cents,
     })
 }
 
@@ -228,8 +260,13 @@ async fn create(
         ));
     }
     let index = db::next_account_index(&s.db).await?;
-    let (_ufvk, birthday) = s.payer()?.ensure_account(index, new.name.clone()).await?;
+    let (ufvk, birthday) = s.payer()?.ensure_account(index, new.name.clone()).await?;
     let c = db::insert_contractor(&s.db, &new, index, birthday).await?;
+    // The key's fingerprint maps a viewing key sent to the portal back to this contractor.
+    let params = s.cfg.network.params();
+    if let Ok(k) = zcash_keys::keys::UnifiedFullViewingKey::decode(&params, &ufvk) {
+        db::set_contractor_fingerprint(&s.db, &c.id, &crate::viewer::fingerprint_of(&params, &k)).await?;
+    }
     Ok((StatusCode::CREATED, Json(c)))
 }
 
@@ -406,8 +443,10 @@ mod tests {
             payout_chain: None,
             payout_address: None,
             fvk_shared_at: None,
+            default_amount_usd_cents: None,
             created_at: String::new(),
             archived_at: None,
+            key_fingerprint: None,
         }
     }
 
@@ -419,6 +458,7 @@ mod tests {
             settlement_choice: c.settlement_choice.clone(),
             payout_chain: c.payout_chain.clone(),
             payout_address: c.payout_address.clone(),
+            default_amount_usd_cents: c.default_amount_usd_cents,
         }
     }
 

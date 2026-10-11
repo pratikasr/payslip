@@ -13,6 +13,7 @@ import { Sensitive } from "@/components/ds/sensitive";
 import { StatusTag } from "@/components/ds/status";
 import { Tag } from "@/components/ds/tag";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { chainLabel } from "@/lib/addresses";
 import { api, toDisplayError, type ApiError, type Contractor, type Run } from "@/lib/api";
-import { formatDate, formatShortDate, truncateMiddle } from "@/lib/format";
+import { formatDate, formatShortDate, parseUsdToCents, truncateMiddle, usdAmountProblem } from "@/lib/format";
 import { latestPeriodFirst, lineConfirmedAt } from "@/lib/payroll";
 import { linesWithRuns, runStateLabel, settlementLabel } from "@/components/console/lib";
 import { Drawer, DrawerTitle } from "@/components/console/ui";
@@ -37,12 +38,15 @@ export function PersonDrawer({
   onClose,
   onEdit,
   onArchive,
+  onSaved,
 }: {
   contractor: Contractor | undefined;
   runs: Run[];
   onClose: () => void;
   onEdit: (c: Contractor) => void;
   onArchive: (c: Contractor) => void;
+  /** The contractor after an edit made inside the drawer (the default amount). */
+  onSaved?: (c: Contractor) => void;
 }) {
   // The person shown last: when what opened the drawer is gone (the Add dialog), focus goes to
   // their name in the table.
@@ -60,7 +64,9 @@ export function PersonDrawer({
       title={contractor ? null : "Contractor"}
       eyebrow={contractor ? "Contractor" : null}
     >
-      {contractor ? <PersonBody contractor={contractor} runs={runs} onEdit={onEdit} onArchive={onArchive} /> : null}
+      {contractor ? (
+        <PersonBody contractor={contractor} runs={runs} onEdit={onEdit} onArchive={onArchive} onSaved={onSaved} />
+      ) : null}
     </Drawer>
   );
 }
@@ -70,11 +76,13 @@ function PersonBody({
   runs,
   onEdit,
   onArchive,
+  onSaved,
 }: {
   contractor: Contractor;
   runs: Run[];
   onEdit: (c: Contractor) => void;
   onArchive: (c: Contractor) => void;
+  onSaved?: (c: Contractor) => void;
 }) {
   const coin = useCoinUnit();
   const history = linesWithRuns(runs).filter(({ line }) => line.contractor_id === c.id);
@@ -155,6 +163,9 @@ function PersonBody({
             settlementLabel(c, coin)
           )}
         </Row>
+        <Row label="Default amount">
+          <DefaultAmount contractor={c} onSaved={onSaved} />
+        </Row>
         <Row label="Payslip access">{c.fvk_shared_at ? `Shared ${formatDate(c.fvk_shared_at)}` : "Not shared yet"}</Row>
         <Row label="Added">{formatDate(c.created_at)}</Row>
       </dl>
@@ -223,6 +234,97 @@ function PersonBody({
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * What a scheduled payroll pays this person unless they sent a request for the period
+ * (ADR-028), changed in place: Change, an amount, Save. Empty clears it.
+ */
+function DefaultAmount({ contractor: c, onSaved }: { contractor: Contractor; onSaved?: (c: Contractor) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cents = c.default_amount_usd_cents ?? null;
+  const start = () => {
+    setValue(cents ? (cents / 100).toFixed(2) : "");
+    setError(null);
+    setEditing(true);
+  };
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const typed = value.trim();
+    const parsed = typed ? parseUsdToCents(typed) : null;
+    if (typed && (parsed === null || parsed <= 0)) {
+      setError(usdAmountProblem(typed) ?? "The amount must be more than zero.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = await api.updateContractor(c.id, { default_amount_usd_cents: typed ? parsed : null });
+      onSaved?.(saved);
+      toast.success(typed ? `Default amount for ${c.name} saved` : `Default amount for ${c.name} cleared`);
+      setEditing(false);
+    } catch (err) {
+      const e = toDisplayError(err);
+      setError(e.hint ? `${e.message} ${e.hint}` : e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!editing) {
+    return (
+      <span className="inline-flex flex-wrap items-center justify-end gap-x-2 gap-y-1">
+        {cents ? <Usd cents={cents} /> : <span className="text-muted-foreground">None</span>}
+        <Button variant="ghost" size="xs" onClick={start} aria-label={`Change default amount for ${c.name}`}>
+          Change
+        </Button>
+      </span>
+    );
+  }
+  return (
+    <form onSubmit={save} noValidate className="flex flex-col items-end gap-1.5">
+      <div className="flex items-center gap-1.5">
+        <label htmlFor={`default-amount-${c.id}`} className="sr-only">
+          Default amount for {c.name}, US dollars
+        </label>
+        <div className="relative">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[0.8125rem] text-muted-foreground"
+          >
+            $
+          </span>
+          <Input
+            id={`default-amount-${c.id}`}
+            inputMode="decimal"
+            autoComplete="off"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="0.00"
+            autoFocus
+            className="money h-8 w-32 pl-5 text-right text-[0.9375rem] tracking-normal"
+            aria-invalid={!!error}
+            aria-describedby={error ? `default-amount-error-${c.id}` : undefined}
+          />
+        </div>
+        <Button type="submit" size="sm" disabled={busy}>
+          {busy ? "Saving" : "Save"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+      {error ? (
+        <p id={`default-amount-error-${c.id}`} className="max-w-[18rem] text-[0.8125rem] text-destructive">
+          {error}
+        </p>
+      ) : (
+        <p className="text-[0.8125rem] text-muted-foreground">Prefilled into scheduled payroll. Empty clears it.</p>
+      )}
+    </form>
   );
 }
 

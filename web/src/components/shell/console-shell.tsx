@@ -3,7 +3,17 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Bookmark as BookmarkIcon, Home, KeyRound, Landmark, ListChecks, Plus, UsersRound } from "lucide-react";
+import {
+  Bookmark as BookmarkIcon,
+  Home,
+  Inbox,
+  KeyRound,
+  Landmark,
+  ListChecks,
+  Plus,
+  Settings,
+  UsersRound,
+} from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
 import { NetworkBadge } from "@/components/app/network-badge";
 import { AppShell, Bookmark, SidebarBrand, type ShellConfig } from "@/components/shell/app-shell";
@@ -27,6 +37,9 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
   const sample = useSampleCompany();
   const wallet = useResource((s) => api.wallet(s), "shell-wallet");
   const runs = useResource((s) => api.runs(s), "shell-runs");
+  // Payment requests waiting for a decision (ADR-028); older services have no queue.
+  const requests = useResource((s) => api.requests("submitted", s), "shell-requests");
+  const toReview = requests.data?.counts.submitted ?? 0;
   // The bookmark is the latest pay period's run (cancelled ones are closed and skipped).
   const latest = runs.data ? latestPeriodFirst(runs.data.filter((r) => !isCancelled(r)))[0] : undefined;
   const open = runs.data?.filter((r) => !["paid", "failed", "cancelled"].includes(r.status)).length ?? 0;
@@ -48,11 +61,13 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
       [
         { href: "/console", label: "Home", icon: Home, exact: true },
         { href: "/console/runs", label: "Payroll runs", icon: ListChecks, badge: open > 0 ? open : undefined },
+        { href: "/console/requests", label: "Requests", icon: Inbox, badge: toReview > 0 ? toReview : undefined },
       ],
       [
         { href: "/console/people", label: "People", icon: UsersRound },
         { href: "/console/access", label: "Payslip access", icon: KeyRound },
         { href: "/console/treasury", label: "Treasury", icon: Landmark },
+        { href: "/console/settings", label: "Settings", icon: Settings },
       ],
     ],
     bookmarks: (

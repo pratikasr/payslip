@@ -114,7 +114,7 @@ test("a contractor unlocks the portal by pasting their viewing key", async ({ pa
   expect(await page.evaluate(() => sessionStorage.getItem("payslip.portal.key"))).toBe(key.ufvk);
   expect(await page.evaluate(() => localStorage.getItem("payslip.portal.key"))).toBeNull();
   const nav = page.getByRole("navigation", { name: "Main" });
-  await expect(nav.getByRole("link")).toHaveText(["Home", "Payslips", "Tax documents"]);
+  await expect(nav.getByRole("link")).toHaveText(["Home", "Payslips", "Request a payment", "Tax documents"]);
 });
 
 test("an invite link unlocks the portal and the key leaves the address bar", async ({ page }) => {

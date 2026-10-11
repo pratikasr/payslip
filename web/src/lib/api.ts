@@ -85,6 +85,8 @@ export interface Contractor {
   payout_chain: string | null;
   payout_address: string | null;
   fvk_shared_at: string | null;
+  /** The usual pay in cents, prefilled into a scheduled draft; null when none. Absent on older services. */
+  default_amount_usd_cents?: number | null;
   created_at: string;
 }
 
@@ -95,6 +97,8 @@ export interface NewContractor {
   email?: string;
   payout_chain?: string;
   payout_address?: string;
+  /** A number sets the default amount, null clears it, absent leaves it as it is. */
+  default_amount_usd_cents?: number | null;
 }
 
 export interface ContractorViewingKey {
@@ -293,6 +297,94 @@ export interface NewRun {
    * answer 409 period_overlap without it when another run covers the period; older ones ignore it.
    */
   allow_overlap?: boolean;
+  /** Approved payment requests to pay with this run: each joins its contractor's line (ADR-028). */
+  request_ids?: string[];
+  /** Every approved request for the period instead of naming them. */
+  include_requests?: boolean;
+}
+
+/* ---------- Pay schedule and payment requests (ADR-028) ---------- */
+
+export type Cadence = "weekly" | "biweekly" | "monthly";
+
+/** The run the schedule drafted last (or found covering its period), while it still needs the payer. */
+export interface ScheduleDraft {
+  run_id: string;
+  period_start: string;
+  period_end: string;
+  /** The pay day the draft was made for. */
+  pay_day: string | null;
+  status: RunStatus;
+}
+
+export interface PaySchedule {
+  id: string;
+  cadence: Cadence;
+  /** monday .. sunday for weekly and biweekly; "1" .. "28" or "last" for monthly. */
+  pay_day: string;
+  draft_days_before: number;
+  active: boolean;
+  next_period_start: string;
+  next_period_end: string;
+  next_pay_day: string | null;
+  /** The day the next draft is made. */
+  drafts_on: string | null;
+  drafted: ScheduleDraft | null;
+  /** True when the drafted run's pay day has passed and it is not paid. */
+  overdue: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScheduleInput {
+  cadence: Cadence;
+  pay_day: string;
+  draft_days_before?: number;
+  active?: boolean;
+}
+
+export type PaymentRequestStatus = "submitted" | "approved" | "rejected" | "paid";
+
+export interface PaymentRequest {
+  id: string;
+  contractor_id: string;
+  contractor_name: string;
+  amount_usd_cents: number;
+  period_start: string;
+  period_end: string;
+  invoice_ref: string;
+  due_date: string | null;
+  note: string | null;
+  status: PaymentRequestStatus;
+  /** The run and line paying it, once an approved request is taken into a run. */
+  run_id: string | null;
+  line_id: string | null;
+  recurring: Cadence | null;
+  /** The payer's note on approval or rejection. */
+  decision_note: string | null;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+  /** The paying line's transaction, once it has one. */
+  txid: string | null;
+  explorer_url: string | null;
+  paid_at: string | null;
+}
+
+export interface NewPaymentRequest {
+  ufvk: string;
+  amount_usd_cents: number;
+  period_start: string;
+  period_end: string;
+  invoice_ref: string;
+  due_date?: string;
+  note?: string;
+  recurring?: Cadence;
+}
+
+export interface RequestCounts {
+  submitted: number;
+  approved: number;
 }
 
 export interface FundRequest {
@@ -632,7 +724,7 @@ async function toApiError(res: Response): Promise<ApiError> {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
 }
@@ -718,6 +810,36 @@ export const api = {
   runLog: (runId: string, signal?: AbortSignal) =>
     json<{ events: RunLogEvent[] }>(`/api/runs/${id(runId)}/log`, { signal }).then((r) => r.events),
   runEventsUrl: (runId: string) => `${API_URL}/api/runs/${id(runId)}/events`,
+
+  /** The pay schedule, or null when none is set. */
+  schedule: (signal?: AbortSignal) =>
+    json<{ schedule: PaySchedule | null }>("/api/schedule", { signal }).then((r) => r.schedule),
+  /** Saves the schedule; the service drafts at once when the next pay day is inside the draft window. */
+  saveSchedule: (input: ScheduleInput) =>
+    json<{ schedule: PaySchedule }>("/api/schedule", { method: "PUT", body: input }).then((r) => r.schedule),
+  /** The payer's queue, newest first; `status` narrows it. */
+  requests: (status?: PaymentRequestStatus, signal?: AbortSignal) =>
+    json<{ requests: PaymentRequest[]; counts: RequestCounts }>(`/api/requests${status ? `?status=${status}` : ""}`, {
+      signal,
+    }),
+  approveRequest: (requestId: string, note?: string) =>
+    json<PaymentRequest>(`/api/requests/${id(requestId)}/approve`, {
+      method: "POST",
+      body: note ? { note } : {},
+    }),
+  rejectRequest: (requestId: string, note?: string) =>
+    json<PaymentRequest>(`/api/requests/${id(requestId)}/reject`, {
+      method: "POST",
+      body: note ? { note } : {},
+    }),
+  /** A contractor's request, keyed by their viewing key (never stored by the web app). */
+  submitRequest: (body: NewPaymentRequest) => json<PaymentRequest>("/api/portal/requests", { method: "POST", body }),
+  myRequests: (ufvk: string, signal?: AbortSignal) =>
+    json<{ contractor: { id: string; name: string }; requests: PaymentRequest[] }>("/api/portal/requests/list", {
+      method: "POST",
+      body: { ufvk },
+      signal,
+    }),
 
   contractorStatement: (body: ContractorStatementRequest, signal?: AbortSignal) =>
     json<Statement>("/api/statements/contractor", { method: "POST", body, signal }),

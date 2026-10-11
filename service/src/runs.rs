@@ -572,6 +572,12 @@ impl Executor {
         let _ = self.inner.changes.send(run_id.to_string());
     }
 
+    /// Tells open progress streams that `run_id` changed outside the executor (the pay schedule
+    /// drafted it, say).
+    pub fn changed(&self, run_id: &str) {
+        self.notify(run_id);
+    }
+
     async fn log(&self, run_id: &str, message: impl AsRef<str>) {
         let m = message.as_ref();
         tracing::info!(run = run_id, "{m}");
@@ -1699,6 +1705,38 @@ impl Executor {
         }
     }
 
+    /// The payment requests this line pays are paid now; a recurring one gets its successor.
+    async fn requests_paid(&self, run_id: &str, l: &LineRow) -> Result<(), StepError> {
+        let (paid, successors) = crate::requests::mark_paid_for_line(&self.inner.db, &l.id).await?;
+        if paid == 0 {
+            return Ok(());
+        }
+        self.log(
+            run_id,
+            format!(
+                "{}'s payment request{} paid with this line",
+                l.contractor_name,
+                if paid == 1 {
+                    "".to_string()
+                } else {
+                    format!("s ({paid})")
+                }
+            ),
+        )
+        .await;
+        for r in successors {
+            self.log(
+                run_id,
+                format!(
+                    "Next request from {} created for {} to {} ({})",
+                    l.contractor_name, r.period_start, r.period_end, r.invoice_ref
+                ),
+            )
+            .await;
+        }
+        Ok(())
+    }
+
     async fn step_paying(&self, run: &RunRow) -> Result<Outcome, StepError> {
         let db = &self.inner.db;
         let chain = &self.inner.chain;
@@ -1902,6 +1940,7 @@ impl Executor {
                                 ),
                             )
                             .await;
+                            self.requests_paid(&run.id, l).await?;
                         }
                     }
                     None => {

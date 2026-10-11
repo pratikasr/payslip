@@ -95,9 +95,15 @@ pub struct Contractor {
     pub payout_chain: Option<String>,
     pub payout_address: Option<String>,
     pub fvk_shared_at: Option<String>,
+    /// The usual pay in US cents, prefilled into a scheduled draft; None when the contractor is
+    /// paid by request or by hand.
+    pub default_amount_usd_cents: Option<i64>,
     pub created_at: String,
     #[serde(skip)]
     pub archived_at: Option<String>,
+    /// Fingerprint of the account's viewing key (viewer.rs); None until recorded.
+    #[serde(skip)]
+    pub key_fingerprint: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -108,6 +114,7 @@ pub struct NewContractor {
     pub settlement_choice: String,
     pub payout_chain: Option<String>,
     pub payout_address: Option<String>,
+    pub default_amount_usd_cents: Option<i64>,
 }
 
 pub async fn list_contractors(pool: &Pool) -> anyhow::Result<Vec<Contractor>> {
@@ -158,8 +165,9 @@ pub async fn insert_contractor(
     let id = Uuid::new_v4().to_string();
     sqlx::query(
         "INSERT INTO contractors (id, name, email, unified_address, zip32_account_index, account_birthday_height,
-                                  settlement_choice, payout_chain, payout_address, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                  settlement_choice, payout_chain, payout_address, default_amount_usd_cents,
+                                  created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&c.name)
@@ -170,6 +178,7 @@ pub async fn insert_contractor(
     .bind(&c.settlement_choice)
     .bind(&c.payout_chain)
     .bind(&c.payout_address)
+    .bind(c.default_amount_usd_cents)
     .bind(now())
     .execute(pool)
     .await?;
@@ -179,7 +188,7 @@ pub async fn insert_contractor(
 pub async fn update_contractor(pool: &Pool, id: &str, c: &NewContractor) -> anyhow::Result<()> {
     sqlx::query(
         "UPDATE contractors SET name = ?, email = ?, unified_address = ?, settlement_choice = ?, payout_chain = ?,
-                                payout_address = ? WHERE id = ?",
+                                payout_address = ?, default_amount_usd_cents = ? WHERE id = ?",
     )
     .bind(&c.name)
     .bind(&c.email)
@@ -187,10 +196,43 @@ pub async fn update_contractor(pool: &Pool, id: &str, c: &NewContractor) -> anyh
     .bind(&c.settlement_choice)
     .bind(&c.payout_chain)
     .bind(&c.payout_address)
+    .bind(c.default_amount_usd_cents)
     .bind(id)
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Records the fingerprint of the contractor's viewing key, so a key sent to the portal maps to
+/// them with one lookup (`find_contractor_by_fingerprint`).
+pub async fn set_contractor_fingerprint(pool: &Pool, id: &str, fingerprint: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE contractors SET key_fingerprint = ? WHERE id = ?")
+        .bind(fingerprint)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// The active contractor whose viewing key has this fingerprint. Account indices are never
+/// reused, so a fingerprint belongs to at most one contractor.
+pub async fn find_contractor_by_fingerprint(pool: &Pool, fingerprint: &str) -> anyhow::Result<Option<Contractor>> {
+    Ok(
+        sqlx::query_as("SELECT * FROM contractors WHERE key_fingerprint = ? AND archived_at IS NULL")
+            .bind(fingerprint)
+            .fetch_optional(pool)
+            .await?,
+    )
+}
+
+/// Contractors created before fingerprints were recorded (archived ones included: their keys
+/// still exist).
+pub async fn contractors_without_fingerprint(pool: &Pool) -> anyhow::Result<Vec<Contractor>> {
+    Ok(
+        sqlx::query_as("SELECT * FROM contractors WHERE key_fingerprint IS NULL ORDER BY zip32_account_index")
+            .fetch_all(pool)
+            .await?,
+    )
 }
 
 pub async fn archive_contractor(pool: &Pool, id: &str) -> anyhow::Result<()> {
@@ -299,6 +341,7 @@ pub struct LineRow {
     pub payout_address: Option<String>,
 }
 
+#[derive(Clone, Debug)]
 pub struct NewLine {
     pub contractor_id: String,
     pub amount_usd_cents: u64,
@@ -520,6 +563,11 @@ pub async fn delete_draft_run(pool: &Pool, id: &str) -> anyhow::Result<bool> {
         .bind(id)
         .execute(&mut *tx)
         .await?;
+    // Requests the draft had taken go back to waiting for the next run for their period.
+    sqlx::query("UPDATE payment_requests SET run_id = NULL, line_id = NULL WHERE run_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     sqlx::query("DELETE FROM pay_lines WHERE run_id = ?")
         .bind(id)
         .execute(&mut *tx)
@@ -642,7 +690,18 @@ pub async fn cancel_run(pool: &Pool, id: &str, from: &[&str]) -> anyhow::Result<
     for f in from {
         q = q.bind(*f);
     }
-    Ok(q.execute(pool).await?.rows_affected() == 1)
+    let cancelled = q.execute(pool).await?.rows_affected() == 1;
+    if cancelled {
+        // Approved requests the run had taken wait for the next run for their period; none of
+        // them was paid, since a cancelled run received no money.
+        sqlx::query(
+            "UPDATE payment_requests SET run_id = NULL, line_id = NULL WHERE run_id = ? AND status = 'approved'",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
+    }
+    Ok(cancelled)
 }
 
 pub async fn set_line_amount(

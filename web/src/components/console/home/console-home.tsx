@@ -12,7 +12,16 @@ import { SampleTag } from "@/components/shell/sample-tag";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
-import { api, UNREACHABLE_CODE, type Contractor, type Run, type Wallet } from "@/lib/api";
+import {
+  api,
+  UNREACHABLE_CODE,
+  type Contractor,
+  type PaymentRequest,
+  type PaySchedule,
+  type RequestCounts,
+  type Run,
+  type Wallet,
+} from "@/lib/api";
 import { companyName } from "@/lib/company";
 import { formatCount } from "@/lib/format";
 import { cn } from "cn";
@@ -28,6 +37,10 @@ export interface HomeData {
   wallet?: Wallet;
   contractors?: Contractor[];
   runs?: Run[];
+  /** The pay schedule (ADR-028), null when none is set; undefined when not fetched. */
+  schedule?: PaySchedule | null;
+  /** Payment requests waiting for a decision. */
+  requests?: { requests: PaymentRequest[]; counts: RequestCounts };
 }
 
 /** Where the company is: the one next step decides which quick action is gold. */
@@ -54,6 +67,9 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
   const wallet = useResource((s) => retryOnce(() => api.wallet(s)), "console-wallet", initial.wallet);
   const contractors = useResource((s) => api.contractors(s), "console-contractors", initial.contractors);
   const runs = useResource((s) => api.runs(s), "console-runs", initial.runs);
+  // Neither blocks the page: an older service has no schedule and no request queue.
+  const schedule = useResource((s) => api.schedule(s), "console-schedule", initial.schedule);
+  const requests = useResource((s) => api.requests("submitted", s), "console-requests", initial.requests);
 
   const errors = [wallet.error, contractors.error, runs.error];
   const offline = errors.find((e) => e?.code === UNREACHABLE_CODE);
@@ -128,13 +144,31 @@ export function ConsoleHome({ initial }: { initial: HomeData }) {
       ) : !contractors.data || !runs.data ? (
         <Problem error={failed!} onRetry={retryAll} />
       ) : (
-        <HomeBody wallet={wallet.data} contractors={contractors.data} runs={runs.data} />
+        <HomeBody
+          wallet={wallet.data}
+          contractors={contractors.data}
+          runs={runs.data}
+          schedule={schedule.data ?? null}
+          toReview={requests.data?.counts.submitted ?? 0}
+        />
       )}
     </>
   );
 }
 
-function HomeBody({ wallet, contractors, runs }: { wallet?: Wallet; contractors: Contractor[]; runs: Run[] }) {
+function HomeBody({
+  wallet,
+  contractors,
+  runs,
+  schedule,
+  toReview,
+}: {
+  wallet?: Wallet;
+  contractors: Contractor[];
+  runs: Run[];
+  schedule: PaySchedule | null;
+  toReview: number;
+}) {
   const hasPaid = runs.some((r) => r.status === "paid");
   // The Payments table lists money that moved: it waits for a funded run.
   const hasLines = runs.some((r) => r.lines.length > 0 && pastFunding(r));
@@ -149,9 +183,15 @@ function HomeBody({ wallet, contractors, runs }: { wallet?: Wallet; contractors:
           </div>
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             <TreasuryCard wallet={wallet} runs={runs} />
-            <NextPayrollCard runs={runs} contractors={contractors} />
+            <NextPayrollCard runs={runs} contractors={contractors} schedule={schedule} />
             {/* Three cards on two columns: the to-do list takes the full second row. */}
-            <TodoCard runs={runs} contractors={contractors} className="md:col-span-2 xl:col-span-1" />
+            <TodoCard
+              runs={runs}
+              contractors={contractors}
+              schedule={schedule}
+              toReview={toReview}
+              className="md:col-span-2 xl:col-span-1"
+            />
           </div>
         </>
       ) : (
@@ -162,8 +202,8 @@ function HomeBody({ wallet, contractors, runs }: { wallet?: Wallet; contractors:
             <div className="grid gap-5 lg:grid-cols-2">
               <ContractorsCard contractors={contractors} runs={runs} />
               <div className="grid content-start gap-5">
-                <NextPayrollCard runs={runs} contractors={contractors} />
-                <TodoCard runs={runs} contractors={contractors} />
+                <NextPayrollCard runs={runs} contractors={contractors} schedule={schedule} />
+                <TodoCard runs={runs} contractors={contractors} schedule={schedule} toReview={toReview} />
               </div>
             </div>
           ) : null}
