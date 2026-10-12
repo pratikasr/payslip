@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "cn";
 import { LogoMark } from "@/components/app/logo";
+import { ThemeToggle } from "@/components/app/theme-toggle";
 import { GITHUB_URL } from "@/components/marketing/data";
 import { DemoLink } from "@/components/marketing/demo-link";
 import { MobileMenu, type NavLink } from "@/components/marketing/mobile-menu";
@@ -44,6 +45,7 @@ export function SiteHeader() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2 lg:ml-6">
+            <ThemeToggle />
             <DemoLink className={cn(ghostButton, "hidden sm:inline-flex")} />
             <MobileMenu links={LINKS} />
           </div>
