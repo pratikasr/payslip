@@ -35,6 +35,8 @@ const COLUMNS: { title: string; links: FooterLink[] }[] = [
     links: [
       { label: "MIT license", href: repoFile("LICENSE"), external: true },
       { label: "Source code", href: GITHUB_URL, external: true },
+      { label: "Privacy", href: "/privacy" },
+      { label: "Terms of use", href: "/terms" },
     ],
   },
 ];
