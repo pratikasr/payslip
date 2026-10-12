@@ -28,7 +28,18 @@ There is no smart contract. Zcash has none. Payslip is a service plus a wallet l
 
 ## Proof
 
-### Testnet runs (already on chain)
+### Mainnet run, 12 Oct 2026
+
+The first real payroll, on the hosted app at https://app.payslip.cash (Google sign-in, the treasury key created in the browser and unlocked for the run): run `dfdc9d29-75a3-4197-8bb4-21b2f6175fea`. Funded with ZEC sent shielded from the owner's own Zodl wallet, $10.70 at $1,331.56 per ZEC, the market rate of the funding block (ADR-025). One contractor, Biqtor, paid $10.00 in one shielded transaction; the rest is network fees and unspent change, which Books lists as the run's explained variance. Open either transaction at zecblock.com: an Ironwood transaction with two actions and a 0.0001 ZEC fee, and nothing else. Both were checked on `api.zecblock.com/api/tx/<txid>` on 12 Oct 2026.
+
+| Step | Transaction | Height | What the explorer shows |
+| --- | --- | ---: | --- |
+| Allocation, treasury to Biqtor's account | [4c0d68d2...](https://zecblock.com/tx/4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109) | 3,514,840 (04:56:13 UTC) | Ironwood pool, 2 actions, fee 0.0001 ZEC; no amount, no sender, no recipient |
+| Payment to Biqtor, $10.00 | [53f87ab5...](https://zecblock.com/tx/53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc) | 3,514,845 (05:00:48 UTC) | the same |
+
+What the viewing keys show for the same two transactions: the allocation and the $10.00 line, with the memo (run id, period, invoice reference, USD basis). The mainnet judge kit with those keys is published at `docs/judge/judge-kit-mainnet.json` once the owner exports it from the hosted console (see [Status](#status)); until then, Biqtor's statement is on the contractor's own portal link.
+
+### Testnet runs
 
 The same flow, run on Zcash testnet (NU7) through the API and the web app. Open any txid at `https://testnet.zecblock.com/tx/<txid>`.
 
@@ -43,19 +54,15 @@ The same flow, run on Zcash testnet (NU7) through the API and the web app. Open 
 
 Round-by-round results: [docs/TEST-REPORT.md](docs/TEST-REPORT.md). The demo click path and timings: [docs/DEMO.md](docs/DEMO.md).
 
-### Mainnet demo run
-
-The mainnet run (three real people with Zashi addresses, funded with ZEC from the owner's own wallet on the hosted app) and its video are pending the owner's ZEC and the three addresses; see [Status](#status).
-
 ## Check it yourself (for judges)
 
 Payslip's claim is "private to the world, transparent to your accountant". Each half can be checked without trusting us:
 
-1. **Private to the world.** Open any payroll payment above in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient. (The USDC conversion leg, run d9248c70, is the stated exception.)
-2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power), and a Payslip web app on testnet serves the same file, so there is nothing to download. In Books (`/books`, or Viewing as Accountant) choose **Load the judge kit**: every run, every line, funded against paid, read from the chain. In the contractor portal (`/portal`, or Viewing as Contractor) choose **Try it with a demo key**: Amara Okafor's payslips from the kit, and nobody else's. Where the kit is not served, Import key file in Books, or one contractor key pasted into the portal, does the same. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit is written by `scripts/mainnet-demo.sh` and published at `docs/judge/judge-kit-mainnet.json` after the mainnet run.
+1. **Private to the world.** Open the mainnet payment above, or any testnet payment, in the explorer. It is a shielded Ironwood transaction: no amount, no sender, no recipient. (The USDC conversion leg, run d9248c70, is the stated exception.)
+2. **Transparent to the accountant.** The judge kit [docs/judge/judge-kit-testnet.json](docs/judge/judge-kit-testnet.json) holds the viewing keys of the demo accounts (no spending power), and a Payslip web app on testnet serves the same file, so there is nothing to download. In Books (`/books`, or Viewing as Accountant) choose **Load the judge kit**: every run, every line, funded against paid, read from the chain. In the contractor portal (`/portal`, or Viewing as Contractor) choose **Try it with a demo key**: Amara Okafor's payslips from the kit, and nobody else's. Where the kit is not served, Import key file in Books, or one contractor key pasted into the portal, does the same. The kit comes from a clean demo wallet that holds only the demo company's July, August and September payrolls (`run_ids` in the kit, [docs/proof/demo-wallet-runs.json](docs/proof/demo-wallet-runs.json); September is rehearsal 3), so every role sees the same three runs. All three were paid on 5 Oct 2026, so payslips and Books date them 5 Oct. Each key is also in the kit as `ufvk_wallet`, the ZIP 316 Revision 0 form (`uviewtest1...`) that released wallets import, so a key can be checked outside Payslip too. The mainnet kit, the hosted treasury's viewing keys, is published at `docs/judge/judge-kit-mainnet.json` once the owner exports it from the console.
 3. **One payment, nothing else.** The kit's `payment_proof` token opens a single payment. Open `/verify#<token>` on a Payslip web app: it fetches that transaction from the chain, decrypts that one output with the proof, and shows the amount, the address it went to and the memo. Change one character and it fails.
 
-The hosted statements page is https://dkg1ye1jxb6hs.cloudfront.net (Books: Load the judge kit; the contractor portal: Try it with a demo key). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
+The product is hosted on Zcash mainnet: the company console at https://app.payslip.cash (sign in with Google; a new account joins as a viewer) and the public statements page at https://payslip.cash (Books: Import key file with the judge kit; the contractor portal: paste a key). To run the same thing locally, with no seed and no wallet, first stop any other Payslip service on 127.0.0.1:8080 (the Quick start one, for example), then:
 
 1. From the repository root, start the service in statements-only mode. It stays in the foreground:
 
@@ -250,8 +257,8 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M3 Runs (API, swap venue, executor) | done, verified on testnet |
 | M4 Statement engine | done, verified on testnet |
 | M5 Web dashboards | done: console, contractor portal, Books and the public proof printed on paper, the payslip as a pay advice with the explorer's view as its yellow carbon copy (docs/DESIGN.md section 17), with sign-in, recorded approvals, the pay schedule and payment requests; verified on testnet |
-| M6 Mainnet demo run | Fund with ZEC built (ADR-025), the run scripted, rehearsed on testnet and dry-run on mainnet up to the deposit; waiting on the owner's ZEC and the three contractors' Zashi addresses |
-| M7 Submission | prepared (docs/SUBMISSION.md, docs/RUN-DAY.md); waiting on hosting (the owner runs the AWS scripts in deploy/README.md), the two videos and the Colosseum form |
+| M6 Mainnet demo run | done on chain: run dfdc9d29 paid on the hosted app on 12 Oct 2026, funded with ZEC from the owner's wallet, two shielded Ironwood transactions at 3,514,840 and 3,514,845 (Proof above); the mainnet judge kit and the video are pending the owner's export and recording |
+| M7 Submission | hosted at https://payslip.cash and https://app.payslip.cash on mainnet; waiting on the two videos, the repository going public and the Colosseum form (docs/SUBMISSION.md) |
 
 ## How it is judged (Rules §8 and FAQ)
 

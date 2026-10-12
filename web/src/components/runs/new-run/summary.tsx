@@ -77,7 +77,7 @@ export function DraftSummary({
   return (
     <Frame total={check.totalCents} people={n} tag={testnet ? <SimulatedRate rateE6={simulatedRate} /> : null}>
       <Row label="Period">{periodTitle(draft.from, draft.to)}</Row>
-      <Row label="Contractors get" sub={testnet ? "At the simulated rate" : "At the rate the quote locks"}>
+      <Row label="Contractors get" sub={testnet ? "At the simulated rate" : "At the rate fixed when you fund"}>
         {estimate !== null ? (
           <>
             about <Zec zat={estimate} />
@@ -91,7 +91,7 @@ export function DraftSummary({
           up to <Zec zat={reserve} />
         </Row>
       ) : (
-        <Row label="Fees">Shown in the quote</Row>
+        <Row label="Fees">Shown at the Fund step</Row>
       )}
       {testnet && wallet ? (
         <Row label="Treasury">
