@@ -45,3 +45,4 @@ __pycache__/
 
 # agent worktrees
 .claude/worktrees/
+deploy/aws/domain-*.env
