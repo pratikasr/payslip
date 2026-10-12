@@ -874,6 +874,7 @@ function ZecDeposit({
 }) {
   const funding: Funding = run.funding!;
   const zec = isZecFunding(funding) ? funding : null;
+  const { health } = useHealth();
   const [pollError, setPollError] = useState<ApiError | null>(null);
   const [requesting, setRequesting] = useState(false);
   const [requestError, setRequestError] = useState<ApiError | null>(null);
@@ -934,15 +935,7 @@ function ZecDeposit({
       "ZEC seen in the treasury. Waiting for the market price to value it; this page checks again every 5 seconds.";
   } else if (pending > 0) {
     progress = (
-      <>
-        <Zec zat={pending} short /> seen, waiting to confirm. <Zec zat={received} short /> confirmed so far
-        {shortfall ? (
-          <>
-            ; <Zec zat={shortfall} short /> still needed
-          </>
-        ) : null}
-        .
-      </>
+      <Incoming pending={pending} received={received} shortfall={shortfall} needed={health?.min_confirmations ?? 3} />
     );
   } else if (received > 0 && shortfall) {
     progress = (
@@ -1378,5 +1371,66 @@ function DiscardRun({ run }: { run: Run }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * The deposit is on the chain and gathering confirmations: a live line, so the wait reads as
+ * something happening rather than a page that stopped. The count is an estimate from the seen
+ * and confirmed amounts (the service reports no per-deposit confirmation count), so it moves
+ * from 1 to the last step as the deposit confirms.
+ */
+function Incoming({
+  pending,
+  received,
+  shortfall,
+  needed,
+}: {
+  pending: number;
+  received: number;
+  shortfall: number | null;
+  needed: number;
+}) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = window.setInterval(() => setTick((n) => n + 1), 600);
+    return () => window.clearInterval(t);
+  }, []);
+  const dots = ".".repeat((tick % 3) + 1);
+  // One step while the deposit is only seen; the last step once part of it has confirmed.
+  const step = received > 0 ? Math.max(1, needed - 1) : 1;
+  return (
+    <span className="block" data-testid="zec-incoming">
+      <span className="font-type text-[0.9375rem] font-bold text-foreground">
+        Incoming
+        <span aria-hidden="true" className="inline-block w-[1.6em] text-left">
+          {dots}
+        </span>
+      </span>
+      <span className="mt-1.5 flex items-center gap-2" aria-hidden="true">
+        {Array.from({ length: needed }).map((_, i) => (
+          <span
+            key={i}
+            className={cn(
+              "h-2.5 w-7 border border-ink",
+              i < step ? "bg-ink" : "bg-transparent",
+              i === step ? "animate-pulse bg-ink/40" : "",
+            )}
+          />
+        ))}
+        <span className="num font-type text-[0.8125rem] text-muted-foreground">
+          {step} of {needed} confirmations
+        </span>
+      </span>
+      <span className="mt-1.5 block">
+        <Zec zat={pending} short /> seen on the chain; <Zec zat={received} short /> confirmed
+        {shortfall ? (
+          <>
+            , <Zec zat={shortfall} short /> still needed
+          </>
+        ) : null}
+        . About a minute per confirmation on mainnet.
+      </span>
+    </span>
   );
 }

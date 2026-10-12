@@ -509,6 +509,8 @@ struct Health {
     max_run_usd_cents: Option<u64>,
     /// PAYSLIP_APPROVALS_REQUIRED: approvals a run needs before it is paid; 0 when none.
     approvals_required: u32,
+    /// Confirmations a deposit needs before it counts, so the Fund step can show progress.
+    min_confirmations: u32,
     /// PAYSLIP_OPEN_MEMBERSHIP: the role (viewer or accountant) every signed-in person with a
     /// verified email is given on first sight; None when membership is invite-only.
     open_membership: Option<&'static str>,
@@ -613,6 +615,7 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
         fund_with_zec: s.cfg.fund_with_zec(),
         max_run_usd_cents: s.cfg.max_run_usd_cents,
         approvals_required: s.cfg.auth.approvals_required,
+        min_confirmations: s.cfg.min_confirmations,
         open_membership: s.cfg.auth.open_membership.map(|r| r.as_str()),
         treasury: s.treasury.as_ref().map(|t| t.state().as_str()).unwrap_or("none"),
         version: env!("CARGO_PKG_VERSION"),

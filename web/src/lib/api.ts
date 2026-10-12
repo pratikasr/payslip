@@ -81,6 +81,7 @@ export interface Health {
    * it is paid; 0 when none. With two or more, the run's creator cannot be one of them. Absent
    * on older services.
    */
+  min_confirmations?: number;
   approvals_required?: number;
   /**
    * PAYSLIP_OPEN_MEMBERSHIP: the role every signed-in person with a verified email is given on
