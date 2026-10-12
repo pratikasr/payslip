@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useResource } from "@/hooks/use-resource";
 import { useRunEvents } from "@/hooks/use-run-events";
 import { api, toDisplayError, type ApiError, type Health, type Run, type RunLogEvent } from "@/lib/api";
+import { LockedPrompt } from "@/components/console/treasury-key/unlock";
 import { rateE6FromDecimal } from "@/lib/format";
 import { overlappingRuns } from "@/lib/payroll";
 import { requestsByContractor, requestsForPeriod } from "@/components/requests/request-meta";
@@ -24,6 +25,7 @@ import {
   flowPhase,
   fundingClosed,
   newerRun,
+  parkedForUnlock,
   retryOnce,
   runTitle,
 } from "../run-meta";
@@ -426,8 +428,23 @@ function FundingStopped({ run, onRun }: { run: Run; onRun: (run: Run) => void })
   return (
     <div className="space-y-5">
       <FlowTitle>{run.error ? failureTitle(run) : "Funding stopped"}</FlowTitle>
-      <p className="text-[0.9375rem] text-muted-foreground">Nothing was paid. Fix the cause below, then resume.</p>
-      {run.error ? (
+      <p className="text-[0.9375rem] text-muted-foreground">
+        {parkedForUnlock(run)
+          ? "Nothing was paid and nothing failed: the treasury key is locked. Unlock it, then resume."
+          : "Nothing was paid. Fix the cause below, then resume."}
+      </p>
+      {parkedForUnlock(run) ? (
+        <LockedPrompt
+          what="so the run is parked"
+          error={run.error}
+          onUnlocked={resume}
+          action={
+            <Button size="sm" variant="secondary" onClick={resume} disabled={busy}>
+              {busy ? "Resuming" : "Resume"}
+            </Button>
+          }
+        />
+      ) : run.error ? (
         <Problem error={run.error} onRetry={resume} retryLabel="Resume" busyLabel="Resuming" busy={busy} />
       ) : null}
       {error ? <Problem error={error} title="Could not resume" /> : null}

@@ -9,7 +9,14 @@ export type Role = "admin" | "approver" | "accountant" | "viewer";
 export const ROLES: Role[] = ["admin", "approver", "accountant", "viewer"];
 
 export type Permission =
-  "read" | "view_keys" | "manage_contractors" | "manage_runs" | "sync_wallet" | "manage_org" | "view_audit";
+  | "read"
+  | "view_keys"
+  | "manage_contractors"
+  | "manage_runs"
+  | "sync_wallet"
+  | "manage_org"
+  | "view_audit"
+  | "manage_treasury_key";
 
 const ALLOWED: Record<Permission, Role[]> = {
   read: ["admin", "approver", "accountant", "viewer"],
@@ -19,6 +26,8 @@ const ALLOWED: Record<Permission, Role[]> = {
   sync_wallet: ["admin"],
   manage_org: ["admin"],
   view_audit: ["admin", "accountant"],
+  // Create, unlock, lock, replace and move the treasury key; every member reads its state.
+  manage_treasury_key: ["admin"],
 };
 
 export function roleAllows(role: Role | null | undefined, permission: Permission): boolean {
@@ -34,7 +43,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 
 /** One sentence per role, shown where a role is chosen. */
 export const ROLE_HELP: Record<Role, string> = {
-  admin: "Everything: people, payroll, viewing keys, members and settings.",
+  admin: "Everything: people, payroll, viewing keys, the treasury key, members and settings.",
   approver:
     "Runs payroll (create, fund, execute and cancel runs), sets the pay schedule, decides payment requests, and reads everything else.",
   accountant: "Reads everything, exports viewing keys and the books, and reads the audit log.",

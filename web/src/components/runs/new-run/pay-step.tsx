@@ -21,7 +21,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { StreamState } from "@/hooks/use-run-events";
-import { api, ApiError, toDisplayError, type PayLine, type Run, type RunLogEvent } from "@/lib/api";
+import { api, ApiError, isTreasuryLocked, toDisplayError, type PayLine, type Run, type RunLogEvent } from "@/lib/api";
+import { LockedPrompt } from "@/components/console/treasury-key/unlock";
 import { approvalState } from "@/lib/approvals";
 import { formatClock, formatHeight, formatTime } from "@/lib/format";
 import { lineConfirmedAt } from "@/lib/payroll";
@@ -40,6 +41,7 @@ import {
   isLineWarning,
   isPaying,
   LineStatus,
+  parkedForUnlock,
   plural,
   retryOnce,
   runTitle,
@@ -164,7 +166,14 @@ function Ready({ run, onRun }: { run: Run; onRun: (run: Run) => void }) {
 
       <LineList lines={run.lines} run={run} changed={new Set()} className="mt-6" />
 
-      {error ? (
+      {error && isTreasuryLocked(error) ? (
+        <LockedPrompt
+          className="mt-5"
+          what="so payments cannot start"
+          error={error}
+          onUnlocked={() => setError(null)}
+        />
+      ) : error ? (
         <Problem className="mt-5" error={error} title="Payments did not start" onRetry={pay} busy={busy} />
       ) : null}
 
@@ -327,9 +336,23 @@ function Stopped({ run, onRun, changed }: { run: Run; onRun: (run: Run) => void;
       <H1>{failureTitle(run)}</H1>
       <p className="mt-1.5 text-[0.9375rem] text-muted-foreground">
         {paid > 0 ? `${paid} of ${run.lines.length} payments went through and stay paid. ` : ""}
-        Resuming retries only what is left.
+        {parkedForUnlock(run)
+          ? "Nothing failed: the treasury key is locked. Unlock it, then resume what is left."
+          : "Resuming retries only what is left."}
       </p>
-      {run.error ? (
+      {parkedForUnlock(run) ? (
+        <LockedPrompt
+          className="mt-5"
+          what="so the run is parked"
+          error={run.error}
+          onUnlocked={resume}
+          action={
+            <Button size="sm" variant="secondary" onClick={resume} disabled={busy}>
+              {busy ? "Resuming" : "Resume"}
+            </Button>
+          }
+        />
+      ) : run.error ? (
         <Problem
           className="mt-5"
           error={run.error}
@@ -339,7 +362,11 @@ function Stopped({ run, onRun, changed }: { run: Run; onRun: (run: Run) => void;
           busy={busy}
         />
       ) : null}
-      {error ? <Problem className="mt-3" error={error} title="Could not resume" /> : null}
+      {error && isTreasuryLocked(error) ? (
+        <LockedPrompt className="mt-3" what="so the run cannot resume" error={error} onUnlocked={resume} />
+      ) : error ? (
+        <Problem className="mt-3" error={error} title="Could not resume" />
+      ) : null}
       <LineList lines={run.lines} run={run} changed={changed} className="mt-6" />
       {!run.error ? (
         <div className="mt-6">

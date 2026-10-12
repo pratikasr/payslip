@@ -23,10 +23,12 @@ import {
   type Contractor,
   type Organisation,
   type PaySchedule,
+  type TreasuryKey,
 } from "@/lib/api";
 import { formatCount, formatDate } from "@/lib/format";
 import { CADENCES, nextDraftSentence, payDayOptions, scheduleSentence } from "@/components/requests/request-meta";
 import { OrgSettings } from "@/components/console/org/settings-view";
+import { TreasuryKeyCard } from "@/components/console/treasury-key/status";
 import { Problem } from "@/components/runs/problem";
 import { periodTitle } from "@/components/runs/run-meta";
 
@@ -38,7 +40,7 @@ import { periodTitle } from "@/components/runs/run-meta";
 export function SettingsView({
   initial,
 }: {
-  initial: { org?: Organisation; schedule?: PaySchedule | null; contractors?: Contractor[] };
+  initial: { org?: Organisation; schedule?: PaySchedule | null; contractors?: Contractor[]; key?: TreasuryKey };
 }) {
   const auth = useAuth();
   const schedule = useResource((s) => api.schedule(s), "settings-schedule", initial.schedule);
@@ -49,11 +51,12 @@ export function SettingsView({
         title="Settings"
         description={
           auth.required
-            ? "The organisation as members see it, when payroll is drafted, and what each person is usually paid."
-            : "When payroll is drafted, and what each person is usually paid."
+            ? "The organisation as members see it, the treasury key, when payroll is drafted, and what each person is usually paid."
+            : "The treasury key, when payroll is drafted, and what each person is usually paid."
         }
       />
       <OrgSettings initial={initial.org} />
+      <TreasuryKeyCard initial={initial.key} className="mb-5" />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
         <ScheduleCard
           schedule={schedule.data ?? null}

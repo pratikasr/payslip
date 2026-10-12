@@ -23,6 +23,7 @@ import { cn } from "cn";
 import { TYPE } from "@/components/ds/type";
 import { fundingSource, isSimulated, latestFillRate, paidRuns, retryOnce, zatToCents } from "@/components/console/lib";
 import { IconChip } from "@/components/console/ui";
+import { TreasuryKeyLine } from "@/components/console/treasury-key/status";
 import { Problem } from "@/components/runs/problem";
 import { fundingTag, runTitle } from "@/components/runs/run-meta";
 
@@ -178,6 +179,7 @@ function BalanceCard({ wallet, runs, onSynced }: { wallet: Wallet; runs: Run[]; 
           </Button>
         </div>
         {error ? <Problem error={error} title="Sync did not finish" onRetry={sync} className="mt-3" /> : null}
+        <TreasuryKeyLine className="mt-3 border-t border-hairline pt-3" />
       </div>
     </Card>
   );

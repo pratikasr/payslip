@@ -42,7 +42,7 @@ import {
   type PeriodPoint,
 } from "@/components/console/lib";
 import { Bar, IconChip } from "@/components/console/ui";
-import { periodTitle, plural, runTitle } from "@/components/runs/run-meta";
+import { needsReshare, periodTitle, plural, runTitle } from "@/components/runs/run-meta";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -498,7 +498,8 @@ export function TodoCard({
     }
   }, []);
   const open = openRun(runs);
-  const unshared = contractors.filter((c) => !c.fvk_shared_at);
+  // Not shared yet, or shared before the treasury key was replaced (their key changed).
+  const unshared = contractors.filter((c) => !c.fvk_shared_at || needsReshare(c));
   const hasPeople = contractors.length > 0;
   const tasks: Task[] = [];
   const drafted = scheduledDraft(schedule, runs);

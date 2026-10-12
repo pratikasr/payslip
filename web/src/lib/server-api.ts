@@ -8,7 +8,7 @@
   and the page renders without its first-paint data.
 */
 import { headers } from "next/headers";
-import { API_URL, type Network } from "@/lib/api";
+import { API_URL, type Network, type TreasuryKeyState } from "@/lib/api";
 import { authRequired } from "@/lib/auth-config";
 import { serviceToken } from "@/lib/service-session";
 
@@ -46,7 +46,7 @@ export async function serverGet<T>(path: string, timeoutMs = 2500): Promise<T | 
   }
 }
 
-type Hint = { network?: Network; mode: "full" | "statements" };
+type Hint = { network?: Network; mode: "full" | "statements"; treasury?: TreasuryKeyState };
 
 /** The last hint this server process learnt: a deployment's network and mode do not change. */
 let known: Hint | undefined;
@@ -76,14 +76,26 @@ function statementsOnly(r: { status: number; body: unknown }): boolean {
  * cannot be reached.
  */
 export async function serverServiceHint(timeoutMs = 1500): Promise<Hint | undefined> {
-  const [people, wallet] = await Promise.all([probe("/api/contractors", timeoutMs), probe("/api/wallet", timeoutMs)]);
+  const [people, wallet, key] = await Promise.all([
+    probe("/api/contractors", timeoutMs),
+    probe("/api/wallet", timeoutMs),
+    // The treasury key's state (no_key, locked, unlocked): a file and a clock, answered at once.
+    // Older services have no such route; a deployment with no key yet has no wallet to probe.
+    probe("/api/treasury/key", timeoutMs),
+  ]);
   let hint: Hint | undefined;
   if (statementsOnly(people) || statementsOnly(wallet)) hint = { mode: "statements" };
-  else if (people.ok || wallet.ok) {
+  else if (people.ok || wallet.ok || key.ok) {
     const net = (wallet.body as { network?: string } | null)?.network;
     const network = wallet.ok && (net === "mainnet" || net === "testnet") ? net : known?.network;
-    hint = { mode: "full", network };
+    const state = key.ok ? (key.body as { state?: string } | null)?.state : undefined;
+    const treasury =
+      state === "no_key" || state === "locked" || state === "unlocked" || state === "unlocked_by_env"
+        ? state
+        : undefined;
+    hint = { mode: "full", network, ...(treasury ? { treasury } : {}) };
   }
-  if (hint) known = hint.network || hint.mode === "statements" ? hint : (known ?? hint);
+  // The network and mode of a deployment never change; the key's state does, so it is not kept.
+  if (hint) known = hint.network || hint.mode === "statements" ? { ...hint, treasury: undefined } : (known ?? hint);
   return hint;
 }

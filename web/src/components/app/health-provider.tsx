@@ -1,12 +1,13 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
-import { api, toDisplayError, type ApiError, type Health, type Network } from "@/lib/api";
+import { api, toDisplayError, type ApiError, type Health, type Network, type TreasuryKeyState } from "@/lib/api";
 
 /** What a server render already knows about the service before /api/health answers. */
 export interface ServiceHint {
   network?: Network;
   mode?: "full" | "statements";
+  treasury?: TreasuryKeyState;
 }
 
 interface HealthState {
@@ -18,6 +19,13 @@ interface HealthState {
   network: Network | undefined;
   /** "statements" for a deployment with no wallet; undefined while unknown. */
   mode: "full" | "statements" | undefined;
+  /**
+   * The treasury key's state, from health once it answers, else from the server's hint;
+   * undefined while unknown and on services that do not report it.
+   */
+  treasury: TreasuryKeyState | undefined;
+  /** After an unlock, a lock or a new key: health is read again at once, so the stamp and the gates follow. */
+  setTreasury: (state: TreasuryKeyState) => void;
 }
 
 const HealthContext = createContext<HealthState | null>(null);
@@ -61,9 +69,15 @@ export function HealthProvider({ children, hint }: { children: ReactNode; hint?:
   const refresh = useCallback(() => setTick((t) => t + 1), []);
   const network = health?.network ?? hint?.network;
   const mode = health ? (health.mode ?? "full") : hint?.mode;
+  const treasury = health?.treasury ?? hint?.treasury;
+  // The new state shows at once (the service answered it); the next health read confirms it.
+  const setTreasury = useCallback((state: TreasuryKeyState) => {
+    setHealth((h) => (h ? { ...h, treasury: state } : h));
+    setTick((t) => t + 1);
+  }, []);
   const value = useMemo(
-    () => ({ health, error, loading, refresh, network, mode }),
-    [health, error, loading, refresh, network, mode],
+    () => ({ health, error, loading, refresh, network, mode, treasury, setTreasury }),
+    [health, error, loading, refresh, network, mode, treasury, setTreasury],
   );
   return <HealthContext.Provider value={value}>{children}</HealthContext.Provider>;
 }
