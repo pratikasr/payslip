@@ -48,6 +48,9 @@ pub struct AppState {
     pub lwd: tokio::sync::Mutex<crate::wallet::lwd::Client>,
     /// The last wallet snapshot, served by health while the wallet thread is busy syncing.
     pub last_wallet: std::sync::Mutex<Option<WalletInfo>>,
+    /// The chain tip and its block time as lightwalletd last reported them, with when they were
+    /// fetched: health answers from this for 20 seconds instead of a round trip per request.
+    pub last_tip: std::sync::Mutex<Option<(std::time::Instant, u32, i64)>>,
     /// ZEC market prices for the value of a payment at receipt, and the rate a run funded with
     /// ZEC is recorded at (shared with the executor).
     pub prices: Arc<crate::prices::Prices>,
@@ -178,6 +181,7 @@ pub async fn build_state(cfg: Config) -> anyhow::Result<AppStateRef> {
         schedule_lock: tokio::sync::Mutex::new(()),
         lwd: tokio::sync::Mutex::new(crate::wallet::lwd::connect(&lightwalletd_url)?),
         last_wallet: std::sync::Mutex::new(None),
+        last_tip: std::sync::Mutex::new(None),
     }))
 }
 
@@ -544,11 +548,28 @@ async fn health(State(s): State<AppStateRef>) -> ApiResult<Json<Health>> {
             Err(_) => (s.last_wallet.lock().ok().and_then(|l| l.clone()), true),
         },
     };
-    let tip = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut client = s.lwd.lock().await;
-        crate::wallet::lwd::tip_time(&mut client).await
-    })
-    .await;
+    let cached = s
+        .last_tip
+        .lock()
+        .ok()
+        .and_then(|l| *l)
+        .filter(|(at, _, _)| at.elapsed() < Duration::from_secs(20));
+    let tip = match cached {
+        Some((_, t, time)) => Ok(Ok((t, time))),
+        None => {
+            let fetched = tokio::time::timeout(Duration::from_secs(10), async {
+                let mut client = s.lwd.lock().await;
+                crate::wallet::lwd::tip_time(&mut client).await
+            })
+            .await;
+            if let Ok(Ok((t, time))) = &fetched {
+                if let Ok(mut l) = s.last_tip.lock() {
+                    *l = Some((std::time::Instant::now(), *t, *time));
+                }
+            }
+            fetched
+        }
+    };
     let (chain_tip, skew, err) = match tip {
         Ok(Ok((t, time))) => (
             Some(t),
