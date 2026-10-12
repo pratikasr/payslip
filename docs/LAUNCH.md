@@ -6,7 +6,7 @@ The pitch video script, a pointer to the demo video script, and drafts for findi
 
 The submission form's rule: at most 2 minutes, in English, the founder introduces himself, says what he is building and why he is the person to build it, nothing fancy. Face to camera on a phone or a webcam, one take, no slides, no music.
 
-**272 spoken words.** At 140 words per minute, a calm reading pace, the close lands at 1:52 and the end at 1:56. The time stamps below use that pace; if a take runs past 2:00, read faster rather than cutting a section. Count again after any edit: `awk '/^## Pitch video/{p=1} /^## Product demo/{p=0} p && /^> /' docs/LAUNCH.md | sed 's/^> //' | wc -w` prints the number of words inside the quoted lines (272 today).
+**273 spoken words.** At 140 words per minute, a calm reading pace, the close lands at 1:52 and the end at 1:56. The time stamps below use that pace; if a take runs past 2:00, read faster rather than cutting a section. Count again after any edit: `awk '/^## Pitch video/{p=1} /^## Product demo/{p=0} p && /^> /' docs/LAUNCH.md | sed 's/^> //' | wc -w` prints the number of words inside the quoted lines (273 today).
 
 Record it after the mainnet run, because the proof section is true only then.
 
@@ -28,7 +28,7 @@ Record it after the mainnet run, because the proof section is true only then.
 
 **5. Proof (1:18)**
 
-> This is not a mockup. Payslip has paid real people on Zcash mainnet. The explorer shows those transactions with no amounts and no parties; the judge kit in the README holds the viewing keys, so you can read the same payroll back yourself.
+> This is not a mockup. Payslip has run a real payroll on Zcash mainnet. The explorer shows those transactions with no amounts and no parties; the judge kit in the README holds the viewing keys, so you can read the same payroll back yourself.
 
 **6. Why me (1:36)**
 
@@ -38,7 +38,7 @@ Record it after the mainnet run, because the proof section is true only then.
 
 > Payslip. Private to the world, transparent to your accountant.
 
-Facts the script leans on, with their sources: Toku, Aleo and Paxos Labs launched private stablecoin payroll (USAD on Aleo) on 29 Jan 2026 (https://www.paxoslabs.com/posts/usad-now-on-toku); Aleo's payroll page lists "Zcash, Monero" as "Legacy privacy coins" (https://aleo.org/payroll/). Both checked on 11 Oct 2026. The THORChain line is the only personal detail; do not add others.
+Facts the script leans on, with their sources: Toku, Aleo and Paxos Labs launched private stablecoin payroll (USAD on Aleo) on 29 Jan 2026 (https://www.paxoslabs.com/posts/usad-now-on-toku); Aleo's payroll page lists "Zcash, Monero" as "Legacy privacy coins" (https://aleo.org/payroll/). Both checked on 11 Oct 2026. The THORChain line is the only personal detail; do not add others. If a judge asks about limits: one copy of Payslip serves one company today, as self-hosted software does; hosted multi-company, each company with its own treasury key, people and runs on one host, is the next milestone.
 
 ## Product demo video (3 minutes at most)
 

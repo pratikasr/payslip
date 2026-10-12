@@ -258,7 +258,8 @@ CI runs formatting, clippy, tests and audit for the service and lint, typecheck 
 | M4 Statement engine | done, verified on testnet |
 | M5 Web dashboards | done: console, contractor portal, Books and the public proof printed on paper, the payslip as a pay advice with the explorer's view as its yellow carbon copy (docs/DESIGN.md section 17), with sign-in, recorded approvals, the pay schedule and payment requests; verified on testnet |
 | M6 Mainnet demo run | done on chain: run dfdc9d29 paid on the hosted app on 12 Oct 2026, funded with ZEC from the owner's wallet, two shielded Ironwood transactions at 3,514,840 and 3,514,845 (Proof above); the mainnet judge kit published and read back (docs/proof/mainnet-dfdc9d29.json); the video is the owner's recording |
-| M7 Submission | hosted at https://payslip.cash and https://app.payslip.cash on mainnet; waiting on the two videos, the repository going public and the Colosseum form (docs/SUBMISSION.md) |
+| M7 Submission | hosted at https://payslip.cash and https://app.payslip.cash on mainnet, Google sign-in open to any account; waiting on the two videos, the repository going public and the Colosseum form (docs/SUBMISSION.md) |
+| Next | Hosted multi-company: one host serving many companies, each with its own treasury key, people and runs. Today one copy of Payslip serves one company, as self-hosted software does; another company runs its own copy with deploy/README.md |
 
 ## How it is judged (Rules §8 and FAQ)
 
