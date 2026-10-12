@@ -23,6 +23,9 @@
 
 :8081 {
 	import gate
+	# Payment requests need the company's service (it knows the contractors); statements stay public.
+	@requests path /api/portal/*
+	reverse_proxy @requests app-service:8080
 	reverse_proxy books-service:8080
 }
 
