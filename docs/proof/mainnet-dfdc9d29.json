@@ -1,0 +1,223 @@
+{
+  "note": "The first mainnet payroll on the hosted app, read back from the chain with the published mainnet judge kit by a statements-only Payslip service on 12 Oct 2026 (scanned from height 3,514,687). statement: POST /api/statements/contractor with Biqtor's key; reconciliation: POST /api/statements/accountant with both keys; payment_proof: POST /api/proofs. The unlabelled incoming line in the reconciliation is the owner's ZEC deposit that funded the run, sent from Zodl without a memo.",
+  "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+  "statement": {
+    "account": {
+      "account_index": null,
+      "fingerprint": "44e58fb9a554df2b",
+      "label": null,
+      "role": "unknown"
+    },
+    "funding": [
+      {
+        "account": "44e58fb9a554df2b",
+        "amount_zat": 760999,
+        "date": "2026-10-12",
+        "height": 3514840,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "txid": "4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109"
+      }
+    ],
+    "generated_at": "2026-10-12T05:30:59Z",
+    "lines": [
+      {
+        "account": "44e58fb9a554df2b",
+        "account_index": null,
+        "amount_zat": 750999,
+        "block_time": "2026-10-12T05:00:48Z",
+        "date": "2026-10-12",
+        "direction": "out",
+        "explorer_url": "https://zecblock.com/tx/53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc",
+        "height": 3514845,
+        "invoice_ref": "qwerty",
+        "label": null,
+        "market": {
+          "currency": "USD",
+          "price_cents": 134022,
+          "priced_at": "2026-10-12T05:00:00Z",
+          "source": "coingecko",
+          "value_cents": 1007
+        },
+        "period": "2026-10",
+        "rate_usd_per_zec_e6": 1331560000,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "running_usd_cents": 1000,
+        "running_zat": 750999,
+        "settlement": "held",
+        "to_address": "u1rjq84xhvnayp4hdlfkf3ren4x0d7enn2wmu7fj77vczmp9qek9l0h9heldpkcgvhju0uj65x8n954k0jm3zps4ny7gtjzk3chvzsy64r",
+        "txid": "53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc",
+        "usd_basis_cents": 1000
+      }
+    ],
+    "market": {
+      "available": true,
+      "currency": "USD",
+      "note": null,
+      "priced_lines": 1,
+      "source": "CoinGecko ZEC market price nearest each payment's block time",
+      "total_cents": 1007,
+      "unpriced_lines": 0
+    },
+    "network": "mainnet",
+    "pending": [],
+    "period": {
+      "from": "2026-10-01",
+      "to": "2026-10-31"
+    },
+    "runs": {},
+    "scanned_from_height": 3514687,
+    "scanned_to_height": 3514870,
+    "totals": {
+      "count": 1,
+      "usd_cents": 1000,
+      "zat": 750999
+    },
+    "unlabelled": []
+  },
+  "reconciliation": {
+    "accounts": [
+      {
+        "account_index": null,
+        "fingerprint": "48f8af4b4229d7f2",
+        "label": null,
+        "role": "treasury",
+        "scanned_from_height": 3514687
+      },
+      {
+        "account_index": null,
+        "fingerprint": "44e58fb9a554df2b",
+        "label": null,
+        "role": "unknown",
+        "scanned_from_height": 3514687
+      }
+    ],
+    "funding": [
+      {
+        "account": "44e58fb9a554df2b",
+        "amount_zat": 760999,
+        "date": "2026-10-12",
+        "height": 3514840,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "txid": "4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109"
+      }
+    ],
+    "generated_at": "2026-10-12T05:31:02Z",
+    "lines": [
+      {
+        "account": "44e58fb9a554df2b",
+        "account_index": null,
+        "amount_zat": 750999,
+        "block_time": "2026-10-12T05:00:48Z",
+        "date": "2026-10-12",
+        "direction": "out",
+        "explorer_url": "https://zecblock.com/tx/53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc",
+        "height": 3514845,
+        "invoice_ref": "qwerty",
+        "label": null,
+        "market": null,
+        "period": "2026-10",
+        "rate_usd_per_zec_e6": 1331560000,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "running_usd_cents": 1000,
+        "running_zat": 750999,
+        "settlement": "held",
+        "to_address": "u1rjq84xhvnayp4hdlfkf3ren4x0d7enn2wmu7fj77vczmp9qek9l0h9heldpkcgvhju0uj65x8n954k0jm3zps4ny7gtjzk3chvzsy64r",
+        "txid": "53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc",
+        "usd_basis_cents": 1000
+      }
+    ],
+    "network": "mainnet",
+    "pending": [],
+    "period": {
+      "from": "2026-10-01",
+      "to": "2026-10-31"
+    },
+    "run_index": {},
+    "run_records": [
+      {
+        "date": "2026-10-12",
+        "funded_usd_cents": 1070,
+        "height": 3514840,
+        "period": "2026-10",
+        "rate_usd_per_zec_e6": 1331560000,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "txid": "4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109",
+        "zec_acquired_zat": 803580
+      }
+    ],
+    "runs": [
+      {
+        "allocated_zat": 760999,
+        "allocations": 1,
+        "difference_usd_cents": 0,
+        "explained_usd_cents": 70,
+        "funded_usd_cents": 1070,
+        "funding_date": "2026-10-12",
+        "lines": 1,
+        "missing_accounts": 0,
+        "missing_zat": 0,
+        "network_fees_zat": 20000,
+        "paid_usd_cents": 1000,
+        "paid_zat": 750999,
+        "pending_lines": 0,
+        "period": "2026-10",
+        "rate_usd_per_zec_e6": 1331560000,
+        "rounding_tolerance_cents": 2,
+        "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+        "status": "reconciled",
+        "unpaid_accounts": 0,
+        "unspent_zat": 32581,
+        "variance_usd_cents": 70,
+        "zec_acquired_zat": 803580
+      }
+    ],
+    "scanned_from_height": 3514687,
+    "scanned_to_height": 3514870,
+    "totals": {
+      "count": 1,
+      "funded_usd_cents": 1070,
+      "paid_usd_cents": 1000,
+      "paid_zat": 750999,
+      "variance_usd_cents": 70
+    },
+    "treasury_key_present": true,
+    "unlabelled": [
+      {
+        "account": "48f8af4b4229d7f2",
+        "amount_zat": 804000,
+        "date": "2026-10-12",
+        "direction": "in",
+        "explorer_url": "https://zecblock.com/tx/31723f4de8a719d6866d2b8b0b7b376982e1d5e8edec654be8e8dc89ddde7fa7",
+        "height": 3514836,
+        "label": null,
+        "memo_text": null,
+        "reason": "no_memo",
+        "txid": "31723f4de8a719d6866d2b8b0b7b376982e1d5e8edec654be8e8dc89ddde7fa7"
+      }
+    ]
+  },
+  "payment_proof": {
+    "height": 3514845,
+    "mined": true,
+    "network": "mainnet",
+    "proofs": [
+      {
+        "action_index": 0,
+        "amount_zat": 750999,
+        "memo": {
+          "asserted_by_sender": true,
+          "invoice_ref": "qwerty",
+          "kind": "pay_line",
+          "period": "2026-10",
+          "rate_usd_per_zec_e6": 1331560000,
+          "run_id": "dfdc9d29-75a3-4197-8bb4-21b2f6175fea",
+          "usd_basis_cents": 1000
+        },
+        "pool": "ironwood",
+        "recipient": "u1rjq84xhvnayp4hdlfkf3ren4x0d7enn2wmu7fj77vczmp9qek9l0h9heldpkcgvhju0uj65x8n954k0jm3zps4ny7gtjzk3chvzsy64r",
+        "token": "pp1AQABAAC8yDi4SGsaCvAFwEdj7vBvR0UfzmeH4x4KWVFctXr4Uy5q0NLC-DMHhFMzWrUw8AXJwOXD4S9hDmohmIc_xP_7"
+      }
+    ],
+    "txid": "53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc"
+  }
+}

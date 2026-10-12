@@ -21,6 +21,8 @@ type Message = { tone: "ok" | "error"; text: string; hint?: string };
 
 /** The judge kit published with the repository, served by the web app (web/public). */
 export const JUDGE_KIT_URL = "/judge-kit-testnet.json";
+/** The kit published for a network: the sample company on testnet, Payslip Labs on mainnet. */
+export const judgeKitUrl = (network: string) => `/judge-kit-${network}.json`;
 
 /**
  * Ways in: the company's key file, the judge kit on testnet, keys pasted one per line, or a QR
@@ -119,7 +121,7 @@ export function KeyImport({
     setBusy("kit");
     setMessage(null);
     try {
-      const res = await fetch(JUDGE_KIT_URL, { cache: "no-store" });
+      const res = await fetch(judgeKitUrl(network ?? "testnet"), { cache: "no-store" });
       if (!res.ok) throw new Error("The judge kit is not published on this deployment.");
       commit(parseKeyFile(await res.text()).keys, "the judge kit");
     } catch (err) {
@@ -165,13 +167,15 @@ export function KeyImport({
           },
         ]
       : []),
-    ...(testnet
+    ...(testnet || network === "mainnet"
       ? [
           {
             id: "kit",
             icon: FlaskConical,
             title: busy === "kit" ? "Loading the judge kit" : "Load the judge kit",
-            hint: "The demo company's seven testnet keys, as published with Payslip.",
+            hint: testnet
+              ? "The demo company's seven testnet keys, as published with Payslip."
+              : "Payslip Labs' two mainnet keys, the treasury's and Biqtor's, as published with Payslip.",
             onClick: () => void loadJudgeKit(),
             disabled: busy !== null,
             primary: !companyKeys,

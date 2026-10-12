@@ -17,7 +17,7 @@ import { t, textLink } from "@/components/marketing/classes";
 
 /*
   The landing page's pair, built from the shared paper forms (components/ds/paper.tsx): one real
-  transaction as Amara Okafor's pay advice, the white original her viewing key reads, and as its
+  transaction as Biqtor's pay advice, the white original the viewing key reads, and as its
   yellow carbon copy, what the public explorer shows. The rows run in the same order on both, so
   each ink bar sits across from the value it hides; each bar is as wide as that value in the
   typewriter face. The ink lifts off the original's values once, on load; reduced motion shows
@@ -124,7 +124,7 @@ export function HeroCopies({ className }: { className?: string }) {
               >
                 {short}
                 <span className="sr-only">
-                  , transaction {P.txid} on the Zcash testnet explorer (opens in a new tab)
+                  , transaction {P.txid} on {P.explorerName} (opens in a new tab)
                 </span>
               </a>
             </FormRow>

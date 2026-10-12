@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "cn";
 import { formatHeight } from "@/lib/format";
-import { DEMO_PAYMENTS, DEMO_RUNS, HERO_PAYMENT, runTotalCents, type ProofRun } from "@/components/marketing/data";
+import { DEMO_PAYMENTS, DEMO_RUNS, SAMPLE_LABEL, runTotalCents, type ProofRun } from "@/components/marketing/data";
 import { Usd } from "@/components/marketing/money";
 import { Height, Section, TxLink } from "@/components/marketing/parts";
 import { t, textLink } from "@/components/marketing/classes";
@@ -24,7 +24,7 @@ export function Proof() {
         </>
       }
     >
-      <p className={cn(t.label, "mt-8 text-ash")}>{HERO_PAYMENT.label}</p>
+      <p className={cn(t.label, "mt-8 text-ash")}>{SAMPLE_LABEL}</p>
       <table className="mt-3 w-full border-collapse border-b-2 border-ink text-left text-[0.875rem] sm:text-[0.9375rem]">
         <caption className="sr-only">
           The sample company&apos;s payroll payments on Zcash testnet: who was paid and how much, from the viewing keys,

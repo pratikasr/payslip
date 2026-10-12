@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { cn } from "cn";
-import { DemoLink } from "@/components/marketing/demo-link";
+import { consoleHref, portalHref } from "@/lib/public-url";
 import { inkButton } from "@/components/marketing/classes";
 
 export interface NavLink {
@@ -90,7 +90,12 @@ export function MobileMenu({ links }: { links: NavLink[] }) {
             ))}
           </ul>
         </nav>
-        <DemoLink onClick={close} className={cn(inkButton, "mt-5 w-full sm:w-auto")} />
+        <a href={consoleHref()} onClick={close} className={cn(inkButton, "mt-5 w-full sm:w-auto")}>
+          Run payroll
+        </a>
+        <a href={portalHref("/portal")} onClick={close} className={cn(inkButton, "mt-3 w-full sm:w-auto")}>
+          See your payslips
+        </a>
       </div>
     </div>
   );

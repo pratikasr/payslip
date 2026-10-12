@@ -1,46 +1,49 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "cn";
-import { HERO_PAYMENT, JUDGE_KIT, repoFile } from "@/components/marketing/data";
+import { HERO_PAYMENT, JUDGE_KIT, MAINNET_KIT, SAMPLE_CONTRACTOR, repoFile } from "@/components/marketing/data";
+import { portalHref } from "@/lib/public-url";
 import { OutLink, Section } from "@/components/marketing/parts";
 import { t, textLink } from "@/components/marketing/classes";
 
-/* The ways to check the sample company's payroll without trusting this page. */
+/* The ways to check the mainnet payroll without trusting this page. */
 const WAYS: { where: string; body: ReactNode; link: ReactNode }[] = [
   {
     where: "In Books",
     body: (
       <>
-        Choose <strong className="font-medium">{JUDGE_KIT.booksAction}</strong>. Every run is reconciled from the chain,
-        funded against paid, with each line&apos;s transaction.
+        Choose <strong className="font-medium">{MAINNET_KIT.booksAction}</strong>. The mainnet run is reconciled from
+        the chain, funded against paid, with each line&apos;s transaction. On a testnet Payslip the same button loads
+        the sample company&apos;s three payrolls.
       </>
     ),
     link: (
-      <Link href="/books" className={textLink}>
+      <a href={portalHref("/books")} className={textLink}>
         Open Books
-      </Link>
+      </a>
     ),
   },
   {
     where: "In the contractor portal",
     body: (
       <>
-        Choose <strong className="font-medium">{JUDGE_KIT.portalAction}</strong> to read {HERO_PAYMENT.name}&apos;s
-        payslips with her key alone.
+        Paste {HERO_PAYMENT.name}&apos;s key from the mainnet kit to read {HERO_PAYMENT.name}&apos;s payslips with
+        that key alone. On a testnet Payslip, <strong className="font-medium">{JUDGE_KIT.portalAction}</strong> opens{" "}
+        {SAMPLE_CONTRACTOR}&apos;s.
       </>
     ),
     link: (
-      <Link href="/portal" className={textLink}>
+      <a href={portalHref("/portal")} className={textLink}>
         Open the portal
-      </Link>
+      </a>
     ),
   },
   {
     where: "With a payment proof",
     body: (
       <>
-        The kit carries a proof of {HERO_PAYMENT.name.split(" ")[0]}&apos;s {HERO_PAYMENT.periodLabel} payment. It opens
-        that one payment, checked against the chain, and no key.
+        The mainnet kit carries a proof of {HERO_PAYMENT.name}&apos;s {HERO_PAYMENT.periodLabel} payment. It opens that
+        one payment, checked against the chain, and no key.
       </>
     ),
     link: (
@@ -72,13 +75,19 @@ export function CheckIt() {
       title="Check it yourself"
       lead={
         <>
-          The judge kit is the sample company&apos;s {JUDGE_KIT.keys} testnet viewing keys: the treasury&apos;s and one
-          for each of the {JUDGE_KIT.contractors} contractors. They read the July, August and September payrolls and
-          cannot spend.
+          The mainnet judge kit is Payslip Labs&apos; {MAINNET_KIT.keys} viewing keys: the treasury&apos;s and{" "}
+          {MAINNET_KIT.contractor}&apos;s. They read the payroll of 12 Oct 2026 and cannot spend. The sample
+          company&apos;s {JUDGE_KIT.keys} testnet keys, for the July, August and September payrolls, are published
+          beside it.
         </>
       }
     >
       <p className="mt-5">
+        <OutLink href={repoFile(MAINNET_KIT.path)} className={cn(textLink, t.data, "break-all")}>
+          {MAINNET_KIT.path}
+        </OutLink>
+      </p>
+      <p className="mt-1.5">
         <OutLink href={repoFile(JUDGE_KIT.path)} className={cn(textLink, t.data, "break-all")}>
           {JUDGE_KIT.path}
         </OutLink>

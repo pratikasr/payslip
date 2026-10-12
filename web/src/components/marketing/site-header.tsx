@@ -3,7 +3,7 @@ import { cn } from "cn";
 import { LogoMark } from "@/components/app/logo";
 import { ThemeToggle } from "@/components/app/theme-toggle";
 import { GITHUB_URL } from "@/components/marketing/data";
-import { DemoLink } from "@/components/marketing/demo-link";
+import { consoleHref } from "@/lib/public-url";
 import { MobileMenu, type NavLink } from "@/components/marketing/mobile-menu";
 import { Container } from "@/components/marketing/parts";
 import { ghostButton } from "@/components/marketing/classes";
@@ -46,7 +46,9 @@ export function SiteHeader() {
 
           <div className="ml-auto flex items-center gap-2 lg:ml-6">
             <ThemeToggle />
-            <DemoLink className={cn(ghostButton, "hidden sm:inline-flex")} />
+            <a href={consoleHref()} className={cn(ghostButton, "hidden sm:inline-flex")}>
+              Run payroll
+            </a>
             <MobileMenu links={LINKS} />
           </div>
         </div>

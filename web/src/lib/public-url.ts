@@ -17,6 +17,36 @@ export function configuredPortalOrigin(): string | null {
   }
 }
 
+/** The configured company console origin ("https://app.example.com"), or null when unset or not a URL. */
+export function configuredConsoleOrigin(): string | null {
+  const raw = process.env.NEXT_PUBLIC_PAYSLIP_CONSOLE_URL?.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/*
+  Links that must land on the right host whatever page they sit on: the company console on the
+  console origin, the portal and Books on the portal origin. Built only from the configured
+  origins, so the server and the browser render the same href; unset, they stay relative.
+*/
+export function consoleHref(path = "/console"): string {
+  const origin = configuredConsoleOrigin();
+  return origin ? `${origin}${path}` : path;
+}
+export function portalHref(path = "/portal"): string {
+  const origin = configuredPortalOrigin();
+  return origin ? `${origin}${path}` : path;
+}
+/** A link shown as text: "app.payslip.cash/console", or the path alone when relative. */
+export function hrefLabel(href: string): string {
+  return href.replace(/^https?:\/\//, "");
+}
+
 /** The origin for links other people open: the configured portal, else this page's origin. */
 export function publicOrigin(): string {
   const configured = configuredPortalOrigin();

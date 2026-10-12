@@ -1,5 +1,6 @@
 "use client";
 
+import { hrefLabel, portalHref } from "@/lib/public-url";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CircleAlert } from "lucide-react";
@@ -153,6 +154,15 @@ export function SignInCard({
           </form>
         ) : null}
       </div>
+      {/* The other door, for a contractor who followed "sign in" instead of the link they were sent. */}
+      <p className="mt-6 border-t border-ink pt-4 text-[0.8125rem] text-muted-foreground">
+        Paid by a company that uses Payslip? There is nothing to sign in to: open the link your company sent you, or
+        paste your viewing key at{" "}
+        <a href={portalHref("/portal")} className="font-type text-foreground underline underline-offset-2">
+          {hrefLabel(portalHref("/portal"))}
+        </a>
+        .
+      </p>
     </Card>
   );
 }

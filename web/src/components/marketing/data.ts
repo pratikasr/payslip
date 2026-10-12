@@ -2,11 +2,12 @@
   Real Zcash testnet records for the landing page. The page is static, so these are recorded
   here rather than fetched; in the app every figure comes from the service.
 
-  HERO_PAYMENT: the one payment the hero's two-view panel shows. Amara Okafor's September pay
-  from the sample company, checked on 11 Oct 2026 against the explorer (block 4,466,912, Ironwood
-  pool, 2 actions, 5 Oct 2026 08:13:28 UTC) and against the judge kit's payment proof, which the
-  service verified (355,556 zat to the address below, memo INV-2026-014). When the mainnet run is
-  paid, replacing this one object swaps the hero to it.
+  HERO_PAYMENT: the one payment the hero's two-view panel shows. Biqtor's October pay from
+  Payslip Labs, the first mainnet payroll (run dfdc9d29, 12 Oct 2026), checked on 12 Oct 2026
+  against the explorer (api.zecblock.com: block 3,514,845, Ironwood pool, 2 actions, 0.0001 ZEC
+  fee, 05:00:48 UTC) and against the mainnet judge kit's payment proof, which the service made
+  from Biqtor's viewing key (750,999 zat to the address below, memo period 2026-10, invoice
+  "qwerty", $10.00 at $1,331.56 per ZEC): docs/proof/mainnet-dfdc9d29.json.
 
   DEMO_RUNS: the three payrolls of the demo wallet, the wallet the published judge kit reads
   (docs/judge/judge-kit-testnet.json). Run ids, txids, heights, names, invoices and dollar
@@ -24,38 +25,53 @@ export const repoFile = (path: string) => `${GITHUB_URL}/blob/main/${path}`;
 export const repoDir = (path: string) => `${GITHUB_URL}/tree/main/${path}`;
 export const HACKATHON_URL = "https://colosseum.com/worldsfair";
 
-/** The explorer the README and docs/DEMO.md link to (testnet). */
+/** The explorers the README and docs/DEMO.md link to: the sample payments on testnet, the hero on mainnet. */
 export const TESTNET_EXPLORER_TX = "https://testnet.zecblock.com/tx/";
 export const explorerTx = (txid: string) => `${TESTNET_EXPLORER_TX}${txid}`;
+export const MAINNET_EXPLORER_TX = "https://zecblock.com/tx/";
+export const mainnetExplorerTx = (txid: string) => `${MAINNET_EXPLORER_TX}${txid}`;
 
-/** The payment the hero opens on: what the explorer shows, and what Amara's viewing key shows. */
+/** The quiet line under the sample company's testnet payments. */
+export const SAMPLE_LABEL = "Sample company on Zcash testnet";
+/** The sample contractor the testnet kit's demo key opens. */
+export const SAMPLE_CONTRACTOR = "Amara Okafor";
+
+/** The payment the hero opens on: what the explorer shows, and what Biqtor's viewing key shows. */
 export const HERO_PAYMENT = {
   /** The quiet line under the panel. */
-  label: "Sample company on Zcash testnet",
-  network: "testnet" as const,
-  coin: "TAZ",
-  explorerName: "testnet.zecblock.com",
-  explorerUrl: explorerTx("b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3"),
+  label: "Payslip Labs on Zcash mainnet, 12 Oct 2026",
+  network: "mainnet" as const,
+  coin: "ZEC",
+  explorerName: "zecblock.com",
+  explorerUrl: mainnetExplorerTx("53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc"),
   /* What the explorer shows. */
-  txid: "b597daba92b76495421d44c22b7c6282ca8f053cad6de06fdcb648a01d2bf0c3",
-  height: 4466912,
+  txid: "53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc",
+  height: 3514845,
   pool: "Ironwood",
   actions: 2,
-  blockTime: "2026-10-05T08:13:28Z",
+  blockTime: "2026-10-12T05:00:48Z",
   /* What the viewing key shows. The name comes from Payslip's records; the chain has none. */
-  name: "Amara Okafor",
-  /** The sender row: the sample company's payroll account for Amara. */
-  payer: "Sample company",
-  recipient:
-    "utest1t3mcdcs2wudepqvmvcdz3ax4l778d7psqkhkhkguhk8apj9h5ctkkrzqre0ncvqcjaxpm423jmfu6gswkm08h2csh2wwsrc5cst9cp0l",
-  usdCents: 480000,
-  zat: 355556,
-  periodLabel: "Sep 2026",
-  invoice: "INV-2026-014",
-  /** True on testnet: dollars convert to TAZ at the service's fixed simulated rate. */
-  simulatedRate: true,
-  /** The judge kit's payment proof for this payment: /verify#<token> checks it against the chain. */
-  proofToken: "pp1AQEBAAHD8CsdoEi23G_gba08BY_KgmJ8K8JEHUKVZLeSutqXtUN_7qLzSGalJt-cakfV50S2hbI3TQE-GKTWn1c0nVaz",
+  name: "Biqtor",
+  /** The sender row: the company's payroll account for Biqtor. */
+  payer: "Payslip Labs",
+  /** The receiver as the payment proof re-encodes it: the one receiver the note went to. */
+  recipient: "u1rjq84xhvnayp4hdlfkf3ren4x0d7enn2wmu7fj77vczmp9qek9l0h9heldpkcgvhju0uj65x8n954k0jm3zps4ny7gtjzk3chvzsy64r",
+  usdCents: 1000,
+  zat: 750999,
+  periodLabel: "Oct 2026",
+  invoice: "qwerty",
+  /** True on testnet only: dollars convert to TAZ at the service's fixed simulated rate. */
+  simulatedRate: false,
+  /** The mainnet judge kit's payment proof for this payment: /verify#<token> checks it against the chain. */
+  proofToken: "pp1AQABAAC8yDi4SGsaCvAFwEdj7vBvR0UfzmeH4x4KWVFctXr4Uy5q0NLC-DMHhFMzWrUw8AXJwOXD4S9hDmohmIc_xP_7",
+};
+
+/** The mainnet judge kit: the hosted treasury's viewing keys, which Books on the statements host loads. */
+export const MAINNET_KIT = {
+  path: "docs/judge/judge-kit-mainnet.json",
+  keys: 2,
+  contractor: "Biqtor",
+  booksAction: "Load the judge kit",
 };
 
 export interface PaidLine {

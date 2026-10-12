@@ -1,5 +1,6 @@
 "use client";
 
+import { consoleHref, hrefLabel } from "@/lib/public-url";
 import { useEffect, useRef, useState } from "react";
 import { FileJson, KeyRound, ScanLine, TriangleAlert } from "lucide-react";
 import { useHealth } from "@/components/app/health-provider";
@@ -263,6 +264,13 @@ export function UnlockScreen() {
       <p className="mx-auto mt-4 max-w-[560px] px-2 text-[0.8125rem] text-muted-foreground">
         The key stays in this browser tab and is sent only to the Payslip service, which keeps a read-only scan of your
         payments so the next visit is quick. Lock forgets it here; you can also ask the service to forget it.
+      </p>
+      <p className="mx-auto mt-2 max-w-[560px] px-2 text-[0.8125rem] text-muted-foreground">
+        Running payroll for a company? That is the console, not this page:{" "}
+        <a href={consoleHref()} className="font-type text-foreground underline underline-offset-2">
+          {hrefLabel(consoleHref())}
+        </a>
+        .
       </p>
 
       <ScanDialog
