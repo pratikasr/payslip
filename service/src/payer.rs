@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Context};
+use secrecy08::SecretVec;
 use serde::Serialize;
 use zcash_address::unified::{self, Encoding as _};
 use zcash_client_sqlite::AccountUuid;
@@ -52,6 +53,42 @@ pub struct Payer {
     /// A lightwalletd connection outside the wallet thread, for lookups that must not wait
     /// behind a sync.
     lwd: wallet::lwd::Client,
+    /// PAYSLIP_BIRTHDAY_HEIGHT, for the treasury account when it is first created.
+    configured_birthday: Option<u32>,
+}
+
+/// The seed the passphrase decrypted is not the one this wallet's accounts came from: the seed
+/// file was swapped by hand. Callers tell it apart with `downcast_ref`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeedMismatch;
+
+impl std::fmt::Display for SeedMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the seed does not match this wallet's treasury account")
+    }
+}
+
+impl std::error::Error for SeedMismatch {}
+
+/// The unified full viewing key of ZIP-32 account `index` of `seed`, derived without a wallet.
+pub fn ufvk_of_seed(params: &Network, seed: &[u8], index: u32) -> anyhow::Result<String> {
+    let idx = zip32::AccountId::try_from(index).map_err(|_| anyhow!("invalid account index {index}"))?;
+    Ok(zcash_keys::keys::UnifiedSpendingKey::from_seed(params, seed, idx)
+        .map_err(|e| anyhow!("deriving account {index}: {e:?}"))?
+        .to_unified_full_viewing_key()
+        .encode(params))
+}
+
+/// The treasury's unified address (account 0, Revision 0) of `seed`, derived without a wallet:
+/// where a replaced treasury's balance is swept to before the new wallet exists.
+pub fn treasury_address_of_seed(params: &Network, seed: &[u8]) -> anyhow::Result<String> {
+    let usk = zcash_keys::keys::UnifiedSpendingKey::from_seed(params, seed, zip32::AccountId::ZERO)
+        .map_err(|e| anyhow!("deriving the treasury account: {e:?}"))?;
+    let (ua, _) = usk
+        .to_unified_full_viewing_key()
+        .default_address(zcash_keys::keys::UnifiedAddressRequest::SHIELDED)
+        .map_err(|e| anyhow!("deriving the treasury address: {e:?}"))?;
+    encode_ua_r0(params, &ua)
 }
 
 /// Encodes a unified address as ZIP 316 Revision 0 (`u1...` / `utest1...`), the form every
@@ -72,7 +109,8 @@ pub fn encode_ua_r0(params: &Network, ua: &UnifiedAddress) -> anyhow::Result<Str
 }
 
 impl Payer {
-    /// Unlocks the seed, opens `wallet.db` and makes sure the treasury account exists.
+    /// Unlocks the seed with PAYSLIP_SEED_PASSPHRASE, opens `wallet.db` and makes sure the
+    /// treasury account exists. The command line and the env-passphrase mode use this.
     pub async fn open(cfg: &Config) -> anyhow::Result<Self> {
         let passphrase = cfg
             .seed_passphrase
@@ -86,25 +124,69 @@ impl Payer {
             );
         }
         let seed = seed_file.unlock(&passphrase)?;
+        Self::open_with(cfg, &cfg.wallet_db_path(), Some(seed), cfg.birthday_height).await
+    }
+
+    /// Opens `wallet.db` without the seed (ADR-030, locked mode): it syncs, receives, and
+    /// answers every read with the viewing keys it stores; it cannot sign or derive a new account
+    /// until [`Payer::install_seed`]. A wallet that never held the seed has no treasury account
+    /// yet; the first unlock creates it.
+    pub async fn open_locked(cfg: &Config) -> anyhow::Result<Self> {
+        Self::open_with(cfg, &cfg.wallet_db_path(), None, cfg.birthday_height).await
+    }
+
+    /// With PAYSLIP_SEED_PASSPHRASE set, [`Payer::open`]; without it, [`Payer::open_locked`]
+    /// (for the read-only commands).
+    pub async fn open_any(cfg: &Config) -> anyhow::Result<Self> {
+        if cfg.seed_passphrase.is_some() {
+            return Self::open(cfg).await;
+        }
+        let seed_file = SeedFile::new(cfg.seed_path());
+        if !seed_file.exists() {
+            anyhow::bail!(
+                "no payer seed at {}; run `payslip-service init` first",
+                seed_file.path().display()
+            );
+        }
+        Self::open_locked(cfg).await
+    }
+
+    /// Opens the wallet database at `db_path` with `seed` in memory (or none), and with a seed
+    /// makes sure the treasury account exists, born at `birthday` or the tip minus 10.
+    pub async fn open_with(
+        cfg: &Config,
+        db_path: &std::path::Path,
+        seed: Option<SecretVec<u8>>,
+        birthday: Option<u32>,
+    ) -> anyhow::Result<Self> {
+        let has_seed = seed.is_some();
         let params = cfg.network.params();
         let (path, url, min_conf) = (
-            cfg.wallet_db_path(),
+            db_path.to_path_buf(),
             cfg.lightwalletd_url.clone(),
             cfg.min_confirmations,
         );
         let wallet = WalletHandle::spawn("payer-wallet".into(), move || {
-            WalletCore::open(params, &path, &url, Some(seed), min_conf)
+            WalletCore::open(params, &path, &url, seed, min_conf)
         })?;
         let payer = Payer {
             wallet,
             network: cfg.network,
             params,
-            db_path: cfg.wallet_db_path(),
+            db_path: db_path.to_path_buf(),
             lwd: wallet::lwd::connect(&cfg.lightwalletd_url)?,
+            configured_birthday: birthday,
         };
-        let configured_birthday = cfg.birthday_height;
-        payer
-            .wallet
+        if has_seed {
+            payer.ensure_treasury().await?;
+        }
+        Ok(payer)
+    }
+
+    /// Creates the treasury account from the seed in memory if the wallet has none.
+    async fn ensure_treasury(&self) -> anyhow::Result<()> {
+        let configured_birthday = self.configured_birthday;
+        self.wallet
             .run(move |w| {
                 Box::pin(async move {
                     if w.hd_accounts()?.contains_key(&TREASURY_INDEX) {
@@ -118,8 +200,56 @@ impl Payer {
                 })
             })
             .await?
-            .context("creating the treasury account")?;
-        Ok(payer)
+            .context("creating the treasury account")
+    }
+
+    /// Whether the wallet holds the seed (it can sign).
+    pub async fn has_seed(&self) -> anyhow::Result<bool> {
+        self.wallet.run(|w| Box::pin(async move { w.has_seed() })).await
+    }
+
+    /// Whether the treasury account exists (a wallet opened locked before any unlock has none).
+    pub async fn has_treasury(&self) -> anyhow::Result<bool> {
+        self.wallet
+            .run(|w| Box::pin(async move { Ok(w.hd_accounts()?.contains_key(&TREASURY_INDEX)) }))
+            .await?
+    }
+
+    /// Puts the seed in memory (an unlock): checked against the treasury account when there is
+    /// one ([`SeedMismatch`] otherwise), created from the seed when there is none.
+    pub async fn install_seed(&self, seed: SecretVec<u8>) -> anyhow::Result<()> {
+        self.wallet
+            .run(move |w| {
+                Box::pin(async move {
+                    if w.seed_matches(&seed)? == Some(false) {
+                        return Err(anyhow::Error::new(SeedMismatch));
+                    }
+                    w.set_seed(Some(seed));
+                    Ok(())
+                })
+            })
+            .await??;
+        self.ensure_treasury().await
+    }
+
+    /// Drops the seed from memory (a lock). Reads and syncing go on; signing stops.
+    pub async fn drop_seed(&self) -> anyhow::Result<()> {
+        self.wallet
+            .run(|w| {
+                Box::pin(async move {
+                    w.set_seed(None);
+                })
+            })
+            .await
+    }
+
+    /// Stops the wallet thread and closes the database, so its files can be moved.
+    pub async fn close(&self) -> anyhow::Result<()> {
+        self.wallet.close().await
+    }
+
+    pub fn db_path(&self) -> &std::path::Path {
+        &self.db_path
     }
 
     pub fn network(&self) -> ZcashNetwork {
@@ -145,6 +275,15 @@ impl Payer {
     /// Height and Unix time of the chain tip, from lightwalletd.
     pub async fn tip_time(&self) -> anyhow::Result<(u32, i64)> {
         self.wallet.run(|w| Box::pin(wallet::lwd::tip_time(w.client()))).await?
+    }
+
+    /// [`Payer::wallet_info`], or None while the wallet has no treasury account (opened locked
+    /// and never unlocked).
+    pub async fn wallet_info_opt(&self) -> anyhow::Result<Option<WalletInfo>> {
+        if !self.has_treasury().await? {
+            return Ok(None);
+        }
+        self.wallet_info().await.map(Some)
     }
 
     pub async fn wallet_info(&self) -> anyhow::Result<WalletInfo> {
@@ -358,14 +497,23 @@ impl Payer {
 
     /// Sends the whole spendable balance of account `from` to `to`, broadcast at once.
     pub async fn sweep(&self, from: u32, to: &str) -> anyhow::Result<String> {
+        self.try_sweep(from, to).await?.map_err(|e| anyhow!("{e}"))
+    }
+
+    /// [`Payer::sweep`], with the wallet's own refusal (not enough to pay the fee, say) returned
+    /// as a value so the caller can decide.
+    pub async fn try_sweep(&self, from: u32, to: &str) -> anyhow::Result<Result<String, SpendError>> {
         let to = wallet::parse_shielded_address(&self.params, to)?;
-        let txid = self
+        let txid = match self
             .wallet
             .run(move |w| Box::pin(async move { w.sweep(from, to, None) }))
             .await?
-            .map_err(|e| anyhow!("{e}"))?;
+        {
+            Ok(t) => t,
+            Err(e) => return Ok(Err(e)),
+        };
         self.broadcast(txid).await?;
-        Ok(wallet::txid_hex(&txid))
+        Ok(Ok(wallet::txid_hex(&txid)))
     }
 
     /// Development helper behind the `send` CLI command: one payment, broadcast at once.

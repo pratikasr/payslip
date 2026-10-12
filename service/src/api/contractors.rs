@@ -259,8 +259,10 @@ async fn create(
             "Each contractor needs their own address. Check for a duplicate entry.",
         ));
     }
+    // The account's keys are derived from the treasury seed (ADR-006), so this needs it in
+    // memory: 409 `no_treasury_key` or `treasury_locked` otherwise (ADR-030).
     let index = db::next_account_index(&s.db).await?;
-    let (ufvk, birthday) = s.payer()?.ensure_account(index, new.name.clone()).await?;
+    let (ufvk, birthday) = s.treasury()?.ensure_account(index, new.name.clone()).await?;
     let c = db::insert_contractor(&s.db, &new, index, birthday).await?;
     // The key's fingerprint maps a viewing key sent to the portal back to this contractor.
     let params = s.cfg.network.params();
@@ -363,7 +365,7 @@ struct ExportKey {
 }
 
 async fn all_viewing_keys(State(s): State<AppStateRef>) -> ApiResult<Json<serde_json::Value>> {
-    let info = s.payer()?.wallet_info().await?;
+    let info = s.treasury()?.wallet_info().await?;
     let treasury = s.payer()?.ufvk(TREASURY_INDEX).await?;
     let mut keys = vec![ExportKey {
         label: "Treasury".into(),
@@ -447,6 +449,7 @@ mod tests {
             created_at: String::new(),
             archived_at: None,
             key_fingerprint: None,
+            key_rotated_at: None,
         }
     }
 

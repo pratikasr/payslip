@@ -149,6 +149,32 @@ impl WalletCore {
         &self.db
     }
 
+    /// Whether the wallet can derive spending keys (the seed is in memory).
+    pub fn has_seed(&self) -> bool {
+        self.seed.is_some()
+    }
+
+    /// Puts the seed in memory (an unlock) or drops it (a lock). Nothing in the database
+    /// changes: accounts and their viewing keys are already stored.
+    pub fn set_seed(&mut self, seed: Option<SecretVec<u8>>) {
+        self.seed = seed;
+    }
+
+    /// Whether `seed` is the seed this wallet's HD accounts were derived from: account 0's
+    /// unified full viewing key is derived from it and compared with the stored one. None when
+    /// the wallet has no HD account yet (nothing to compare with).
+    pub fn seed_matches(&self, seed: &SecretVec<u8>) -> anyhow::Result<Option<bool>> {
+        let Some(treasury) = self.hd_accounts()?.get(&0).copied() else {
+            return Ok(None);
+        };
+        let stored = self.ufvk(treasury)?.encode(&self.params);
+        let derived = UnifiedSpendingKey::from_seed(&self.params, seed.expose_secret(), zip32::AccountId::ZERO)
+            .map_err(|e| anyhow!("deriving account 0 from the seed: {e:?}"))?
+            .to_unified_full_viewing_key()
+            .encode(&self.params);
+        Ok(Some(stored == derived))
+    }
+
     pub async fn chain_tip(&mut self) -> anyhow::Result<BlockHeight> {
         lwd::tip(&mut self.client).await
     }
@@ -567,6 +593,10 @@ type Job = Box<dyn for<'a> FnOnce(&'a mut WalletCore) -> Pin<Box<dyn Future<Outp
 #[derive(Clone)]
 pub struct WalletHandle {
     tx: std::sync::mpsc::Sender<Job>,
+    /// Set by [`WalletHandle::close`]: the thread stops before its next job.
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// The thread, joined by `close` so the database is closed before its files are moved.
+    thread: std::sync::Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
 }
 
 impl WalletHandle {
@@ -577,7 +607,9 @@ impl WalletHandle {
     {
         let (tx, rx) = std::sync::mpsc::channel::<Job>();
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<anyhow::Result<()>>();
-        std::thread::Builder::new().name(name).spawn(move || {
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopping = stop.clone();
+        let thread = std::thread::Builder::new().name(name).spawn(move || {
             let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
                 Ok(rt) => rt,
                 Err(e) => {
@@ -599,15 +631,44 @@ impl WalletHandle {
                 }
             };
             while let Ok(job) = rx.recv() {
+                if stopping.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 // A panicking job drops its reply channel, so the caller sees an error; the
                 // wallet thread keeps serving. SQLite transactions keep the database consistent.
                 let _ = rt.block_on(AssertUnwindSafe(job(&mut core)).catch_unwind());
             }
+            // `core` (and its database connection) is dropped here, on the wallet thread.
         })?;
         ready_rx
             .recv()
             .map_err(|_| anyhow!("wallet thread exited during start-up"))??;
-        Ok(WalletHandle { tx })
+        Ok(WalletHandle {
+            tx,
+            stop,
+            thread: std::sync::Arc::new(std::sync::Mutex::new(Some(thread))),
+        })
+    }
+
+    /// Stops the wallet thread and waits for it, which closes the database. Every clone of the
+    /// handle fails from then on with "wallet thread has stopped". Closing twice is a no-op.
+    pub async fn close(&self) -> anyhow::Result<()> {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        // Wakes the thread if it is waiting for a job; a thread that already stopped has dropped
+        // the receiver, which is fine.
+        let _ = self.tx.send(Box::new(|_| Box::pin(async {})));
+        let thread = self
+            .thread
+            .lock()
+            .map_err(|_| anyhow!("wallet handle poisoned"))?
+            .take();
+        if let Some(t) = thread {
+            tokio::task::spawn_blocking(move || t.join())
+                .await
+                .map_err(|e| anyhow!("joining the wallet thread: {e}"))?
+                .map_err(|_| anyhow!("the wallet thread panicked while stopping"))?;
+        }
+        Ok(())
     }
 
     /// Runs `f` on the wallet thread like [`WalletHandle::run`], but stops it at its next await

@@ -2,6 +2,12 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 12 Oct 2026, the company controls its treasury key (ADR-030)
+
+- Service: `PAYSLIP_SEED_PASSPHRASE` is optional. With it set nothing changes (`unlocked_by_env`). Without it the service starts with the treasury locked (syncing, reads, statements, Books, proofs and drafting work; executing, moving, adding a contractor answer `409 treasury_locked`; the executor parks a run at its next signature and resumes on unlock) or with no key at all (`treasury: "no_key"` in health; spending and funding answer `409 no_treasury_key`). New endpoints under `/api/treasury`: `GET key`, `POST unlock`, `POST lock`, `POST key` (an armored age file the browser encrypted with the company's passphrase), `POST key/replace` (sweeps the old treasury to the new key, retires the old files, derives every contractor account again with `key_rotated_at`), `POST move` (sweeps to an outside shielded address; transparent refused). Admin-only, audited; migration 0008 (`treasury_keys`, `contractors.key_rotated_at`). docs/API.md has a Treasury key section with the trust statement.
+- Checks: `cargo fmt --check` and `cargo clippy --all-targets --locked -- -D warnings` clean; `cargo test --locked` 84 unit, 39 API, 38 executor and 1 prices test passed, 7 live testnet tests ignored as usual.
+- Next: the web's Settings page for the key (generate 24 words, encrypt with `age-encryption` 0.3.1 in the browser, upload; unlock dialog; "share the new viewing key" from `key_rotated_at`), and `deploy/compose.yml`, which still requires `PAYSLIP_SEED_PASSPHRASE`.
+
 ## 11 Oct 2026, launch day minus one
 
 - Hosted: deploy/aws/provision.sh run by the owner (EC2 i-04ae135fca593129a, us-east-1), the server installed and started from deploy/README.md; the public statements page answers at https://dkg1ye1jxb6hs.cloudfront.net and the company console at https://d3oq3i7c2bwb9p.cloudfront.net (basic auth). Books loaded the judge kit there and reconciled the three testnet payrolls in 68 seconds on the first scan; the portal demo key opened Amara Okafor's payslips.

@@ -62,8 +62,11 @@ async fn known_keys(s: &AppStateRef) -> ApiResult<HashMap<String, Known>> {
     let params = s.cfg.network.params();
     let mut out = HashMap::new();
     // A statements-only deployment knows no accounts; every key is scanned as supplied.
-    let Some(payer) = s.payer.as_ref() else { return Ok(out) };
-    let info = payer.wallet_info().await?;
+    let Some(payer) = s.payer_opt() else { return Ok(out) };
+    // A wallet opened locked and never unlocked has no accounts yet: nothing is known.
+    let Some(info) = payer.wallet_info_opt().await? else {
+        return Ok(out);
+    };
     let mut push = |ufvk: String, index: u32, label: String, role: &str, birthday: u32, cid: Option<String>| {
         if let Ok(k) = zcash_keys::keys::UnifiedFullViewingKey::decode(&params, &ufvk) {
             let fp = fingerprint_of(&params, &k);

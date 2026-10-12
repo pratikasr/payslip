@@ -104,6 +104,10 @@ pub struct Contractor {
     /// Fingerprint of the account's viewing key (viewer.rs); None until recorded.
     #[serde(skip)]
     pub key_fingerprint: Option<String>,
+    /// When the treasury key was last replaced (ADR-030): the contractor's account was derived
+    /// again from the new seed, so they need the new viewing key. None for a contractor whose
+    /// key never changed.
+    pub key_rotated_at: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -260,6 +264,92 @@ pub async fn clear_fvk_shared(pool: &Pool, id: &str) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
     Ok(())
+}
+
+/// After the treasury key was replaced (ADR-030): the contractor's account exists again in the
+/// new wallet with a new birthday and a new viewing key, which nobody has been given yet.
+pub async fn rotate_contractor_key(
+    pool: &Pool,
+    id: &str,
+    birthday: u32,
+    fingerprint: Option<&str>,
+    at: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE contractors SET account_birthday_height = ?, key_fingerprint = ?, key_rotated_at = ?, fvk_shared_at = NULL
+         WHERE id = ?",
+    )
+    .bind(birthday as i64)
+    .bind(fingerprint)
+    .bind(at)
+    .bind(id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Treasury keys (migration 0008, ADR-030)
+
+/// One treasury seed this deployment has held.
+#[derive(Clone, Debug, Serialize, FromRow)]
+pub struct TreasuryKey {
+    pub version: i64,
+    pub created_at: String,
+    pub retired_at: Option<String>,
+    pub address: Option<String>,
+}
+
+/// The newest key row (the current key, or the last one retired), if any.
+pub async fn current_treasury_key(pool: &Pool) -> anyhow::Result<Option<TreasuryKey>> {
+    Ok(sqlx::query_as(
+        "SELECT version, created_at, retired_at, address FROM treasury_keys ORDER BY version DESC LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await?)
+}
+
+/// Records a key as the next version and returns that version.
+pub async fn insert_treasury_key(pool: &Pool, created_at: &str, address: Option<&str>) -> anyhow::Result<i64> {
+    let next: i64 = sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) + 1 FROM treasury_keys")
+        .fetch_one(pool)
+        .await?;
+    sqlx::query("INSERT INTO treasury_keys (version, created_at, retired_at, address) VALUES (?, ?, NULL, ?)")
+        .bind(next)
+        .bind(created_at)
+        .bind(address)
+        .execute(pool)
+        .await?;
+    Ok(next)
+}
+
+pub async fn retire_treasury_key(pool: &Pool, version: i64, retired_at: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE treasury_keys SET retired_at = ? WHERE version = ? AND retired_at IS NULL")
+        .bind(retired_at)
+        .bind(version)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Records the treasury address of a key once the wallet derived it.
+pub async fn set_treasury_key_address(pool: &Pool, version: i64, address: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE treasury_keys SET address = ? WHERE version = ? AND address IS NULL")
+        .bind(address)
+        .bind(version)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Runs that have started and not finished: not `draft`, `paid` or `cancelled`. The treasury
+/// key is not replaced or moved while there are any.
+pub async fn runs_in_progress(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {
+    Ok(sqlx::query_as(
+        "SELECT * FROM runs WHERE status NOT IN ('draft', 'paid', 'cancelled') ORDER BY created_at, rowid",
+    )
+    .fetch_all(pool)
+    .await?)
 }
 
 /// True if the contractor is in a run that has started and not finished (not a draft, not paid,

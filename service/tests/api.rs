@@ -174,7 +174,7 @@ async fn start_full_with(adjust: impl FnOnce(&mut Config)) -> (Service, Pool) {
     let state = Arc::new(AppState {
         viewers: ViewerRegistry::new(&cfg),
         db: db.clone(),
-        payer: None,
+        treasury: None,
         venue,
         executor: Some(executor),
         contractor_lock: tokio::sync::Mutex::new(()),
@@ -808,7 +808,7 @@ mod signin {
         let state = Arc::new(AppState {
             viewers: ViewerRegistry::new(&cfg),
             db: db.clone(),
-            payer: None,
+            treasury: None,
             venue,
             executor: Some(executor),
             contractor_lock: tokio::sync::Mutex::new(()),
@@ -1449,6 +1449,37 @@ async fn the_role_matrix_covers_every_payer_route() {
         ("POST", "/api/runs/{id}/cancel", json!({}), RUNS, Need::DraftRun),
         ("GET", "/api/runs/{id}/events", Value::Null, ALL, Need::None),
         ("GET", "/api/runs/{id}/log", Value::Null, ALL, Need::None),
+        // The treasury key (ADR-030): its state for every member, every change admin-only.
+        ("GET", "/api/treasury/key", Value::Null, ALL, Need::None),
+        (
+            "POST",
+            "/api/treasury/unlock",
+            json!({ "passphrase": "x" }),
+            ADMIN,
+            Need::None,
+        ),
+        ("POST", "/api/treasury/lock", json!({}), ADMIN, Need::None),
+        (
+            "POST",
+            "/api/treasury/key",
+            json!({ "ciphertext": "x" }),
+            ADMIN,
+            Need::None,
+        ),
+        (
+            "POST",
+            "/api/treasury/key/replace",
+            json!({ "ciphertext": "x", "passphrase": "x", "sweep_to": "new" }),
+            ADMIN,
+            Need::None,
+        ),
+        (
+            "POST",
+            "/api/treasury/move",
+            json!({ "to_address": "x" }),
+            ADMIN,
+            Need::None,
+        ),
         ("GET", "/api/me", Value::Null, ALL, Need::None),
         ("GET", "/api/org", Value::Null, ALL, Need::None),
         ("PATCH", "/api/org", json!({}), ADMIN, Need::None),
@@ -1508,7 +1539,7 @@ async fn the_role_matrix_covers_every_payer_route() {
             checked += 1;
         }
     }
-    assert_eq!(checked, 33 * 4);
+    assert_eq!(checked, 39 * 4);
 }
 
 /// Every write leaves an audit row naming who (user and role), what (action and target) and
@@ -2656,4 +2687,1083 @@ async fn the_schedule_skips_a_period_a_run_already_covers() {
     off["active"] = json!(false);
     let (st, v) = s.put("/api/schedule", off).await;
     assert_eq!((st, v["schedule"]["active"].as_bool()), (200, Some(false)), "{v}");
+}
+
+// =============================================================================================
+// Treasury key control (ADR-030): locked, unlocked, no key, create, replace, move.
+
+use secrecy08::ExposeSecret as _;
+
+mod keys {
+    use super::*;
+    pub use payslip::seed::SeedFile;
+    use payslip::{
+        payer::{treasury_address_of_seed, ufvk_of_seed, Payer, TreasuryInfo, WalletInfo},
+        seed,
+        treasury::{Treasury, WalletBackend},
+    };
+    use secrecy08::SecretVec;
+    use std::{
+        path::PathBuf,
+        sync::{Mutex, MutexGuard},
+    };
+
+    /// The BIP-39 test vector: not a secret.
+    pub const PHRASE: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art";
+    pub const PASS: &str = "correct horse battery";
+    pub const FEE: u64 = 10_000;
+    pub const SWEEP_TXID: &str = "abababababababababababababababababababababababababababababababab";
+
+    /// A fresh 24-word phrase, for the key that replaces the first.
+    pub fn new_phrase() -> String {
+        <bip0039::Mnemonic<bip0039::English>>::generate(bip0039::Count::Words24)
+            .phrase()
+            .to_string()
+    }
+
+    pub fn seed_of(phrase: &str) -> Vec<u8> {
+        seed::seed_from_phrase(phrase).unwrap().expose_secret().clone()
+    }
+
+    pub fn address_of(phrase: &str) -> String {
+        treasury_address_of_seed(&Network::TestNetwork, &seed_of(phrase)).unwrap()
+    }
+
+    pub fn ufvk_of(phrase: &str, index: u32) -> String {
+        ufvk_of_seed(&Network::TestNetwork, &seed_of(phrase), index).unwrap()
+    }
+
+    /// `phrase` encrypted to `pass` as the browser would send it, at a low scrypt work factor
+    /// so a test does not spend a second per file; the service accepts any factor up to its
+    /// limit. Armored, one scrypt stanza: the same shape as `age -p -a`.
+    pub fn ciphertext(phrase: &str, pass: &str) -> String {
+        let mut recipient = age::scrypt::Recipient::new(secrecy::SecretString::from(pass.to_string()));
+        recipient.set_work_factor(10);
+        age::encrypt_and_armor(&recipient, phrase.as_bytes()).unwrap()
+    }
+
+    /// The default external transparent address of a testnet seed: what `move` must refuse.
+    pub fn transparent_address(seed: u8) -> String {
+        use zcash_transparent::keys::IncomingViewingKey as _;
+        let params = Network::TestNetwork;
+        let ufvk = zcash_keys::keys::UnifiedSpendingKey::from_seed(&params, &[seed; 32], zip32::AccountId::ZERO)
+            .unwrap()
+            .to_unified_full_viewing_key();
+        let (taddr, _) = ufvk.p2pkh().unwrap().derive_external_ivk().unwrap().default_address();
+        zcash_keys::address::Address::Transparent(taddr).encode(&params)
+    }
+
+    #[derive(Default)]
+    pub struct FakeState {
+        pub opened: bool,
+        pub seed: Option<Vec<u8>>,
+        pub treasury: Option<(String, u32)>,
+        pub spendable: u64,
+        pub pending: u64,
+        /// (to, amount after the fee) of every sweep.
+        pub sweeps: Vec<(String, u64)>,
+        pub accounts: Vec<(u32, String)>,
+        pub retired: Vec<String>,
+        pub fresh_opens: u32,
+    }
+
+    /// The wallet behind the key manager, in memory: it derives real keys and addresses from
+    /// the seed it holds and keeps a balance, and nothing reaches a chain.
+    #[derive(Default)]
+    pub struct FakeWallet {
+        s: Mutex<FakeState>,
+    }
+
+    impl FakeWallet {
+        pub fn new() -> Arc<Self> {
+            Arc::new(FakeWallet::default())
+        }
+
+        /// As a wallet database that already holds `phrase`'s treasury account (the service ran
+        /// with the seed before), with `spendable` zatoshis confirmed.
+        pub fn with_treasury(phrase: &str, spendable: u64) -> Arc<Self> {
+            let w = FakeWallet::default();
+            {
+                let mut s = w.s.lock().unwrap();
+                s.treasury = Some((address_of(phrase), 4_467_000));
+                s.spendable = spendable;
+            }
+            Arc::new(w)
+        }
+
+        pub fn state(&self) -> MutexGuard<'_, FakeState> {
+            self.s.lock().unwrap()
+        }
+
+        fn info(s: &FakeState) -> Option<WalletInfo> {
+            s.treasury.as_ref().map(|(address, birthday)| WalletInfo {
+                network: "testnet",
+                chain_tip: STUB_TIP,
+                synced_height: STUB_TIP,
+                birthday_height: *birthday,
+                treasury: TreasuryInfo {
+                    account_index: 0,
+                    unified_address: address.clone(),
+                    spendable_zat: s.spendable,
+                    pending_zat: s.pending,
+                    total_zat: s.spendable + s.pending,
+                },
+                contractor_accounts: s.accounts.len(),
+            })
+        }
+    }
+
+    #[async_trait]
+    impl WalletBackend for FakeWallet {
+        async fn open(&self, seed: Option<SecretVec<u8>>) -> anyhow::Result<()> {
+            let mut s = self.state();
+            s.opened = true;
+            if let Some(seed) = seed {
+                let address = treasury_address_of_seed(&Network::TestNetwork, seed.expose_secret())?;
+                s.treasury = Some((address, 4_467_000));
+                s.seed = Some(seed.expose_secret().clone());
+            }
+            Ok(())
+        }
+        async fn open_fresh(&self, seed: SecretVec<u8>, _birthday: Option<u32>) -> anyhow::Result<()> {
+            let mut s = self.state();
+            let address = treasury_address_of_seed(&Network::TestNetwork, seed.expose_secret())?;
+            s.opened = true;
+            s.fresh_opens += 1;
+            s.accounts.clear();
+            s.spendable = 0;
+            s.pending = 0;
+            s.treasury = Some((address, STUB_TIP - 10));
+            s.seed = Some(seed.expose_secret().clone());
+            Ok(())
+        }
+        async fn install_seed(&self, seed: SecretVec<u8>) -> anyhow::Result<()> {
+            let mut s = self.state();
+            if !s.opened {
+                anyhow::bail!("wallet not open");
+            }
+            let address = treasury_address_of_seed(&Network::TestNetwork, seed.expose_secret())?;
+            if let Some((a, _)) = &s.treasury {
+                if *a != address {
+                    return Err(anyhow::Error::new(payslip::payer::SeedMismatch));
+                }
+            } else {
+                s.treasury = Some((address, STUB_TIP - 10));
+            }
+            s.seed = Some(seed.expose_secret().clone());
+            Ok(())
+        }
+        async fn drop_seed(&self) -> anyhow::Result<()> {
+            self.state().seed = None;
+            Ok(())
+        }
+        async fn close_and_retire(&self, stamp: &str) -> anyhow::Result<Vec<PathBuf>> {
+            let mut s = self.state();
+            s.opened = false;
+            s.seed = None;
+            let p = PathBuf::from(format!("wallet.db.retired-{stamp}"));
+            s.retired.push(p.display().to_string());
+            Ok(vec![p])
+        }
+        async fn wallet_info(&self) -> anyhow::Result<Option<WalletInfo>> {
+            let s = self.state();
+            if !s.opened {
+                anyhow::bail!("wallet not open");
+            }
+            Ok(Self::info(&s))
+        }
+        async fn sync(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn sweep_treasury(&self, to: &str) -> anyhow::Result<Result<String, SpendError>> {
+            let mut s = self.state();
+            if s.seed.is_none() {
+                anyhow::bail!("this wallet has no seed");
+            }
+            if s.spendable <= FEE {
+                return Ok(Err(SpendError::InsufficientFunds {
+                    available: s.spendable,
+                    required: FEE,
+                }));
+            }
+            let amount = s.spendable - FEE;
+            s.sweeps.push((to.to_string(), amount));
+            s.spendable = 0;
+            Ok(Ok(SWEEP_TXID.into()))
+        }
+        async fn tx_fee(&self, _txid: &str) -> anyhow::Result<Option<u64>> {
+            Ok(Some(FEE))
+        }
+        async fn ensure_account(&self, index: u32, name: String) -> anyhow::Result<(String, u32)> {
+            let mut s = self.state();
+            let seed = s
+                .seed
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("this wallet has no seed"))?;
+            let ufvk = ufvk_of_seed(&Network::TestNetwork, &seed, index)?;
+            s.accounts.push((index, name));
+            Ok((ufvk, STUB_TIP - 10))
+        }
+        fn payer(&self) -> Option<Payer> {
+            None
+        }
+        fn chain(&self) -> Option<Arc<dyn ChainOps>> {
+            None
+        }
+    }
+
+    /// The stub chain, with `can_sign` read from the key manager, as the service's chain does.
+    struct GatedStub(Arc<Treasury>);
+
+    #[async_trait]
+    impl ChainOps for GatedStub {
+        async fn can_sign(&self) -> bool {
+            self.0.can_sign()
+        }
+        async fn sync(&self) -> anyhow::Result<()> {
+            StubChain.sync().await
+        }
+        async fn tip(&self) -> anyhow::Result<u32> {
+            StubChain.tip().await
+        }
+        async fn spendable(&self, a: u32) -> anyhow::Result<u64> {
+            StubChain.spendable(a).await
+        }
+        async fn total(&self, a: u32) -> anyhow::Result<u64> {
+            StubChain.total(a).await
+        }
+        async fn account_address(&self, a: u32) -> anyhow::Result<String> {
+            StubChain.account_address(a).await
+        }
+        async fn transparent_address(&self, a: u32) -> anyhow::Result<String> {
+            StubChain.transparent_address(a).await
+        }
+        async fn create_transfer(
+            &self,
+            f: u32,
+            p: Vec<Pay>,
+            m: Option<String>,
+        ) -> anyhow::Result<Result<String, SpendError>> {
+            StubChain.create_transfer(f, p, m).await
+        }
+        async fn broadcast(&self, t: &str) -> anyhow::Result<()> {
+            StubChain.broadcast(t).await
+        }
+        async fn mined_height(&self, t: &str) -> anyhow::Result<Option<u32>> {
+            StubChain.mined_height(t).await
+        }
+        async fn expiry_height(&self, t: &str) -> anyhow::Result<Option<u32>> {
+            StubChain.expiry_height(t).await
+        }
+        async fn tx_fee(&self, t: &str) -> anyhow::Result<Option<u64>> {
+            StubChain.tx_fee(t).await
+        }
+        async fn received_in_tx(&self, t: &str, a: u32) -> anyhow::Result<u64> {
+            StubChain.received_in_tx(t, a).await
+        }
+        async fn block_time(&self, h: u32) -> anyhow::Result<i64> {
+            StubChain.block_time(h).await
+        }
+    }
+
+    pub struct Keyed {
+        pub s: Service,
+        pub pool: Pool,
+        pub treasury: Arc<Treasury>,
+        pub fake: Arc<FakeWallet>,
+    }
+
+    /// A full-mode service over `fake`. `seed_file` writes a seed file first (the words and the
+    /// passphrase they are encrypted with); `env_pass` sets PAYSLIP_SEED_PASSPHRASE; `auth`
+    /// puts sign-in in front of the payer routes.
+    pub async fn start(
+        fake: Arc<FakeWallet>,
+        seed_file: Option<(&str, &str)>,
+        env_pass: Option<&str>,
+        auth: Option<AuthConfig>,
+    ) -> Keyed {
+        let dir = tempfile::tempdir().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut cfg = config(dir.path(), addr);
+        cfg.statements_only = false;
+        cfg.seed_passphrase = env_pass.map(|p| p.to_string());
+        if let Some(a) = auth {
+            cfg.auth = a;
+        }
+        if let Some((phrase, pass)) = seed_file {
+            SeedFile::new(cfg.seed_path())
+                .write_ciphertext(&ciphertext(phrase, pass))
+                .unwrap();
+        }
+        let db = db::open(&cfg.app_db_path()).await.unwrap();
+        let treasury = Treasury::open(cfg.clone(), db.clone(), fake.clone()).await.unwrap();
+        let venue = payslip::venue::build(&cfg).unwrap();
+        let executor = Executor::with_chain(
+            cfg.network,
+            db.clone(),
+            Arc::new(GatedStub(treasury.clone())),
+            venue.clone(),
+            Arc::new(TreasuryVenue::new(Arc::new(StubRates))),
+            Duration::from_millis(5),
+            1,
+        )
+        .with_approvals_required(cfg.auth.approvals_required);
+        let auth = cfg
+            .auth
+            .required()
+            .then(|| Arc::new(payslip::auth::Verifier::new(&cfg.auth)));
+        let state = Arc::new(AppState {
+            viewers: ViewerRegistry::new(&cfg),
+            db: db.clone(),
+            treasury: Some(treasury.clone()),
+            venue,
+            executor: Some(executor),
+            contractor_lock: tokio::sync::Mutex::new(()),
+            schedule_lock: tokio::sync::Mutex::new(()),
+            lwd: tokio::sync::Mutex::new(payslip::wallet::lwd::connect(&cfg.lightwalletd_url).unwrap()),
+            last_wallet: std::sync::Mutex::new(None),
+            prices: Arc::new(payslip::prices::Prices::new(None, None)),
+            scan_slots: tokio::sync::Semaphore::new(3),
+            sse_slots: Arc::new(tokio::sync::Semaphore::new(api::MAX_EVENT_STREAMS)),
+            auth,
+            cfg: cfg.clone(),
+        });
+        tokio::spawn(async move { axum::serve(listener, api::router(state)).await.unwrap() });
+        Keyed {
+            s: Service {
+                base: format!("http://{addr}"),
+                cfg,
+                http: reqwest::Client::new(),
+                _dir: dir,
+            },
+            pool: db,
+            treasury,
+            fake,
+        }
+    }
+
+    pub async fn key(k: &Keyed) -> Value {
+        let (st, v) = k.s.get("/api/treasury/key").await;
+        assert_eq!(st, 200, "{v}");
+        v
+    }
+
+    pub fn mode(path: &std::path::Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+}
+
+/// Without a seed file the service starts: health says `no_key`, reads work, drafting works,
+/// and everything that needs the key (the wallet, adding a contractor, funding, unlocking,
+/// replacing, moving) answers 409 `no_treasury_key` with the way to create one.
+#[tokio::test]
+async fn without_a_key_the_service_starts_and_spending_is_refused() {
+    let k = keys::start(keys::FakeWallet::new(), None, None, None).await;
+    let (st, h) = k.s.get("/api/health").await;
+    assert_eq!((st, h["treasury"].as_str()), (200, Some("no_key")), "{h}");
+    let v = keys::key(&k).await;
+    assert_eq!(v["state"], json!("no_key"));
+    assert_eq!(v["key_version"], json!(0));
+    assert!(v["address"].is_null() && v["unlocked_until"].is_null() && v["created_at"].is_null());
+    assert!(v["storage"]["path"].as_str().unwrap().ends_with("payer.seed.age"));
+    assert_eq!(v["storage"]["format"], json!("age scrypt, BIP-39 24 words"));
+    let (st, v) = k.s.get("/api/runs").await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = k.s.get("/api/contractors").await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = k.s.get("/api/wallet").await;
+    assert_eq!((st, code(&v)), (409, "no_treasury_key"), "{v}");
+    assert!(has_hint(&v));
+    let (st, v) =
+        k.s.post(
+            "/api/contractors",
+            json!({ "name": "Amara", "unified_address": testnet_address(1), "settlement_choice": "hold_zec" }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "no_treasury_key"), "{v}");
+    // Drafting a run is bookkeeping and works; funding names the treasury and does not.
+    let c = contractor(&k.pool, 1).await;
+    let (st, run) =
+        k.s.post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-nokey"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let id = run["id"].as_str().unwrap();
+    let (st, v) =
+        k.s.post(&format!("/api/runs/{id}/fund"), json!({ "method": "zec" }))
+            .await;
+    assert_eq!((st, code(&v)), (409, "no_treasury_key"), "{v}");
+    let (st, v) = k.s.post(&format!("/api/runs/{id}/execute"), json!({})).await;
+    assert_eq!((st, code(&v)), (409, "no_treasury_key"), "{v}");
+    for (path, body) in [
+        ("/api/treasury/unlock", json!({ "passphrase": keys::PASS })),
+        ("/api/treasury/lock", json!({})),
+        (
+            "/api/treasury/key/replace",
+            json!({ "ciphertext": keys::ciphertext(keys::PHRASE, keys::PASS), "passphrase": keys::PASS, "sweep_to": "new" }),
+        ),
+        ("/api/treasury/move", json!({ "to_address": testnet_address(2) })),
+    ] {
+        let (st, v) = k.s.post(path, body).await;
+        assert_eq!((st, code(&v)), (409, "no_treasury_key"), "{path}: {v}");
+        assert!(has_hint(&v), "{path}");
+    }
+}
+
+/// `POST /api/treasury/key` takes the armored age file the browser made (the 24 words
+/// encrypted with the passphrase): with the passphrase the file is checked and the treasury is
+/// unlocked at once, the seed file is written readable by the service only, and the address is
+/// the one the seed derives; a second key is refused, as are a wrong passphrase and anything
+/// that is not such a file. Without the passphrase the key is stored and the wallet opens
+/// locked; the first unlock creates the treasury account.
+#[tokio::test]
+async fn a_key_is_created_from_an_uploaded_ciphertext() {
+    let k = keys::start(keys::FakeWallet::new(), None, None, None).await;
+    let ciphertext = keys::ciphertext(keys::PHRASE, keys::PASS);
+    let (st, v) =
+        k.s.post("/api/treasury/key", json!({ "ciphertext": "not an age file" }))
+            .await;
+    assert_eq!((st, code(&v)), (400, "invalid_ciphertext"), "{v}");
+    assert!(has_hint(&v));
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/key",
+            json!({ "ciphertext": ciphertext, "passphrase": "not the passphrase" }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (403, "wrong_passphrase"), "{v}");
+    assert!(!k.s.cfg.seed_path().exists(), "a refused upload leaves no file");
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/key",
+            json!({ "ciphertext": ciphertext, "passphrase": keys::PASS }),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+    assert_eq!(v["state"], json!("unlocked"));
+    assert_eq!(v["key_version"], json!(1));
+    assert_eq!(v["address"], json!(keys::address_of(keys::PHRASE)));
+    assert!(v["unlocked_until"].is_string() && v["created_at"].is_string(), "{v}");
+    assert_eq!(keys::mode(&k.s.cfg.seed_path()), 0o600);
+    // The file on disk is exactly what was uploaded, and it opens with the passphrase.
+    let on_disk = std::fs::read_to_string(k.s.cfg.seed_path()).unwrap();
+    assert_eq!(on_disk.trim(), ciphertext.trim());
+    let seed = keys::SeedFile::new(k.s.cfg.seed_path()).unlock(keys::PASS).unwrap();
+    assert_eq!(seed.expose_secret(), &keys::seed_of(keys::PHRASE));
+    let (st, h) = k.s.get("/api/health").await;
+    assert_eq!((st, h["treasury"].as_str()), (200, Some("unlocked")), "{h}");
+    let (st, w) = k.s.get("/api/wallet").await;
+    assert_eq!(st, 200, "{w}");
+    assert_eq!(w["treasury"]["unified_address"], json!(keys::address_of(keys::PHRASE)));
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/key",
+            json!({ "ciphertext": keys::ciphertext(&keys::new_phrase(), keys::PASS), "passphrase": keys::PASS }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "key_exists"), "{v}");
+    assert!(v["error"]["hint"].as_str().unwrap().contains("Replace"));
+    assert_eq!(keys::key(&k).await["address"], json!(keys::address_of(keys::PHRASE)));
+
+    // Uploaded without its passphrase: stored, locked, no account until the first unlock.
+    let k2 = keys::start(keys::FakeWallet::new(), None, None, None).await;
+    let (st, v) =
+        k2.s.post(
+            "/api/treasury/key",
+            json!({ "ciphertext": keys::ciphertext(keys::PHRASE, keys::PASS) }),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+    assert_eq!(v["state"], json!("locked"));
+    assert!(v["address"].is_null(), "{v}");
+    assert_eq!(v["key_version"], json!(1));
+    let (st, v) = k2.s.get("/api/wallet").await;
+    assert_eq!((st, code(&v)), (409, "treasury_locked"), "{v}");
+    let (st, v) =
+        k2.s.post("/api/treasury/unlock", json!({ "passphrase": keys::PASS }))
+            .await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("unlocked")), "{v}");
+    assert_eq!(v["address"], json!(keys::address_of(keys::PHRASE)));
+    let (st, w) = k2.s.get("/api/wallet").await;
+    assert_eq!(st, 200, "{w}");
+}
+
+/// An unlock needs the right passphrase and lasts the hours asked (1 to 72, 8 by default);
+/// a lock request or the timer locks the treasury again, and a wrong passphrase is 403.
+#[tokio::test]
+async fn unlock_takes_the_right_passphrase_and_locks_again() {
+    let k = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 0),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        None,
+    )
+    .await;
+    let v = keys::key(&k).await;
+    assert_eq!(v["state"], json!("locked"));
+    assert_eq!(v["address"], json!(keys::address_of(keys::PHRASE)));
+    assert_eq!(v["birthday_height"], json!(4_467_000));
+    assert_eq!(
+        v["key_version"],
+        json!(1),
+        "a deployment from before migration 0008 gets version 1"
+    );
+    assert!(v["created_at"].is_string(), "{v}");
+    let (st, h) = k.s.get("/api/health").await;
+    assert_eq!((st, h["treasury"].as_str()), (200, Some("locked")), "{h}");
+    let (st, v) =
+        k.s.post("/api/treasury/unlock", json!({ "passphrase": "not the passphrase" }))
+            .await;
+    assert_eq!((st, code(&v)), (403, "wrong_passphrase"), "{v}");
+    assert!(has_hint(&v));
+    assert!(!k.treasury.can_sign());
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/unlock",
+            json!({ "passphrase": keys::PASS, "hours": 100 }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (400, "invalid_hours"), "{v}");
+    let (st, v) = k.s.post("/api/treasury/unlock", json!({ "passphrase": "" })).await;
+    assert_eq!((st, code(&v)), (400, "passphrase_required"), "{v}");
+    let before = time::OffsetDateTime::now_utc();
+    let (st, v) =
+        k.s.post("/api/treasury/unlock", json!({ "passphrase": keys::PASS }))
+            .await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("unlocked")), "{v}");
+    let until = time::OffsetDateTime::parse(
+        v["unlocked_until"].as_str().unwrap(),
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let hours = (until - before).whole_minutes() as f64 / 60.0;
+    assert!((7.9..=8.1).contains(&hours), "default 8 hours, got {hours}");
+    assert!(k.treasury.can_sign());
+    assert!(k.fake.state().seed.is_some(), "the seed is in the wallet");
+    let (st, v) = k.s.post("/api/treasury/lock", json!({})).await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("locked")), "{v}");
+    assert!(v["unlocked_until"].is_null());
+    assert!(!k.treasury.can_sign());
+    assert!(k.fake.state().seed.is_none(), "the seed left the wallet");
+    // Locking a locked treasury is a no-op.
+    let (st, v) = k.s.post("/api/treasury/lock", json!({})).await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("locked")), "{v}");
+    // The timer: an unlock for a moment locks itself again.
+    let v = k
+        .treasury
+        .unlock_for(keys::PASS, Duration::from_millis(300))
+        .await
+        .unwrap();
+    assert_eq!(v.state, "unlocked");
+    assert!(k.treasury.can_sign());
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    assert!(!k.treasury.can_sign(), "locked again by the timer");
+    assert_eq!(keys::key(&k).await["state"], json!("locked"));
+    assert!(k.fake.state().seed.is_none());
+}
+
+/// While locked: syncing, reading, drafting and funding work; adding a contractor, executing
+/// a run and moving the treasury answer 409 `treasury_locked`; after an unlock they go through.
+#[tokio::test]
+async fn a_locked_treasury_refuses_what_signs_and_serves_the_rest() {
+    let k = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 50_000_000),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        None,
+    )
+    .await;
+    let (st, w) = k.s.get("/api/wallet").await;
+    assert_eq!(st, 200, "{w}");
+    assert_eq!(w["treasury"]["spendable_zat"], json!(50_000_000));
+    let (st, w) = k.s.post("/api/wallet/sync", json!({})).await;
+    assert_eq!(st, 200, "{w}");
+    let (st, v) =
+        k.s.post(
+            "/api/contractors",
+            json!({ "name": "Amara", "unified_address": testnet_address(1), "settlement_choice": "hold_zec" }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "treasury_locked"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("add a contractor"));
+    assert!(v["error"]["hint"].as_str().unwrap().contains("unlock"));
+    // A balance to move to a new key needs the old key in memory.
+    let (st, v) = k
+        .s
+        .post(
+            "/api/treasury/key/replace",
+            json!({ "ciphertext": keys::ciphertext(&keys::new_phrase(), keys::PASS), "passphrase": keys::PASS, "sweep_to": "new" }),
+        )
+        .await;
+    assert_eq!(
+        (st, code(&v)),
+        (409, "treasury_locked"),
+        "a balance to move needs the old key: {v}"
+    );
+    let c = contractor(&k.pool, 1).await;
+    let (st, run) =
+        k.s.post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-locked"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let id = run["id"].as_str().unwrap().to_string();
+    let (st, v) =
+        k.s.post(&format!("/api/runs/{id}/fund"), json!({ "method": "zec" }))
+            .await;
+    assert_eq!(
+        (st, v["status"].as_str()),
+        (200, Some("awaiting_funds")),
+        "funding receives, it does not sign: {v}"
+    );
+    let (st, v) = k.s.post(&format!("/api/runs/{id}/execute"), json!({})).await;
+    assert_eq!((st, code(&v)), (409, "treasury_locked"), "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("pay this run"));
+    let (st, v) =
+        k.s.post("/api/treasury/move", json!({ "to_address": testnet_address(3) }))
+            .await;
+    assert_eq!((st, code(&v)), (409, "treasury_locked"), "{v}");
+    let (st, v) =
+        k.s.post("/api/treasury/unlock", json!({ "passphrase": keys::PASS, "hours": 1 }))
+            .await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("unlocked")), "{v}");
+    let (st, v) =
+        k.s.post(
+            "/api/contractors",
+            json!({ "name": "Amara", "unified_address": testnet_address(9), "settlement_choice": "hold_zec" }),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+    assert_eq!(v["account_index"], json!(2));
+    assert!(v["key_rotated_at"].is_null());
+    let (st, v) = k.s.post(&format!("/api/runs/{id}/execute"), json!({})).await;
+    assert_eq!(st, 202, "{v}");
+}
+
+/// Replacing the key: refused while a run is in progress or for the same key; otherwise the old
+/// treasury is swept to the new treasury address, the old seed file and wallet are retired next
+/// to the new ones, every contractor (archived ones too) gets an account derived from the new
+/// seed with the same index and `key_rotated_at`, the key version goes up, and the new key is
+/// unlocked. With nothing in the old treasury there is no sweep.
+#[tokio::test]
+async fn replacing_the_key_sweeps_retires_and_rotates_every_contractor() {
+    let k = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 5_000_000),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        None,
+    )
+    .await;
+    let (st, v) =
+        k.s.post("/api/treasury/unlock", json!({ "passphrase": keys::PASS }))
+            .await;
+    assert_eq!(st, 200, "{v}");
+    let c1 = contractor(&k.pool, 1).await;
+    let c2 = contractor(&k.pool, 2).await;
+    let c3 = contractor(&k.pool, 3).await;
+    db::mark_fvk_shared(&k.pool, &c1).await.unwrap();
+    db::archive_contractor(&k.pool, &c3).await.unwrap();
+    let new_phrase = keys::new_phrase();
+    let new_pass = "a new passphrase for the new key";
+    let new_cipher = keys::ciphertext(&new_phrase, new_pass);
+    let body = |cipher: &str, pass: &str, to: &str| json!({ "ciphertext": cipher, "passphrase": pass, "sweep_to": to });
+    let (st, v) =
+        k.s.post("/api/treasury/key/replace", body(&new_cipher, new_pass, "elsewhere"))
+            .await;
+    assert_eq!((st, code(&v)), (400, "invalid_sweep_to"), "{v}");
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/key/replace",
+            body(&new_cipher, "wrong passphrase", "new"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (403, "wrong_passphrase"), "{v}");
+    let (st, v) =
+        k.s.post(
+            "/api/treasury/key/replace",
+            body(&keys::ciphertext(keys::PHRASE, keys::PASS), keys::PASS, "new"),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "same_key"), "{v}");
+    // A run in progress holds the replacement.
+    let (st, run) =
+        k.s.post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&c1, 480_000, "INV-1")], "k-rep"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    sqlx::query("UPDATE runs SET status = 'paying' WHERE id = ?")
+        .bind(&run_id)
+        .execute(&k.pool)
+        .await
+        .unwrap();
+    let (st, v) =
+        k.s.post("/api/treasury/key/replace", body(&new_cipher, new_pass, "new"))
+            .await;
+    assert_eq!((st, code(&v)), (409, "runs_in_progress"), "{v}");
+    assert_eq!(v["error"]["runs"], json!([run_id]));
+    sqlx::query("UPDATE runs SET status = 'paid' WHERE id = ?")
+        .bind(&run_id)
+        .execute(&k.pool)
+        .await
+        .unwrap();
+    // Nothing happened so far.
+    assert!(k.fake.state().sweeps.is_empty());
+    assert!(k.s.cfg.seed_path().exists());
+    assert_eq!(keys::key(&k).await["key_version"], json!(1));
+
+    let (st, v) =
+        k.s.post("/api/treasury/key/replace", body(&new_cipher, new_pass, "new"))
+            .await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["old_address"], json!(keys::address_of(keys::PHRASE)));
+    assert_eq!(v["new_address"], json!(keys::address_of(&new_phrase)));
+    assert_eq!(v["sweep_txid"], json!(keys::SWEEP_TXID));
+    assert!(v["sweep_explorer_url"].as_str().unwrap().contains(keys::SWEEP_TXID));
+    assert_eq!(v["contractors_rotated"], json!(3));
+    assert_eq!(v["key"]["state"], json!("unlocked"));
+    assert_eq!(v["key"]["key_version"], json!(2));
+    assert_eq!(v["key"]["address"], json!(keys::address_of(&new_phrase)));
+    let retired: Vec<String> = v["retired"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(retired.len(), 2, "{retired:?}");
+    assert!(retired.iter().any(|r| r.contains("wallet.db.retired-")), "{retired:?}");
+    let old_seed = retired
+        .iter()
+        .find(|r| r.contains("payer.seed.age.retired-"))
+        .expect("the old seed file is kept");
+    // The old treasury went to the new one, after the fee.
+    assert_eq!(
+        k.fake.state().sweeps,
+        vec![(keys::address_of(&new_phrase), 5_000_000 - keys::FEE)]
+    );
+    assert_eq!(k.fake.state().fresh_opens, 1);
+    // The files: the new key opens with its passphrase, the retired one with the old.
+    let old_seed = std::path::PathBuf::from(old_seed);
+    assert_eq!(keys::mode(&old_seed), 0o600);
+    assert_eq!(
+        keys::SeedFile::new(&old_seed)
+            .unlock(keys::PASS)
+            .unwrap()
+            .expose_secret(),
+        &keys::seed_of(keys::PHRASE)
+    );
+    assert_eq!(
+        keys::SeedFile::new(k.s.cfg.seed_path())
+            .unlock(new_pass)
+            .unwrap()
+            .expose_secret(),
+        &keys::seed_of(&new_phrase)
+    );
+    assert_eq!(keys::mode(&k.s.cfg.seed_path()), 0o600);
+    // Every contractor's account was derived again, same index, new key, nobody told yet.
+    for (id, index) in [(&c1, 1u32), (&c2, 2), (&c3, 3)] {
+        let c = db::get_contractor(&k.pool, id).await.unwrap().unwrap();
+        assert_eq!(c.account_index as u32, index);
+        assert!(c.key_rotated_at.is_some(), "{}", c.name);
+        assert!(c.fvk_shared_at.is_none(), "{}", c.name);
+        assert_eq!(c.account_birthday_height as u32, STUB_TIP - 10);
+        assert_eq!(
+            c.key_fingerprint.as_deref(),
+            Some(fingerprint(&keys::ufvk_of(&new_phrase, index)).as_str()),
+            "{}",
+            c.name
+        );
+    }
+    assert_eq!(
+        k.fake.state().accounts.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+        vec![1, 2, 3]
+    );
+    let (st, v) = k.s.get("/api/contractors").await;
+    assert_eq!(st, 200);
+    assert!(v["contractors"][0]["key_rotated_at"].is_string(), "{v}");
+    // History: version 1 retired, version 2 current.
+    let current = db::current_treasury_key(&k.pool).await.unwrap().unwrap();
+    assert_eq!((current.version, current.retired_at.is_none()), (2, true));
+    assert_eq!(current.address.as_deref(), Some(keys::address_of(&new_phrase).as_str()));
+    let retired_at: Option<String> = sqlx::query_scalar("SELECT retired_at FROM treasury_keys WHERE version = 1")
+        .fetch_one(&k.pool)
+        .await
+        .unwrap();
+    assert!(retired_at.is_some());
+    let (st, w) = k.s.get("/api/wallet").await;
+    assert_eq!(st, 200, "{w}");
+    assert_eq!(w["treasury"]["unified_address"], json!(keys::address_of(&new_phrase)));
+
+    // An empty old treasury: no sweep, everything else the same.
+    let k2 = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 0),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        None,
+    )
+    .await;
+    let other = keys::new_phrase();
+    let (st, v) =
+        k2.s.post(
+            "/api/treasury/key/replace",
+            body(&keys::ciphertext(&other, new_pass), new_pass, "new"),
+        )
+        .await;
+    assert_eq!(st, 200, "a locked key with nothing to sweep can be replaced: {v}");
+    assert!(v["sweep_txid"].is_null() && v["sweep_explorer_url"].is_null(), "{v}");
+    assert_eq!(v["contractors_rotated"], json!(0));
+    assert_eq!(v["key"]["key_version"], json!(2));
+    assert!(k2.fake.state().sweeps.is_empty());
+    assert_eq!(keys::key(&k2).await["address"], json!(keys::address_of(&other)));
+}
+
+/// `POST /api/treasury/move` sends the whole treasury to a shielded address of the company's
+/// choosing; a transparent address, an address of another kind, an empty treasury and a run
+/// in progress are refused.
+#[tokio::test]
+async fn moving_the_treasury_out_refuses_transparent_addresses() {
+    let k = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 0),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        None,
+    )
+    .await;
+    let (st, v) =
+        k.s.post("/api/treasury/unlock", json!({ "passphrase": keys::PASS }))
+            .await;
+    assert_eq!(st, 200, "{v}");
+    let taddr = keys::transparent_address(7);
+    assert!(taddr.starts_with("tm"), "{taddr}");
+    let (st, v) = k.s.post("/api/treasury/move", json!({ "to_address": taddr })).await;
+    assert_eq!((st, code(&v)), (400, "address_not_shielded"), "{v}");
+    assert!(has_hint(&v));
+    let (st, v) =
+        k.s.post("/api/treasury/move", json!({ "to_address": "not an address" }))
+            .await;
+    assert_eq!((st, code(&v)), (400, "invalid_address"), "{v}");
+    let to = testnet_address(5);
+    let (st, v) = k.s.post("/api/treasury/move", json!({ "to_address": to })).await;
+    assert_eq!((st, code(&v)), (409, "treasury_empty"), "{v}");
+    k.fake.state().spendable = 2_500_000;
+    k.fake.state().pending = 100;
+    let (st, v) = k.s.post("/api/treasury/move", json!({ "to_address": to })).await;
+    assert_eq!((st, code(&v)), (409, "treasury_pending"), "{v}");
+    k.fake.state().pending = 0;
+    let c = contractor(&k.pool, 1).await;
+    let (st, run) =
+        k.s.post(
+            "/api/runs",
+            run_body("2026-09-01", "2026-09-30", &[(&c, 480_000, "INV-1")], "k-move"),
+        )
+        .await;
+    assert_eq!(st, 201, "{run}");
+    let run_id = run["id"].as_str().unwrap().to_string();
+    sqlx::query("UPDATE runs SET status = 'allocating' WHERE id = ?")
+        .bind(&run_id)
+        .execute(&k.pool)
+        .await
+        .unwrap();
+    let (st, v) = k.s.post("/api/treasury/move", json!({ "to_address": to })).await;
+    assert_eq!((st, code(&v)), (409, "runs_in_progress"), "{v}");
+    sqlx::query("UPDATE runs SET status = 'cancelled' WHERE id = ?")
+        .bind(&run_id)
+        .execute(&k.pool)
+        .await
+        .unwrap();
+    let (st, v) = k.s.post("/api/treasury/move", json!({ "to_address": to })).await;
+    assert_eq!(st, 200, "{v}");
+    assert_eq!(v["txid"], json!(keys::SWEEP_TXID));
+    assert_eq!(v["to_address"], json!(to));
+    assert_eq!(v["amount_zat"], json!(2_500_000 - keys::FEE));
+    assert_eq!(v["fee_zat"], json!(keys::FEE));
+    assert!(v["explorer_url"].as_str().unwrap().contains(keys::SWEEP_TXID));
+    assert_eq!(k.fake.state().sweeps, vec![(to, 2_500_000 - keys::FEE)]);
+}
+
+/// With PAYSLIP_SEED_PASSPHRASE set nothing changes: the seed is decrypted at start, the state
+/// is `unlocked_by_env`, the key endpoints that would change that answer `unlocked_by_env`, and
+/// a wrong passphrase still refuses to start. A key uploaded in this mode must use the same
+/// passphrase, or the next start could not open it.
+#[tokio::test]
+async fn the_env_passphrase_mode_is_unchanged() {
+    let k = keys::start(
+        keys::FakeWallet::new(),
+        Some((keys::PHRASE, keys::PASS)),
+        Some(keys::PASS),
+        None,
+    )
+    .await;
+    assert!(k.treasury.can_sign());
+    assert!(k.fake.state().seed.is_some(), "the seed was decrypted at start");
+    let (st, h) = k.s.get("/api/health").await;
+    assert_eq!((st, h["treasury"].as_str()), (200, Some("unlocked_by_env")), "{h}");
+    let v = keys::key(&k).await;
+    assert_eq!(v["state"], json!("unlocked_by_env"));
+    assert!(v["unlocked_until"].is_null());
+    assert_eq!(v["address"], json!(keys::address_of(keys::PHRASE)));
+    assert_eq!(v["key_version"], json!(1));
+    let (st, w) = k.s.get("/api/wallet").await;
+    assert_eq!(st, 200, "{w}");
+    let (st, v) =
+        k.s.post(
+            "/api/contractors",
+            json!({ "name": "Amara", "unified_address": testnet_address(1), "settlement_choice": "hold_zec" }),
+        )
+        .await;
+    assert_eq!(st, 201, "{v}");
+    for (path, body) in [
+        ("/api/treasury/unlock", json!({ "passphrase": keys::PASS })),
+        ("/api/treasury/lock", json!({})),
+        (
+            "/api/treasury/key/replace",
+            json!({ "ciphertext": keys::ciphertext(&keys::new_phrase(), keys::PASS), "passphrase": keys::PASS, "sweep_to": "new" }),
+        ),
+    ] {
+        let (st, v) = k.s.post(path, body).await;
+        assert_eq!((st, code(&v)), (409, "unlocked_by_env"), "{path}: {v}");
+        assert!(v["error"]["hint"].as_str().unwrap().contains("PAYSLIP_SEED_PASSPHRASE"));
+    }
+    assert!(k.treasury.can_sign(), "still unlocked");
+    // Moving the treasury out works in this mode too: it only needs a signature.
+    let (st, v) =
+        k.s.post("/api/treasury/move", json!({ "to_address": testnet_address(4) }))
+            .await;
+    assert_eq!((st, code(&v)), (409, "treasury_empty"), "{v}");
+
+    // A wrong env passphrase refuses to start, as before.
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = config(dir.path(), "127.0.0.1:1".parse().unwrap());
+    cfg.statements_only = false;
+    cfg.seed_passphrase = Some("not the passphrase".into());
+    keys::SeedFile::new(cfg.seed_path())
+        .write_ciphertext(&keys::ciphertext(keys::PHRASE, keys::PASS))
+        .unwrap();
+    let db = db::open(&cfg.app_db_path()).await.unwrap();
+    let err = payslip::treasury::Treasury::open(cfg, db, keys::FakeWallet::new())
+        .await
+        .err()
+        .expect("a wrong PAYSLIP_SEED_PASSPHRASE refuses to start");
+    assert!(format!("{err:#}").contains("passphrase"), "{err:#}");
+
+    // No seed file and an env passphrase: the upload must use that passphrase.
+    let k3 = keys::start(keys::FakeWallet::new(), None, Some(keys::PASS), None).await;
+    assert_eq!(keys::key(&k3).await["state"], json!("no_key"));
+    let (st, v) = k3
+        .s
+        .post(
+            "/api/treasury/key",
+            json!({ "ciphertext": keys::ciphertext(keys::PHRASE, "another passphrase"), "passphrase": "another passphrase" }),
+        )
+        .await;
+    assert_eq!((st, code(&v)), (409, "passphrase_mismatch"), "{v}");
+    let (st, v) =
+        k3.s.post(
+            "/api/treasury/key",
+            json!({ "ciphertext": keys::ciphertext(keys::PHRASE, keys::PASS), "passphrase": keys::PASS }),
+        )
+        .await;
+    assert_eq!((st, v["state"].as_str()), (201, Some("unlocked_by_env")), "{v}");
+}
+
+/// With sign-in on: the key's state is read by every member, every change is for admins only,
+/// and each change leaves an audit row that never carries the passphrase or the file.
+#[tokio::test]
+async fn treasury_key_changes_are_admin_only_and_audited() {
+    use payslip::config::AuthMode;
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let auth = AuthConfig {
+        mode: AuthMode::Required,
+        jwks_url: jwks,
+        issuer: ISSUER.into(),
+        audience: AUDIENCE.into(),
+        bootstrap_admin_email: Some("owner@acme.test".into()),
+        approvals_required: 1,
+    };
+    let k = keys::start(
+        keys::FakeWallet::with_treasury(keys::PHRASE, 0),
+        Some((keys::PHRASE, keys::PASS)),
+        None,
+        Some(auth),
+    )
+    .await;
+    let s = &k.s;
+    let admin = key.token("owner@acme.test", 300, json!({ "name": "Owner" }));
+    signin::me(s, &admin).await;
+    let approver = key.token("approver@acme.test", 300, json!({}));
+    signin::join(s, &admin, "approver@acme.test", "approver", &approver).await;
+    let accountant = key.token("accountant@acme.test", 300, json!({}));
+    signin::join(s, &admin, "accountant@acme.test", "accountant", &accountant).await;
+    let viewer = key.token("viewer@acme.test", 300, json!({}));
+    signin::join(s, &admin, "viewer@acme.test", "viewer", &viewer).await;
+    for (role, token) in [
+        ("approver", &approver),
+        ("accountant", &accountant),
+        ("viewer", &viewer),
+    ] {
+        let (st, v) = s.req("GET", "/api/treasury/key", Some(token), None).await;
+        assert_eq!((st, v["state"].as_str()), (200, Some("locked")), "{role}: {v}");
+        let (st, v) = s
+            .req(
+                "POST",
+                "/api/treasury/unlock",
+                Some(token),
+                Some(json!({ "passphrase": keys::PASS })),
+            )
+            .await;
+        assert_eq!((st, code(&v)), (403, "forbidden"), "{role}: {v}");
+        assert!(v["error"]["message"].as_str().unwrap().contains(role));
+        assert!(!k.treasury.can_sign(), "{role} must not unlock");
+    }
+    let (st, v) = s
+        .req(
+            "POST",
+            "/api/treasury/unlock",
+            Some(&admin),
+            Some(json!({ "passphrase": keys::PASS, "hours": 2 })),
+        )
+        .await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("unlocked")), "{v}");
+    let (st, v) = s.req("POST", "/api/treasury/lock", Some(&admin), Some(json!({}))).await;
+    assert_eq!((st, v["state"].as_str()), (200, Some("locked")), "{v}");
+    let (st, v) = s.req("GET", "/api/org/audit", Some(&admin), None).await;
+    assert_eq!(st, 200, "{v}");
+    let entries = v["entries"].as_array().unwrap();
+    let find = |action: &str| {
+        entries
+            .iter()
+            .find(|e| e["action"] == json!(action))
+            .cloned()
+            .unwrap_or_else(|| panic!("no {action} row in {v}"))
+    };
+    let unlock = find("treasury.unlock");
+    assert_eq!(unlock["role"], json!("admin"));
+    assert_eq!(unlock["target"], json!("treasury"));
+    assert_eq!(unlock["details"]["hours"], json!(2));
+    assert_eq!(unlock["details"]["state"], json!("unlocked"));
+    assert!(unlock["details"]["unlocked_until"].is_string(), "{unlock}");
+    assert!(
+        !unlock.to_string().contains(keys::PASS),
+        "no passphrase on the audit log"
+    );
+    let lock = find("treasury.lock");
+    assert_eq!(lock["details"]["state"], json!("locked"));
+    let (st, v) = s.req("GET", "/api/org/audit", Some(&accountant), None).await;
+    assert_eq!(st, 200, "{v}");
+    // A refused unlock by an approver left no row.
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|e| e["action"] == json!("treasury.unlock"))
+            .count(),
+        1
+    );
 }

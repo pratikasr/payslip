@@ -82,6 +82,8 @@ struct Hooks {
     insufficient_from: Option<u32>,
     /// Block time lookups fail, as when lightwalletd is unreachable.
     block_time_fails: bool,
+    /// The treasury is locked (ADR-030): the wallet cannot sign.
+    locked: bool,
 }
 
 #[derive(Default, Clone)]
@@ -194,6 +196,9 @@ impl FakeChain {
 
 #[async_trait]
 impl ChainOps for FakeChain {
+    async fn can_sign(&self) -> bool {
+        !self.hooks.lock().unwrap().locked
+    }
     async fn sync(&self) -> anyhow::Result<()> {
         Ok(())
     }
@@ -2233,4 +2238,123 @@ async fn a_paid_request_carries_its_txid_and_a_recurring_one_repeats() {
         events.iter().any(|m| m.contains("Next request from Amara Okafor")),
         "{events:?}"
     );
+}
+
+// =============================================================================================
+// Treasury key control (ADR-030): a locked treasury parks a run instead of failing it.
+
+/// With the treasury locked, funding works and `start` refuses with `treasury_locked`. A run
+/// that was already executing (a restart resumes it) goes as far as the swap record and parks
+/// at the allocation, the first signature, saying so once; nothing is signed while it waits.
+/// Unlocking lets the same driver finish, and the run is paid exactly once.
+#[tokio::test]
+async fn a_locked_treasury_parks_the_run_and_unlocking_resumes_it() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    chain.hooks.lock().unwrap().locked = true;
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "funded");
+    let err = exec.start(&run_id).await.unwrap_err();
+    assert_eq!(err.body.code, "treasury_locked");
+    assert!(err.body.message.contains("pay this run"), "{}", err.body.message);
+    assert!(err.body.hint.contains("unlock"), "{}", err.body.hint);
+    assert!(!exec.is_running(&run_id));
+    // Executed before the lock, then the service restarted: the run resumes and parks.
+    db::set_execute_requested(&pool, &run_id, true).await.unwrap();
+    exec.resume_all().await;
+    for _ in 0..40 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+    }
+    assert!(exec.is_running(&run_id), "parked, not failed");
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "swapped", "the swap is recorded, the allocation waits");
+    assert!(r.allocation_txid.is_none());
+    assert!(r.error_code.is_none());
+    assert!(chain.txs_from(0).is_empty(), "nothing was signed");
+    let parked = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.message.starts_with("Parked: the treasury is locked"))
+        .count();
+    assert_eq!(parked, 1, "said once, not once per poll");
+    // The admin unlocks: the same driver goes on.
+    chain.hooks.lock().unwrap().locked = false;
+    for _ in 0..4000 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        if r.status == "paid" && !exec.is_running(&run_id) {
+            break;
+        }
+    }
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
+    let messages: Vec<String> = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|e| e.message)
+        .collect();
+    assert!(
+        messages.contains(&"Treasury unlocked; continuing".to_string()),
+        "{messages:?}"
+    );
+}
+
+/// A lock that lands after the allocation is built: the allocation still confirms (no
+/// signature needed), the run reaches `paying` and parks with no payment built; after the
+/// unlock every line is paid once.
+#[tokio::test]
+async fn a_lock_during_a_run_parks_the_unbuilt_payments() {
+    let (_d, pool) = fresh_db().await;
+    let chain = FakeChain::new(100_000_000);
+    let exec = executor(&pool, &chain, testnet_venue());
+    let run_id = seed_run(&pool).await;
+    exec.fund(&run_id, None, None).await.unwrap();
+    exec.start(&run_id).await.unwrap();
+    // Nothing is mined until the allocation is built, so the lock lands before any payment.
+    for _ in 0..2000 {
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        if r.allocation_txid.is_some() {
+            break;
+        }
+    }
+    chain.hooks.lock().unwrap().locked = true;
+    for _ in 0..40 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+    }
+    let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+    assert_eq!(r.status, "paying", "the allocation confirmed; the payments wait");
+    assert!(r.allocation_height.is_some());
+    assert!(exec.is_running(&run_id));
+    let lines = db::lines(&pool, &run_id).await.unwrap();
+    assert!(lines.iter().all(|l| l.txid.is_none()), "{lines:?}");
+    assert!(lines.iter().all(|l| l.status == "allocated"), "{lines:?}");
+    for i in 1..=3 {
+        assert!(chain.txs_from(i).is_empty(), "account {i} signed nothing");
+    }
+    let parked = db::events(&pool, &run_id)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.message.starts_with("Parked: the treasury is locked"))
+        .count();
+    assert_eq!(parked, 1);
+    chain.hooks.lock().unwrap().locked = false;
+    for _ in 0..4000 {
+        chain.mine();
+        tokio::time::sleep(Duration::from_millis(4)).await;
+        let r = db::get_run(&pool, &run_id).await.unwrap().unwrap();
+        if r.status == "paid" && !exec.is_running(&run_id) {
+            break;
+        }
+    }
+    assert_eq!(db::get_run(&pool, &run_id).await.unwrap().unwrap().status, "paid");
+    assert_paid_exactly_once(&pool, &chain, &run_id).await;
 }

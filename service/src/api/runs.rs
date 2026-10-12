@@ -360,6 +360,11 @@ async fn fund(
 ) -> ApiResult<Json<Value>> {
     let input = body.map(|b| b.0).unwrap_or_default();
     let method = FundMethod::parse(input.method.as_deref())?;
+    // Funding names the treasury address, so there must be a treasury key (ADR-030); it need
+    // not be unlocked, since receiving does not sign. (Tests without a wallet skip this.)
+    if let Some(t) = &s.treasury {
+        t.require_key()?;
+    }
     s.executor()?
         .fund_with(
             &id,
@@ -401,6 +406,11 @@ async fn deposit_tx(
 }
 
 async fn execute(State(s): State<AppStateRef>, Path(id): Path<String>) -> ApiResult<(StatusCode, Json<Value>)> {
+    // Paying spends: without a treasury key nothing can be paid (ADR-030); a locked key is
+    // refused by the executor itself.
+    if let Some(t) = &s.treasury {
+        t.require_key()?;
+    }
     s.executor()?.start(&id).await?;
     Ok((StatusCode::ACCEPTED, Json(view(&s, &id).await?)))
 }

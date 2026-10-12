@@ -24,7 +24,8 @@ REST over JSON, served by `service/` (default `http://127.0.0.1:8080`). The web 
   | 422 | `invalid_body` | a field is missing or has the wrong type; the message names the field |
   | 503 | `auth_unavailable` | sign-in is required and the service cannot fetch the web app's signing keys (`PAYSLIP_AUTH_JWKS_URL`) |
 
-- An error about particular runs also names them in `error.runs`, a list of run ids (`period_overlap`, `idempotency_mismatch`); other errors have no `runs` field.
+- An error about particular runs also names them in `error.runs`, a list of run ids (`period_overlap`, `idempotency_mismatch`, `runs_in_progress`); other errors have no `runs` field.
+- Two errors can come from any endpoint that needs the treasury key (Treasury key below): `409 no_treasury_key` (no key has been created on this deployment) and `409 treasury_locked` (the key is on file but not in memory, so nothing can be signed); both hints say who can fix it and how.
 - The payer endpoints (wallet, contractors, runs) are meant for the payer's own host, or for signed-in members when sign-in is on. The statement endpoints take viewing keys only and never accept a spending key.
 
 ## Sign-in and roles
@@ -47,9 +48,11 @@ Off by default (`PAYSLIP_AUTH=off`): every payer endpoint is open on the payer's
   | `PUT /api/schedule`, approve and reject payment requests | yes | yes | | |
   | `PATCH /api/org`, members (role, remove), invitations (list, create, revoke) | yes | | | |
   | `GET /api/org/audit` | yes | | yes | |
+  | `GET /api/treasury/key` | yes | yes | yes | yes |
+  | `POST /api/treasury/unlock`, `lock`, `key`, `key/replace`, `move` | yes | | | |
 
 - Approvals. `PAYSLIP_APPROVALS_REQUIRED` (1 by default with sign-in required, 0 with sign-in off, at most 10) is how many admins or approvers must approve a run, one approval each, before the service executes it or records its swap. A run is approved with `POST /api/runs/{id}/approve` (under Runs) while it is a `draft`, `awaiting_funds` or `funded` (or `failed` before its swap); it may be funded meanwhile. With 2 or more required the run's creator cannot be one of its approvers, so the organisation needs that many other admins or approvers. The run JSON carries `created_by`, `approvals` and `approvals_required`; health carries `approvals_required`. With sign-in off there are no approvals and nothing changes.
-- Audit log. Every successful write under sign-in adds a row (who, their role, the action, the target id, the time, details), and so do the two viewing-key reads (`contractor.key_view`, `keys.export`). Actions: `org.bootstrap`, `org.update`, `member.role`, `member.remove`, `invitation.create`, `invitation.revoke`, `invitation.accept`, `wallet.sync`, `contractor.create|update|archive|key_view|key_shared|key_unshared`, `keys.export`, `run.create|approve|discard|fund|deposit_tx|execute|cancel`, `schedule.update`, `request.approve|reject`. The target of a create is the new id; an invitation's target is its id, never its token; an approval's details are `{"approvals": 1, "approvals_required": 2}`, the count after it.
+- Audit log. Every successful write under sign-in adds a row (who, their role, the action, the target id, the time, details), and so do the two viewing-key reads (`contractor.key_view`, `keys.export`). Actions: `org.bootstrap`, `org.update`, `member.role`, `member.remove`, `invitation.create`, `invitation.revoke`, `invitation.accept`, `wallet.sync`, `contractor.create|update|archive|key_view|key_shared|key_unshared`, `keys.export`, `run.create|approve|discard|fund|deposit_tx|execute|cancel`, `schedule.update`, `request.approve|reject`, `treasury.unlock|lock|key_create|key_replace|move`. The target of a create is the new id; an invitation's target is its id, never its token; an approval's details are `{"approvals": 1, "approvals_required": 2}`, the count after it; a treasury row's target is `treasury` and its details are the key's state, version and address (plus the hours of an unlock, the sweep txid and addresses of a replacement, the destination and amount of a move), never the passphrase or the key file.
 
 ### GET /api/me
 
@@ -101,10 +104,10 @@ Admin and accountant. `?limit=` (1 to 500, default 100) and `?before=<id>` for o
  "birthday_height": 4460000, "version": "0.1.0", "mode": "full" | "statements",
  "app_fee_bps": 0, "market_prices": true, "simulated_rate_usd_per_zec": 1350000.0 | null,
  "fund_with_zec": true, "max_run_usd_cents": 2500000 | null, "auth": "off" | "required",
- "approvals_required": 1}
+ "approvals_required": 1, "treasury": "unlocked_by_env" | "unlocked" | "locked" | "no_key" | "none"}
 ```
 
-`auth` is `required` when payer endpoints need a signed-in member (Sign-in and roles above). `approvals_required` is how many approvals a run needs before it is paid (`PAYSLIP_APPROVALS_REQUIRED`; 0 with sign-in off).
+`auth` is `required` when payer endpoints need a signed-in member (Sign-in and roles above). `approvals_required` is how many approvals a run needs before it is paid (`PAYSLIP_APPROVALS_REQUIRED`; 0 with sign-in off). `treasury` is the state of the treasury key (Treasury key below): `none` in statements mode.
 
 `mode` is `statements` when the service runs with `PAYSLIP_MODE=statements`: it holds no wallet, answers statements, payment proofs and health, and every payer endpoint (wallet, contractors, viewing keys and runs, reads included) returns 404 `statements_only`. Such a deployment is safe to host publicly for contractors, accountants and judges. `app_fee_bps` is Payslip's own fee on the USDC to ZEC funding swap (0 when none; ADR-020). `market_prices` says whether statements carry the market value of each payment at receipt (ADR-022). `simulated_rate_usd_per_zec` is the testnet venue's fixed rate in USD per ZEC (`PAYSLIP_TESTNET_RATE_USD`, default 1,350,000), the same value the run executor's venue funds every testnet run at, so a client can estimate a run's ZEC before any fill: `amount_usd_cents / 100 / simulated_rate_usd_per_zec` ZEC. It is `null` on mainnet, with any other venue, and in statements mode. `fund_with_zec` is true when `POST /api/runs/{id}/fund` accepts `"method": "zec"` (ADR-025; every full-mode service, on any network; false in statements mode). `max_run_usd_cents` is `PAYSLIP_MAX_RUN_USD_CENTS`, the largest payroll one run may carry, or `null` when there is no cap.
 
@@ -121,7 +124,75 @@ Admin and accountant. `?limit=` (1 to 500, default 100) and `?before=<id>` for o
 
 ### POST /api/wallet/sync
 
-Syncs the payer wallet to the chain tip, then returns the same body as `GET /api/wallet`.
+Syncs the payer wallet to the chain tip, then returns the same body as `GET /api/wallet`. Both work while the treasury is locked (syncing needs viewing keys only); before a key exists both answer `409 no_treasury_key`, and a key uploaded without its passphrase answers `409 treasury_locked` until the first unlock creates the treasury account.
+
+## Treasury key
+
+The treasury key is the company's (ADR-030): a 24-word BIP-39 phrase, kept on the service host as `payer.seed.age`, an armored age file encrypted to a passphrase (scrypt). Who holds the passphrase decides when the treasury can sign.
+
+States, as `GET /api/treasury/key` and health report them:
+
+| State | Meaning |
+| --- | --- |
+| `unlocked_by_env` | `PAYSLIP_SEED_PASSPHRASE` is set on the service: the key is decrypted at start and stays in memory, as every release before this one. The lock, unlock, create and replace endpoints answer `409 unlocked_by_env`; `move` works. To manage the key from the console, remove the variable and restart. |
+| `locked` | The key file exists and the key is not in memory. Syncing, receiving, every read, statements, Books, proofs and run drafting work. Anything that signs answers `409 treasury_locked`: executing a run, moving the treasury, replacing a key that still holds a balance, and adding a contractor (their account and viewing key are derived from the seed). A run already executing is parked at the step that needs a signature (the allocation, or the payments not built yet), says so once in its log, and goes on by itself once the treasury is unlocked; payments already broadcast are still followed to confirmation. A restart starts locked. |
+| `unlocked` | An admin unlocked the key until `unlocked_until`. A timer, `POST /api/treasury/lock` or a restart locks it again. |
+| `no_key` | No key file. The service starts; reads work; the wallet, funding, executing, adding a contractor, unlocking and moving answer `409 no_treasury_key`. |
+
+Trust, plainly: while locked, nobody can spend the treasury, including the operator of this server. While an admin has unlocked it for payroll, the server process can sign; an operator with root on the host could read the key from memory during that time. For full control, self-host.
+
+### GET /api/treasury/key
+
+Any member.
+
+```json
+{"state": "unlocked_by_env" | "unlocked" | "locked" | "no_key",
+ "unlocked_until": "2026-10-12T18:00:00Z" | null,
+ "address": "u1..." | null, "birthday_height": 3520100 | null,
+ "storage": {"path": "/var/lib/payslip/payer.seed.age", "format": "age scrypt, BIP-39 24 words"},
+ "created_at": "2026-10-12T10:00:00Z" | null, "key_version": 1}
+```
+
+`address` and `birthday_height` are the treasury account's, `null` before a key exists and for a key uploaded without its passphrase until the first unlock creates the account. `key_version` is 0 before any key, 1 for the first, and up by one at each replacement. `created_at` is when the current key was recorded (for a deployment from before this version, the key file's time).
+
+### POST /api/treasury/unlock
+
+Admin. `{"passphrase": "...", "hours": 8}`: `hours` is optional, 8 by default, 1 to 72 (`400 invalid_hours`; `400 passphrase_required` for an empty passphrase). Decrypts the key into memory until `unlocked_until`, resumes any parked run, and returns the key as `GET` does. `403 wrong_passphrase` when the passphrase does not open the file (attempts are taken one at a time and a wrong one waits two seconds on top of scrypt's own second); `409 no_treasury_key`; `409 unlocked_by_env`; `409 seed_mismatch` when the file was swapped by hand for another key's. Audited as `treasury.unlock` with the hours; the passphrase is never logged or stored.
+
+### POST /api/treasury/lock
+
+Admin, no body. Drops the key from memory now and returns the key as `GET` does. Locking a locked treasury is a no-op; `409 unlocked_by_env`, `409 no_treasury_key`. Audited as `treasury.lock`.
+
+### POST /api/treasury/key
+
+Admin. `{"ciphertext": "-----BEGIN AGE ENCRYPTED FILE-----\n...", "passphrase": "..."}`. The browser makes `ciphertext` itself: it generates (or takes) the 24 words, encrypts them with the company's passphrase to an age scrypt recipient, and armors the result (the `age-encryption` library: `Encrypter.setPassphrase`, `encrypt`, `armor.encode`; the same bytes `age -p -a` writes). The plaintext is the 24 words separated by single spaces, a trailing newline allowed; nothing else. The service stores the file as `payer.seed.age` with mode 0600 and never overwrites one: `201` and the key as `GET` does, `409 key_exists` otherwise, `400 invalid_ciphertext` for anything that is not an armored age file with one scrypt recipient (or, with the passphrase, one that does not hold 24 valid words).
+
+`passphrase` is optional but the console sends it: with it the service checks that the passphrase opens the file and the words are valid, creates the treasury account and unlocks the treasury for 8 hours; the passphrase is used for that request only. Without it the file is stored as it is, the wallet opens locked, and the first unlock creates the account. With `PAYSLIP_SEED_PASSPHRASE` set on the service the passphrase must be that one (`409 passphrase_mismatch`), or the next start could not open the file; the key then starts `unlocked_by_env`. Audited as `treasury.key_create` with the address and version; never the file or the passphrase.
+
+### POST /api/treasury/key/replace
+
+Admin. `{"ciphertext": "...", "passphrase": "...", "sweep_to": "new"}`: the new key, made in the browser as above, and its passphrase, which is required so the new file is checked before anything changes. `sweep_to` must be `new` (`400 invalid_sweep_to`): the old treasury's spendable balance goes to the new key's treasury address. Refused while any run is in progress (`409 runs_in_progress`, with the ids in `error.runs`), while ZEC is still confirming in the treasury (`409 treasury_pending`), for the same key (`409 same_key`), when the old treasury holds a balance and is locked (`409 treasury_locked`: the sweep needs the old key), before a key exists (`409 no_treasury_key`) and in env mode (`409 unlocked_by_env`); `403 wrong_passphrase`, `400 invalid_ciphertext`.
+
+What it does, in order: syncs and sweeps the old treasury to the new address (skipped when the balance is below the fee), closes the old wallet and moves it aside as `wallet.db.retired-<stamp>`, moves the old key aside as `payer.seed.age.retired-<stamp>` (mode 0600, still openable with its passphrase), writes the new key, opens a new wallet for it, creates its treasury account and every contractor's account again from the new seed with the same ZIP-32 indices (archived contractors included, so contractor ids do not change) and marks each contractor `key_rotated_at`, clearing `fvk_shared_at`: the console shows "share the new viewing key" until the admin does. Past runs are untouched and stay readable with the old viewing keys the accountant already holds (the retired key file holds them too); the old wallet's contractor accounts may keep dust from converting lines, which the retired key recovers. The new key is unlocked for 8 hours and `key_version` goes up.
+
+```json
+{"key": {... as GET ...}, "old_address": "u1...", "new_address": "u1...",
+ "sweep_txid": "hex" | null, "sweep_explorer_url": "https://..." | null,
+ "retired": ["/data/wallet.db.retired-20261012T101500Z", "/data/payer.seed.age.retired-20261012T101500Z"],
+ "contractors_rotated": 6}
+```
+
+If a step after the files were moved fails, the answer is `500 replace_incomplete` with the retired file names; putting them back under their original names and restarting the service restores the old key. Audited as `treasury.key_replace` with both addresses, the sweep txid, the count and the retired names.
+
+### POST /api/treasury/move
+
+Admin. `{"to_address": "u1..."}`: sweeps the treasury's whole spendable balance to an outside shielded address, the way to leave Payslip. The address must be a unified address with an Orchard or Sapling receiver for this network: a transparent address is `400 address_not_shielded`, anything else `400 invalid_address`. Needs the treasury unlocked (`409 treasury_locked`, `409 no_treasury_key`; works in env mode), no run in progress (`409 runs_in_progress`), nothing still confirming (`409 treasury_pending`) and a balance above the fee (`409 treasury_empty`).
+
+```json
+{"txid": "hex", "explorer_url": "https://...", "to_address": "u1...", "amount_zat": 2490000 | null, "fee_zat": 10000 | null}
+```
+
+`amount_zat` is what left after the fee, when the wallet recorded the fee. Audited as `treasury.move` with the destination, txid and amount. Contractor accounts are not swept: they hold nothing between runs beyond the dust noted above.
 
 ## Contractors
 
@@ -133,11 +204,14 @@ Contractor = {
   "payout_chain": "base" | null, "payout_address": "0x..." | null,
   "fvk_shared_at": "2026-10-05T10:00:00Z" | null,
   "default_amount_usd_cents": 480000 | null,
-  "created_at": "2026-10-05T09:00:00Z"
+  "created_at": "2026-10-05T09:00:00Z",
+  "key_rotated_at": "2026-10-12T10:15:00Z" | null
 }
 ```
 
-`default_amount_usd_cents` is what a scheduled payroll pays the contractor unless they sent a payment request for the period (Pay schedule below); `null` when they are paid by request or by hand.
+`default_amount_usd_cents` is what a scheduled payroll pays the contractor unless they sent a payment request for the period (Pay schedule below); `null` when they are paid by request or by hand. `key_rotated_at` is set when the treasury key was replaced (Treasury key above): the contractor's account was derived again from the new seed, their viewing key changed, and `fvk_shared_at` was cleared until the new key is shared.
+
+Adding a contractor derives their account from the treasury seed, so `POST /api/contractors` needs the treasury unlocked: `409 no_treasury_key` or `409 treasury_locked` otherwise. Reading, editing and archiving do not.
 
 - `GET /api/contractors` returns `{"contractors": [Contractor]}`.
 - `POST /api/contractors` with `{name, unified_address, settlement_choice, email?, payout_chain?, payout_address?, default_amount_usd_cents?}` returns `201` and the Contractor. The service allocates the next ZIP-32 account. Errors: `invalid_address` (not a unified address for this network), `address_without_shielded_receiver`, `duplicate_address`, `payout_address_required`, `invalid_payout_address` (Base, Arbitrum and Ethereum: `0x` and 40 hex characters; Solana: a base58 public key of exactly 32 bytes).
@@ -227,7 +301,7 @@ A pay line's `error` can be set while the line is still in progress, as a warnin
   - Funding again is allowed for a run that received no money (no fill, no allocation), in `awaiting_funds`, `funded` or `failed`, once its USDC quote is closed: `expired` (including a deadline that passed), `refunded` or `failed`; the service asks the venue for the quote's current state first. A Fund with ZEC request may be replaced at any time before the run is funded, by either method: ZEC sent to the treasury stays there and counts toward the next request. A run the ZEC request or the testnet venue already funded is not funded again (`run_already_funded`). Errors: `quote_still_open` (the USDC deposit address is open until its deadline; pay it or wait), `deposit_in_progress` (the venue holds a deposit for the run, or a partial one: `incomplete`), `run_already_funded` (the run received its ZEC; execute it to resume), `run_cancelled`, `contractor_archived`, `run_over_cap` (400; the payroll is over `PAYSLIP_MAX_RUN_USD_CENTS`).
 - `POST /api/runs/{id}/funding/deposit-tx` with `{"tx_hash": "0x..."}` tells the venue which transaction carried the deposit. Optional; it speeds up detection. `409 run_cancelled` on a cancelled run; `400 deposit_tx_not_needed` on a run funded with ZEC (there is no venue to tell).
 - `GET /api/runs/{id}/funding` polls the venue and returns the Run. The run moves to `funded` as soon as the venue reports the deposit (`deposit_seen`, `processing` or `success`), whichever a poll sees, and back to `awaiting_funds` if the venue then refunds it or the swap fails before a fill is recorded. For a Fund with ZEC request it reads the treasury instead (the wallet's balance from the background sync, the tip's block time and the market price nearest it), updates the received, pending and shortfall figures, and moves the run to `funded` when the confirmed balance covers it; the web app polls it every 5 seconds and the run stream carries each change.
-- `POST /api/runs/{id}/execute` starts or resumes the run executor and returns `202` and the Run. Calling it again while the run is executing is a no-op that returns the current Run. `409 run_cancelled` on a cancelled run. `409 approvals_required` while a run that has not passed its swap holds fewer approvals than `PAYSLIP_APPROVALS_REQUIRED`; the message says how many are missing and how many are recorded, and this comes before `not_funded`. The executor applies the same rule on its own: it does not move a run from `funded` (or `awaiting_funds`) to `swapping` until the approvals are in, logging `Waiting for 1 more approval before the swap is recorded` once and polling, so a run resumed after a restart under a stricter policy waits too. Past the swap the money is moving and the run goes on. After a restart the service resumes every run past the swap and every run in `awaiting_funds` or `funded` that the payer had executed; funding alone never pays.
+- `POST /api/runs/{id}/execute` starts or resumes the run executor and returns `202` and the Run. Calling it again while the run is executing is a no-op that returns the current Run. `409 run_cancelled` on a cancelled run. `409 no_treasury_key` before a key exists and `409 treasury_locked` while the key is not in memory (Treasury key above): paying signs. Funding (`POST /api/runs/{id}/fund`) needs a key but not an unlocked one, since receiving does not sign. `409 approvals_required` while a run that has not passed its swap holds fewer approvals than `PAYSLIP_APPROVALS_REQUIRED`; the message says how many are missing and how many are recorded, and this comes before `not_funded`. The executor applies the same rule on its own: it does not move a run from `funded` (or `awaiting_funds`) to `swapping` until the approvals are in, logging `Waiting for 1 more approval before the swap is recorded` once and polling, so a run resumed after a restart under a stricter policy waits too. Past the swap the money is moving and the run goes on. After a restart the service resumes every run past the swap and every run in `awaiting_funds` or `funded` that the payer had executed; funding alone never pays.
 - `POST /api/runs/{id}/cancel` cancels a run that received no money: no fill recorded and no allocation built, in `draft`, `awaiting_funds`, `funded` or `failed`. It returns `200` and the Run in `cancelled`, which no longer counts as active (its contractors can be edited and archived) and stays on record. Cancelling a cancelled run is a no-op. An open deposit address may be abandoned: a deposit sent to it afterwards still reaches the treasury, as balance no run claims. A Fund with ZEC request can always be cancelled: whatever ZEC arrived stays in the treasury for the next run. Errors: `deposit_in_progress` (the venue holds a deposit for the run), `run_has_funds` (ZEC arrived or the allocation was built; execute the run to finish it).
 - `GET /api/runs/{id}/events` is an SSE stream. Event `snapshot` carries the full Run JSON on connect and after every change. Event `log` carries `{"at", "message"}`. A comment ping every 15 seconds keeps proxies open. At most 32 streams are open at once; beyond that the request gets `503 too_many_streams`.
 

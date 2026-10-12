@@ -248,6 +248,8 @@ pub enum Permission {
     ManageOrg,
     /// Read the audit log.
     ViewAudit,
+    /// Unlock, lock, create, replace and move the treasury key (ADR-030).
+    ManageTreasuryKey,
 }
 
 impl Role {
@@ -339,6 +341,14 @@ pub fn rule(method: &Method, template: &str) -> Rule {
             permission: ViewAudit,
             action: None,
         },
+        // The treasury key (ADR-030): its state for every member; every change admin-only and
+        // audited. The passphrase and the ciphertext never reach the audit row.
+        ("GET", "/api/treasury/key") => read(),
+        ("POST", "/api/treasury/unlock") => write(ManageTreasuryKey, "treasury.unlock"),
+        ("POST", "/api/treasury/lock") => write(ManageTreasuryKey, "treasury.lock"),
+        ("POST", "/api/treasury/key") => write(ManageTreasuryKey, "treasury.key_create"),
+        ("POST", "/api/treasury/key/replace") => write(ManageTreasuryKey, "treasury.key_replace"),
+        ("POST", "/api/treasury/move") => write(ManageTreasuryKey, "treasury.move"),
         ("GET", _) => read(),
         _ => write(ManageOrg, "unlisted.write"),
     }
@@ -387,6 +397,7 @@ fn role_forbids(role: Role, permission: Permission) -> ApiError {
         Permission::SyncWallet => "sync the wallet",
         Permission::ManageOrg => "change the organisation, its members or invitations",
         Permission::ViewAudit => "read the audit log",
+        Permission::ManageTreasuryKey => "unlock, lock, create, replace or move the treasury key",
         Permission::Read | Permission::SignedIn => "do this",
     };
     ApiError::new(
@@ -606,6 +617,7 @@ mod tests {
             SyncWallet,
             ManageOrg,
             ViewAudit,
+            ManageTreasuryKey,
         ] {
             assert!(Role::Admin.allows(p));
         }
@@ -618,6 +630,22 @@ mod tests {
         assert!(Role::Viewer.allows(Read));
         assert!(!Role::Viewer.allows(ViewKeys));
         assert!(!Role::Viewer.allows(ManageOrg));
+        // The treasury key is the admin's alone; its state is for every member.
+        for r in [Role::Approver, Role::Accountant, Role::Viewer] {
+            assert!(!r.allows(ManageTreasuryKey), "{r:?}");
+        }
+        for (method, path, action) in [
+            ("POST", "/api/treasury/unlock", "treasury.unlock"),
+            ("POST", "/api/treasury/lock", "treasury.lock"),
+            ("POST", "/api/treasury/key", "treasury.key_create"),
+            ("POST", "/api/treasury/key/replace", "treasury.key_replace"),
+            ("POST", "/api/treasury/move", "treasury.move"),
+        ] {
+            let r = rule(&Method::from_bytes(method.as_bytes()).unwrap(), path);
+            assert_eq!((r.permission, r.action), (ManageTreasuryKey, Some(action)), "{path}");
+        }
+        let r = rule(&Method::GET, "/api/treasury/key");
+        assert_eq!((r.permission, r.action), (Read, None));
     }
 
     #[test]

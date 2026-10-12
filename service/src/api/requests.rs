@@ -62,7 +62,7 @@ pub async fn resolve_contractor(s: &AppStateRef, raw_key: &str) -> ApiResult<Con
     if let Some(c) = db::find_contractor_by_fingerprint(&s.db, &key.fingerprint).await? {
         return Ok(c);
     }
-    if let Some(payer) = s.payer.as_ref() {
+    if let Some(payer) = s.payer_opt() {
         let params = s.cfg.network.params();
         for c in db::contractors_without_fingerprint(&s.db).await? {
             let Ok(ufvk) = payer.ufvk(c.account_index as u32).await else {

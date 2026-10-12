@@ -21,7 +21,8 @@ enum Command {
         #[arg(long)]
         import: bool,
     },
-    /// Print the treasury's unified address (for funding on testnet).
+    /// Print the treasury's unified address (for funding on testnet). Works without
+    /// PAYSLIP_SEED_PASSPHRASE, as do sync, fvk and account-address: they only read.
     Address,
     /// Print the treasury seed's 24-word recovery phrase (needs PAYSLIP_SEED_PASSPHRASE). Write it
     /// down and keep it off this machine: with it, any Zcash wallet can recover the treasury and
@@ -120,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Address => {
-            let payer = Payer::open(&cfg).await?;
+            let payer = Payer::open_any(&cfg).await?;
             println!("{}", payer.wallet_info().await?.treasury.unified_address);
             Ok(())
         }
@@ -141,7 +142,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Sync => {
-            let payer = Payer::open(&cfg).await?;
+            let payer = Payer::open_any(&cfg).await?;
             let report = payer.sync().await?;
             println!("Chain tip {} / scanned {}", report.chain_tip, report.fully_scanned);
             let info = payer.wallet_info().await?;
@@ -162,7 +163,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Fvk { account } => {
-            let payer = Payer::open(&cfg).await?;
+            let payer = Payer::open_any(&cfg).await?;
             println!("{}", payer.ufvk(account).await?);
             Ok(())
         }
@@ -186,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
             let registry = payslip::viewer::ViewerRegistry::new(&cfg);
             let default_birthday = match birthday {
                 Some(b) => b,
-                None => Payer::open(&cfg).await?.wallet_info().await?.birthday_height,
+                None => Payer::open_any(&cfg).await?.wallet_info().await?.birthday_height,
             };
             let key = payslip::viewer::ViewingKey::parse(&cfg.network, &ufvk).map_err(|e| anyhow!(e.body.message))?;
             let scan = registry.scan(vec![(key, "cli".into(), default_birthday)]).await?;
@@ -205,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::AccountAddress { account } => {
-            let payer = Payer::open(&cfg).await?;
+            let payer = Payer::open_any(&cfg).await?;
             println!("{}", payer.address(account).await?);
             Ok(())
         }

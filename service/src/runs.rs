@@ -205,6 +205,11 @@ pub struct Pay {
 /// tests implement it with a deterministic in-memory chain.
 #[async_trait]
 pub trait ChainOps: Send + Sync {
+    /// Whether the wallet can sign now (ADR-030): false while the treasury is locked. The
+    /// executor then parks a run at the step that needs a signature instead of failing it.
+    async fn can_sign(&self) -> bool {
+        true
+    }
     async fn sync(&self) -> anyhow::Result<()>;
     async fn tip(&self) -> anyhow::Result<u32>;
     async fn spendable(&self, account: u32) -> anyhow::Result<u64>;
@@ -490,6 +495,9 @@ struct Inner {
     approvals_required: u32,
     /// Runs told to the log that they wait for approvals, so the wait is logged once.
     approval_waits: Mutex<HashSet<String>>,
+    /// Runs parked because the treasury is locked (ADR-030), so the park and the resumption
+    /// are each logged once.
+    parked: Mutex<HashSet<String>>,
     running: Mutex<HashSet<String>>,
     changes: broadcast::Sender<String>,
     poll: Duration,
@@ -556,11 +564,17 @@ impl Drop for RunningGuard {
 }
 
 impl Executor {
-    pub fn new(cfg: Config, db: Pool, payer: Payer, venue: Arc<dyn SwapVenue>, rates: Arc<dyn MarketRate>) -> Self {
+    pub fn new(
+        cfg: Config,
+        db: Pool,
+        chain: Arc<dyn ChainOps>,
+        venue: Arc<dyn SwapVenue>,
+        rates: Arc<dyn MarketRate>,
+    ) -> Self {
         Self::with_chain(
             cfg.network,
             db,
-            Arc::new(PayerChain(payer)),
+            chain,
             venue,
             Arc::new(TreasuryVenue::new(rates)),
             Duration::from_secs(10),
@@ -590,6 +604,7 @@ impl Executor {
                 run_cap: None,
                 approvals_required: 0,
                 approval_waits: Mutex::new(HashSet::new()),
+                parked: Mutex::new(HashSet::new()),
                 running: Mutex::new(HashSet::new()),
                 changes,
                 poll,
@@ -737,6 +752,33 @@ impl Executor {
         )
         .await;
         Ok(())
+    }
+
+    /// The treasury is locked and the run needs a signature (ADR-030): the run stays where it
+    /// is and the log says so once. It goes on by itself once the treasury is unlocked.
+    async fn park(&self, run_id: &str) -> Outcome {
+        let first = self
+            .inner
+            .parked
+            .lock()
+            .map(|mut p| p.insert(run_id.to_string()))
+            .unwrap_or(true);
+        if first {
+            self.log(
+                run_id,
+                "Parked: the treasury is locked. An admin unlocks it under Settings, Treasury key, and the run continues from here.",
+            )
+            .await;
+        }
+        Outcome::Wait(self.inner.poll)
+    }
+
+    /// The treasury signs again: a run that was parked says so once.
+    async fn unpark(&self, run_id: &str) {
+        let was_parked = self.inner.parked.lock().map(|mut p| p.remove(run_id)).unwrap_or(false);
+        if was_parked {
+            self.log(run_id, "Treasury unlocked; continuing").await;
+        }
     }
 
     /// Approvals the run still needs before it is paid; 0 when none are required.
@@ -1309,20 +1351,22 @@ impl Executor {
                 return Err(approvals_required_error(missing, self.inner.approvals_required));
             }
         }
-        match run.status.as_str() {
-            "draft" => {
-                return Err(ApiError::conflict(
-                    "not_funded",
-                    "The run has not been funded.",
-                    "Fund the run first, then execute it.",
-                ))
-            }
-            "failed" => {
-                let back = run.failed_from.clone().unwrap_or_else(|| "funded".into());
-                db::transition(db, run_id, &["failed"], &back).await?;
-                self.log(run_id, format!("Resuming from {back}")).await;
-            }
-            _ => {}
+        if run.status == "draft" {
+            return Err(ApiError::conflict(
+                "not_funded",
+                "The run has not been funded.",
+                "Fund the run first, then execute it.",
+            ));
+        }
+        // Paying signs (ADR-030): a locked treasury refuses here rather than park a run the
+        // payer just asked to pay. A run already executing parks on its own.
+        if !self.inner.chain.can_sign().await {
+            return Err(crate::treasury::locked_error("pay this run"));
+        }
+        if run.status == "failed" {
+            let back = run.failed_from.clone().unwrap_or_else(|| "funded".into());
+            db::transition(db, run_id, &["failed"], &back).await?;
+            self.log(run_id, format!("Resuming from {back}")).await;
         }
         // Remembered so a restart resumes this run, and only runs the payer executed.
         db::set_execute_requested(db, run_id, true).await?;
@@ -1719,6 +1763,11 @@ impl Executor {
             db::transition(db, &run.id, &["swapped"], "allocating").await?;
             return Ok(Outcome::Continue);
         }
+        // The allocation is the first signature a run needs.
+        if !chain.can_sign().await {
+            return Ok(self.park(&run.id).await);
+        }
+        self.unpark(&run.id).await;
         let lines = db::lines(db, &run.id).await?;
         let mut pays = vec![];
         for l in &lines {
@@ -1934,6 +1983,10 @@ impl Executor {
         let mut pending = 0;
         // A line confirmed or left the chain: the run's fees change.
         let mut fees_changed = false;
+        // Payments not built yet need a signature; while the treasury is locked they wait, and
+        // the ones already broadcast are still followed to confirmation.
+        let signing = chain.can_sign().await;
+        let mut held_for_key = false;
         for l in &lines {
             if l.status == "confirmed" {
                 // Re-check until the run is closed: a reorg can take a payment out of the chain.
@@ -1962,6 +2015,9 @@ impl Executor {
             }
             pending += 1;
             match &l.txid {
+                None if !signing => {
+                    held_for_key = true;
+                }
                 None => {
                     let memo = l
                         .memo
@@ -2189,6 +2245,10 @@ impl Executor {
         if fees_changed {
             self.record_fees(&run.id).await?;
         }
+        if held_for_key {
+            return Ok(self.park(&run.id).await);
+        }
+        self.unpark(&run.id).await;
         if pending == 0 {
             if db::transition(db, &run.id, &["paying"], "paid").await? {
                 self.log(&run.id, format!("Run paid: {} lines confirmed", lines.len()))
