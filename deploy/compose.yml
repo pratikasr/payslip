@@ -143,6 +143,8 @@ services:
       PAYSLIP_AUTH_AUDIENCE: payslip-service
       PAYSLIP_BOOTSTRAP_ADMIN_EMAIL: ${PAYSLIP_BOOTSTRAP_ADMIN_EMAIL:-}
       PAYSLIP_APPROVALS_REQUIRED: ${PAYSLIP_APPROVALS_REQUIRED:-}
+      # Empty keeps membership invite-only; viewer or accountant opens it for a public demo.
+      PAYSLIP_OPEN_MEMBERSHIP: ${PAYSLIP_OPEN_MEMBERSHIP:-}
     volumes:
       - app-data:/var/lib/payslip
     deploy:

@@ -271,6 +271,19 @@ pub async fn insert_first_admin(pool: &Pool, org_id: &str, user_id: &str) -> any
     Ok(r.rows_affected() == 1)
 }
 
+/// Adds `user_id` to the organisation with `role` unless they are already a member, atomically;
+/// true when it did. An existing membership keeps its role, whatever it is.
+pub async fn insert_member_if_absent(pool: &Pool, org_id: &str, user_id: &str, role: Role) -> anyhow::Result<bool> {
+    let r = sqlx::query("INSERT OR IGNORE INTO memberships (user_id, org_id, role, created_at) VALUES (?, ?, ?, ?)")
+        .bind(user_id)
+        .bind(org_id)
+        .bind(role.as_str())
+        .bind(now())
+        .execute(pool)
+        .await?;
+    Ok(r.rows_affected() == 1)
+}
+
 pub async fn update_organisation(pool: &Pool, id: &str, name: &str, logo_url: Option<&str>) -> anyhow::Result<()> {
     sqlx::query("UPDATE organisations SET name = ?, logo_url = ? WHERE id = ?")
         .bind(name)

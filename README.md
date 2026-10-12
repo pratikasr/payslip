@@ -199,7 +199,7 @@ By default there is no login: the console is open on the payer's own machine, wh
    PAYSLIP_BOOTSTRAP_ADMIN_EMAIL=you@example.com                  # the Google account that becomes the first admin
    ```
 
-4. Start both. Open the web address, sign in with the bootstrap email: that creates the organisation and makes you its admin. Under **Settings** name the organisation and set a logo; under **Invitations** make a link for each colleague and send it to them yourself (no email is sent); they sign in with that Google account and open the link. **Members** shows everyone and lets an admin change roles; **Audit log** shows who did what.
+4. Start both. Open the web address, sign in with the bootstrap email: that creates the organisation and makes you its admin. Under **Settings** name the organisation and set a logo; under **Invitations** make a link for each colleague and send it to them yourself (no email is sent); they sign in with that Google account and open the link. **Members** shows everyone and lets an admin change roles; **Audit log** shows who did what. For a public demo, `PAYSLIP_OPEN_MEMBERSHIP=viewer` on the service makes anyone who signs in with a verified email a read-only viewer the moment they arrive (`accountant` is the other allowed value, never admin or approver), each join on the audit log; leave it empty to keep membership invite-only.
 
 The service keeps only public keys and token hashes, never a Google secret or a session; the browser never holds a token (the web app's `/api/svc` proxy attaches it). With sign-in off nothing above exists, and the "Viewing as" demo switcher stays.
 

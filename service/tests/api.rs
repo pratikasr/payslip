@@ -692,7 +692,10 @@ mod signin {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     use ed25519_dalek::SigningKey;
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
-    use payslip::config::{AuthConfig, AuthMode};
+    use payslip::{
+        auth::Role,
+        config::{AuthConfig, AuthMode},
+    };
 
     pub const AUDIENCE: &str = "payslip-service";
     pub const ISSUER: &str = "http://web.test:3000";
@@ -779,6 +782,21 @@ mod signin {
 
     /// As [`start`], requiring `approvals_required` approvals before a run is paid.
     pub async fn start_with(jwks_url: &str, bootstrap: Option<&str>, approvals_required: u32) -> (Service, Pool) {
+        start_auth(jwks_url, bootstrap, approvals_required, None).await
+    }
+
+    /// As [`start`], with open membership (PAYSLIP_OPEN_MEMBERSHIP): every verified sign-in is
+    /// given `role` on first sight once the organisation exists.
+    pub async fn start_open(jwks_url: &str, bootstrap: Option<&str>, role: Role) -> (Service, Pool) {
+        start_auth(jwks_url, bootstrap, 1, Some(role)).await
+    }
+
+    async fn start_auth(
+        jwks_url: &str,
+        bootstrap: Option<&str>,
+        approvals_required: u32,
+        open_membership: Option<Role>,
+    ) -> (Service, Pool) {
         let dir = tempfile::tempdir().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -791,6 +809,7 @@ mod signin {
             audience: AUDIENCE.into(),
             bootstrap_admin_email: bootstrap.map(|b| b.to_string()),
             approvals_required,
+            open_membership,
         };
         let db = db::open(&cfg.app_db_path()).await.unwrap();
         let venue = payslip::venue::build(&cfg).unwrap();
@@ -3687,6 +3706,7 @@ async fn treasury_key_changes_are_admin_only_and_audited() {
         audience: AUDIENCE.into(),
         bootstrap_admin_email: Some("owner@acme.test".into()),
         approvals_required: 1,
+        open_membership: None,
     };
     let k = keys::start(
         keys::FakeWallet::with_treasury(keys::PHRASE, 0),
@@ -3766,4 +3786,185 @@ async fn treasury_key_changes_are_admin_only_and_audited() {
             .count(),
         1
     );
+}
+
+/// Open membership (PAYSLIP_OPEN_MEMBERSHIP=viewer, for a public demo): once the organisation
+/// exists, a signed-in person with a verified email becomes a viewer on first sight, reads and
+/// cannot write, and the join is on the audit log once; an unverified sign-in stays outside, the
+/// bootstrap admin rule is unchanged, and health says which role is handed out.
+#[tokio::test]
+async fn open_membership_makes_every_verified_sign_in_a_viewer_who_reads_and_cannot_write() {
+    use payslip::auth::Role;
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start_open(&jwks, Some("owner@acme.test"), Role::Viewer).await;
+    let (st, h) = s.req("GET", "/api/health", None, None).await;
+    assert_eq!((st, h["open_membership"].as_str()), (200, Some("viewer")), "{h}");
+    // Before the organisation exists there is nothing to join.
+    let early = key.token("amara@acme.test", 300, json!({}));
+    assert!(signin::me(&s, &early).await["membership"].is_null());
+    // The bootstrap email is still the admin, not a viewer.
+    let owner = key.token("owner@acme.test", 300, json!({ "name": "Owner" }));
+    assert_eq!(signin::me(&s, &owner).await["membership"]["role"], json!("admin"));
+    // Now a verified newcomer joins as a viewer on their first request.
+    let amara = key.token("amara@acme.test", 300, json!({ "name": "Amara" }));
+    let v = signin::me(&s, &amara).await;
+    assert_eq!(v["membership"]["role"], json!("viewer"), "{v}");
+    assert_eq!(v["membership"]["org"]["name"], json!("acme.test"));
+    // Reads work.
+    for path in ["/api/contractors", "/api/runs", "/api/org", "/api/org/members"] {
+        let (st, v) = s.req("GET", path, Some(&amara), None).await;
+        assert_eq!(st, 200, "{path}: {v}");
+    }
+    // Writes, viewing keys and the audit log do not.
+    for (method, path, body) in [
+        ("POST", "/api/contractors", json!({ "name": "X", "address": "utest1x" })),
+        ("POST", "/api/runs", json!({})),
+        ("POST", "/api/wallet/sync", json!({})),
+        ("GET", "/api/viewing-keys", Value::Null),
+        ("GET", "/api/org/audit", Value::Null),
+        (
+            "POST",
+            "/api/org/invitations",
+            json!({ "email": "x@acme.test", "role": "viewer" }),
+        ),
+        ("PATCH", "/api/org", json!({ "name": "Taken over" })),
+    ] {
+        let (st, v) = s.req(method, path, Some(&amara), Some(body)).await;
+        assert_eq!((st, code(&v)), (403, "forbidden"), "{method} {path}: {v}");
+        assert!(v["error"]["message"].as_str().unwrap().contains("viewer"), "{v}");
+    }
+    // An unverified sign-in is not a member.
+    let unverified = key.token("bob@acme.test", 300, json!({ "email_verified": false }));
+    assert!(signin::me(&s, &unverified).await["membership"].is_null());
+    let (st, v) = s.req("GET", "/api/contractors", Some(&unverified), None).await;
+    assert_eq!((st, code(&v)), (403, "forbidden"), "{v}");
+    // A first sight is often several requests at once: one membership, one audit row.
+    let carol = key.token("carol@acme.test", 300, json!({}));
+    let (a, b, c) = tokio::join!(
+        s.req("GET", "/api/me", Some(&carol), None),
+        s.req("GET", "/api/contractors", Some(&carol), None),
+        s.req("GET", "/api/runs", Some(&carol), None)
+    );
+    assert_eq!((a.0, b.0, c.0), (200, 200, 200), "{} {} {}", a.1, b.1, c.1);
+    let members: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memberships")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(members, 3, "owner, amara and carol");
+    let (st, v) = s.req("GET", "/api/org/audit", Some(&owner), None).await;
+    assert_eq!(st, 200, "{v}");
+    let joins: Vec<&Value> = v["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["action"] == json!("member.auto_join"))
+        .collect();
+    assert_eq!(joins.len(), 2, "{v}");
+    let row = joins
+        .iter()
+        .find(|e| e["user"]["email"] == json!("amara@acme.test"))
+        .unwrap();
+    assert_eq!(row["role"], json!("viewer"));
+    assert_eq!(row["target"], json!("user-amara"));
+    assert_eq!(row["details"], json!({ "email": "amara@acme.test", "role": "viewer" }));
+    assert!(joins.iter().any(|e| e["user"]["email"] == json!("carol@acme.test")));
+    // The owner is still the only admin, and an admin can still change a joined member's role.
+    let admins: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memberships WHERE role = 'admin'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(admins, 1);
+    let (st, v) = s
+        .req(
+            "POST",
+            "/api/org/members",
+            Some(&owner),
+            Some(json!({ "user_id": "user-amara", "role": "approver" })),
+        )
+        .await;
+    assert_eq!((st, v["role"].as_str()), (200, Some("approver")), "{v}");
+    assert_eq!(signin::me(&s, &amara).await["membership"]["role"], json!("approver"));
+
+    // The other allowed role: an accountant, who may also read keys and the audit log, and still
+    // cannot run payroll.
+    let (s2, _pool2) = signin::start_open(&jwks, Some("owner@acme.test"), Role::Accountant).await;
+    let (_, h) = s2.req("GET", "/api/health", None, None).await;
+    assert_eq!(h["open_membership"], json!("accountant"));
+    assert_eq!(signin::me(&s2, &owner).await["membership"]["role"], json!("admin"));
+    let v = signin::me(&s2, &amara).await;
+    assert_eq!(v["membership"]["role"], json!("accountant"), "{v}");
+    let (st, v) = s2.req("GET", "/api/org/audit", Some(&amara), None).await;
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = s2.req("POST", "/api/runs", Some(&amara), Some(json!({}))).await;
+    assert_eq!((st, code(&v)), (403, "forbidden"), "{v}");
+}
+
+/// Without PAYSLIP_OPEN_MEMBERSHIP (the default) nothing changes: a verified newcomer is signed
+/// in but outside however often they ask, no join is recorded, an invitation is still the way in,
+/// and health reports no open role.
+#[tokio::test]
+async fn without_open_membership_a_newcomer_stays_outside_until_invited() {
+    let key = Key::new("k1", 1);
+    let jwks = signin::jwks_server(&[&key]).await;
+    let (s, pool) = signin::start(&jwks, Some("owner@acme.test")).await;
+    let (st, h) = s.req("GET", "/api/health", None, None).await;
+    assert_eq!(st, 200, "{h}");
+    assert!(h["open_membership"].is_null(), "{h}");
+    let owner = key.token("owner@acme.test", 300, json!({}));
+    assert_eq!(signin::me(&s, &owner).await["membership"]["role"], json!("admin"));
+    let amara = key.token("amara@acme.test", 300, json!({ "name": "Amara" }));
+    for _ in 0..2 {
+        assert!(signin::me(&s, &amara).await["membership"].is_null());
+    }
+    let (st, v) = s.req("GET", "/api/contractors", Some(&amara), None).await;
+    assert_eq!((st, code(&v)), (403, "forbidden"), "{v}");
+    assert!(v["error"]["hint"].as_str().unwrap().contains("invitation"), "{v}");
+    let joins: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'member.auto_join'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let members: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM memberships")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!((joins, members), (0, 1));
+    assert_eq!(
+        signin::join(&s, &owner, "amara@acme.test", "viewer", &amara).await,
+        "viewer"
+    );
+}
+
+/// PAYSLIP_OPEN_MEMBERSHIP takes viewer or accountant, or nothing. Admin and approver are refused
+/// at start (an open demo must not hand out payroll or organisation powers), so is any other
+/// word, and so is a role with sign-in off, each with the fix in the message.
+#[test]
+fn open_membership_accepts_viewer_or_accountant_and_refuses_the_rest() {
+    use payslip::{
+        auth::Role,
+        config::{parse_open_membership, AuthMode},
+    };
+    assert_eq!(parse_open_membership(None, AuthMode::Required).unwrap(), None);
+    assert_eq!(parse_open_membership(Some("  "), AuthMode::Off).unwrap(), None);
+    assert_eq!(
+        parse_open_membership(Some("viewer"), AuthMode::Required).unwrap(),
+        Some(Role::Viewer)
+    );
+    assert_eq!(
+        parse_open_membership(Some(" Accountant "), AuthMode::Required).unwrap(),
+        Some(Role::Accountant)
+    );
+    for bad in ["admin", "approver", "owner", "yes", "1"] {
+        let e = parse_open_membership(Some(bad), AuthMode::Required)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("PAYSLIP_OPEN_MEMBERSHIP") && e.contains("viewer or accountant"),
+            "{bad}: {e}"
+        );
+    }
+    let e = parse_open_membership(Some("viewer"), AuthMode::Off)
+        .unwrap_err()
+        .to_string();
+    assert!(e.contains("PAYSLIP_AUTH=required"), "{e}");
 }

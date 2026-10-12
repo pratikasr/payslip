@@ -5,6 +5,8 @@ use std::{env, net::SocketAddr, path::PathBuf};
 use anyhow::{bail, Context};
 use zcash_protocol::consensus::Network;
 
+use crate::auth::Role;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ZcashNetwork {
     Mainnet,
@@ -118,6 +120,11 @@ pub struct AuthConfig {
     /// with sign-in off (nothing to approve with), so the testnet demo is unchanged. At 2 or
     /// more the run's creator cannot be one of its approvers.
     pub approvals_required: u32,
+    /// PAYSLIP_OPEN_MEMBERSHIP, for a public demo: the role (viewer or accountant, never admin
+    /// or approver) a signed-in person with a verified email who is not a member is given on
+    /// first sight, once the organisation exists. None, the default, keeps membership
+    /// invite-only. The bootstrap admin rule is unchanged.
+    pub open_membership: Option<Role>,
 }
 
 /// The audience the web app's JWT plugin is configured with (web/src/lib/auth.ts).
@@ -152,6 +159,30 @@ pub fn parse_approvals_required(raw: Option<&str>, mode: AuthMode) -> anyhow::Re
     Ok(n)
 }
 
+/// PAYSLIP_OPEN_MEMBERSHIP: empty keeps membership invite-only; `viewer` or `accountant` gives
+/// every signed-in person with a verified email that role on first sight. Admin and approver are
+/// refused (an open demo must not hand out a role that runs payroll or manages the
+/// organisation), so is any other word, and so is a role without sign-in: there is nobody to join.
+pub fn parse_open_membership(raw: Option<&str>, mode: AuthMode) -> anyhow::Result<Option<Role>> {
+    let Some(s) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    let role = match Role::parse(s) {
+        Some(Role::Viewer) => Role::Viewer,
+        Some(Role::Accountant) => Role::Accountant,
+        Some(Role::Admin | Role::Approver) => bail!(
+            "PAYSLIP_OPEN_MEMBERSHIP must be viewer or accountant, got {s:?}: an open demo must not hand out a role that runs payroll or manages the organisation"
+        ),
+        None => bail!(
+            "PAYSLIP_OPEN_MEMBERSHIP must be viewer or accountant, or empty for invite-only membership, got {s:?}"
+        ),
+    };
+    if mode == AuthMode::Off {
+        bail!("PAYSLIP_OPEN_MEMBERSHIP={s} needs PAYSLIP_AUTH=required: without sign-in there is nobody to join");
+    }
+    Ok(Some(role))
+}
+
 impl AuthConfig {
     /// No sign-in.
     pub fn off() -> Self {
@@ -162,6 +193,7 @@ impl AuthConfig {
             audience: DEFAULT_AUTH_AUDIENCE.into(),
             bootstrap_admin_email: None,
             approvals_required: 0,
+            open_membership: None,
         }
     }
 
@@ -195,6 +227,7 @@ impl AuthConfig {
             audience: var("PAYSLIP_AUTH_AUDIENCE").unwrap_or_else(|| DEFAULT_AUTH_AUDIENCE.into()),
             bootstrap_admin_email: var("PAYSLIP_BOOTSTRAP_ADMIN_EMAIL").map(|e| e.to_ascii_lowercase()),
             approvals_required,
+            open_membership: parse_open_membership(var("PAYSLIP_OPEN_MEMBERSHIP").as_deref(), mode)?,
         })
     }
 }

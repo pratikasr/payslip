@@ -479,6 +479,9 @@ async fn guard_inner(s: &AppStateRef, req: &mut Request) -> ApiResult<AuditConte
     if membership.is_none() {
         membership = bootstrap(&s.db, &s.cfg.auth, &user, &claims).await?;
     }
+    if membership.is_none() {
+        membership = auto_join(&s.db, &s.cfg.auth, &user, &claims).await?;
+    }
     let template = req
         .extensions()
         .get::<MatchedPath>()
@@ -526,6 +529,38 @@ async fn bootstrap(pool: &Pool, cfg: &AuthConfig, user: &User, claims: &Claims) 
             "org.bootstrap",
             Some(&org.id),
             Some(serde_json::json!({ "email": user.email, "name": org.name })),
+        )
+        .await?;
+    }
+    Ok(store::membership_of(pool, &user.id).await?)
+}
+
+/// Open membership (`PAYSLIP_OPEN_MEMBERSHIP`, for a public demo): a signed-in person with a
+/// verified email who is not a member is made one with the configured role (viewer or
+/// accountant; the config refuses anything else) on first sight, once the organisation exists.
+/// The bootstrap rule above runs first and is unchanged: the organisation and its admin come from
+/// the bootstrap email, and an existing member keeps their role. A first sight is often several
+/// requests at once, so the insert tolerates a row that got there first and only the request that
+/// made the member writes the audit row.
+async fn auto_join(pool: &Pool, cfg: &AuthConfig, user: &User, claims: &Claims) -> ApiResult<Option<Membership>> {
+    let Some(role) = cfg.open_membership else {
+        return Ok(None);
+    };
+    if !claims.email_verified {
+        return Ok(None);
+    }
+    let Some(org) = store::organisation(pool).await? else {
+        return Ok(None);
+    };
+    if store::insert_member_if_absent(pool, &org.id, &user.id, role).await? {
+        store::audit(
+            pool,
+            &org.id,
+            Some(&user.id),
+            role.as_str(),
+            "member.auto_join",
+            Some(&user.id),
+            Some(serde_json::json!({ "email": user.email, "role": role.as_str() })),
         )
         .await?;
     }

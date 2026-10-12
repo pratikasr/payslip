@@ -83,6 +83,11 @@ export interface Health {
    */
   approvals_required?: number;
   /**
+   * PAYSLIP_OPEN_MEMBERSHIP: the role every signed-in person with a verified email is given on
+   * first sight (a public demo); null when membership is invite-only. Absent on older services.
+   */
+  open_membership?: "viewer" | "accountant" | null;
+  /**
    * The treasury key's state (docs/API.md, Treasury key): `no_key` until an admin creates one
    * from the console, `locked` until an admin unlocks it, `unlocked` for payroll, or
    * `unlocked_by_env` when PAYSLIP_SEED_PASSPHRASE unlocked it at start. Absent on services
