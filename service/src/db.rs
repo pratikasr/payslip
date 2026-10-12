@@ -505,11 +505,15 @@ pub async fn get_run(pool: &Pool, id: &str) -> anyhow::Result<Option<RunRow>> {
         .await?)
 }
 
+/// The run an idempotency key already made, if any. A cancelled run never counts, so a draft
+/// approved again after a cancel creates a new run (older rows keep their key after cancel).
 pub async fn get_run_by_key(pool: &Pool, key: &str) -> anyhow::Result<Option<RunRow>> {
-    Ok(sqlx::query_as("SELECT * FROM runs WHERE idempotency_key = ?")
-        .bind(key)
-        .fetch_optional(pool)
-        .await?)
+    Ok(
+        sqlx::query_as("SELECT * FROM runs WHERE idempotency_key = ? AND status != 'cancelled'")
+            .bind(key)
+            .fetch_optional(pool)
+            .await?,
+    )
 }
 
 pub async fn list_runs(pool: &Pool) -> anyhow::Result<Vec<RunRow>> {

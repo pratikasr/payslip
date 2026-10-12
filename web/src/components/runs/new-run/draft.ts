@@ -261,6 +261,8 @@ export function idempotencyKey(salt: string, body: Omit<NewRun, "idempotency_key
  * same amounts and invoice references. A different answer is never treated as approval.
  */
 export function runMatches(run: Run, body: Omit<NewRun, "idempotency_key">): boolean {
+  // A cancelled run is never the one just approved, whatever its amounts.
+  if (run.status === "cancelled") return false;
   if (run.period_start !== body.period_start || run.period_end !== body.period_end) return false;
   if (run.lines.length !== body.lines.length) return false;
   const want = new Map(body.lines.map((l) => [l.contractor_id, l]));
