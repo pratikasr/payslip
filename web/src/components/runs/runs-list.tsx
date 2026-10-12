@@ -116,9 +116,12 @@ function RunsTable({ runs }: { runs: Run[] }) {
             return (
               <tr
                 key={r.id}
-                className="relative border-b border-bar-line transition-colors hover:bg-muted has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
+                className="border-b border-bar-line transition-colors hover:bg-muted has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-[-2px] has-[a:focus-visible]:outline-ring"
               >
-                <td className="h-[58px] py-2 pr-3 pl-2">
+                {/* The cell, not the row, holds the link's overlay: browsers ignore `relative` on a
+                    table row, so an overlay anchored there spans the nearest positioned ancestor,
+                    which is the whole page. */}
+                <td className="relative h-[58px] py-2 pr-3 pl-2">
                   <Link
                     href={`/console/runs/${r.id}`}
                     className="block truncate font-bold text-foreground outline-none after:absolute after:inset-0 after:content-['']"
