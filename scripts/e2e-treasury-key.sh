@@ -47,7 +47,9 @@ export PAYSLIP_AUTH_JWKS_URL="$WEB_URL/api/auth/jwks"
 export PAYSLIP_BOOTSTRAP_ADMIN_EMAIL="$ADMIN_EMAIL"
 export PAYSLIP_PRICE_API_URL=off
 export PAYSLIP_MIN_CONFIRMATIONS=1
-unset PAYSLIP_SEED_PASSPHRASE
+# Exported empty rather than unset: the service loads service/.env for variables that are absent,
+# and an empty value counts as not set.
+export PAYSLIP_SEED_PASSPHRASE=
 
 # Every run starts from nothing: no seed, no wallet, empty app and auth databases.
 rm -rf "$DIR/service"

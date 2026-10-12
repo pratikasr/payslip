@@ -40,6 +40,9 @@ async function signIn(page: Page, user: typeof ADMIN, next = "/console") {
   await page.getByLabel("Email").fill(user.email);
   await page.getByLabel("Password").fill(user.password);
   await page.getByRole("button", { name: "Sign in with email" }).click();
+  // The form signs in with a fetch and moves to `next` only once it has answered. A navigation
+  // before that cancels the fetch, so no session is set: wait until the sign-in page is gone.
+  await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"));
 }
 
 async function signOut(page: Page) {
