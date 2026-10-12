@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, toDisplayError, type ApiError, type Run } from "@/lib/api";
+import { clearStoredDraft } from "@/components/runs/new-run/draft";
 import { Problem } from "./problem";
 import { plural, runTitle } from "./run-meta";
 
@@ -39,6 +40,8 @@ export function CancelRun({
     setError(null);
     try {
       const updated = await api.cancelRun(run.id);
+      // The draft that made this run would replay it; the next Run payroll starts fresh.
+      clearStoredDraft();
       toast.success(`Cancelled the ${runTitle(run)} run`, { description: "Nobody was paid. It stays on record." });
       setOpen(false);
       onCancelled(updated);

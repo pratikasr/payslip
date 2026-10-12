@@ -839,12 +839,20 @@ pub async fn cancel_run(pool: &Pool, id: &str, from: &[&str]) -> anyhow::Result<
     let placeholders = from.iter().map(|_| "?").collect::<Vec<_>>().join(",");
     let sql = format!(
         "UPDATE runs SET status = 'cancelled', updated_at = ?, failed_from = NULL, error_code = NULL,
-                error_message = NULL, error_hint = NULL, execute_requested = 0
+                error_message = NULL, error_hint = NULL, execute_requested = 0,
+                idempotency_key = CASE WHEN idempotency_key IS NULL THEN NULL
+                                       ELSE idempotency_key || ':cancelled:' || ? END
          WHERE id = ? AND funding_amount IS NULL AND zec_acquired IS NULL AND allocation_txid IS NULL
            AND status IN ({placeholders})"
     );
     // Only "?" placeholders are interpolated; every value is bound.
-    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now()).bind(id);
+    // A cancelled run gives up its idempotency key, so the same draft approved again creates a
+    // new run instead of replaying the cancelled one.
+    let stamp = now();
+    let mut q = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(stamp.clone())
+        .bind(stamp)
+        .bind(id);
     for f in from {
         q = q.bind(*f);
     }

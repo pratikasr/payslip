@@ -464,6 +464,25 @@ async fn mark_as_shared_can_be_undone() {
 /// The same request (lines in any order) still returns the run; a run stored before request
 /// hashes keeps the old behaviour.
 #[tokio::test]
+async fn a_cancelled_run_does_not_replay_for_the_same_draft() {
+    let (s, pool) = start_full().await;
+    let a = contractor(&pool, 1).await;
+    let body = run_body("2026-10-01", "2026-10-31", &[(&a, 1_000, "INV-9")], "key-cancel");
+    let (st, first) = s.post("/api/runs", body.clone()).await;
+    assert_eq!(st, 201, "{first}");
+    let id = first["id"].as_str().unwrap().to_string();
+    let (st, v) = s.post(&format!("/api/runs/{id}/cancel"), json!({})).await;
+    assert_eq!((st, v["status"].as_str()), (200, Some("cancelled")), "{v}");
+    // The same draft approved again is a new run, not the cancelled one.
+    let mut again = body;
+    again["allow_overlap"] = json!(true);
+    let (st, second) = s.post("/api/runs", again).await;
+    assert_eq!(st, 201, "{second}");
+    assert_ne!(second["id"].as_str(), Some(id.as_str()));
+    assert_eq!(second["status"].as_str(), Some("draft"));
+}
+
+#[tokio::test]
 async fn a_reused_idempotency_key_with_another_body_is_refused() {
     let (s, pool) = start_full().await;
     let (a, b) = (contractor(&pool, 1).await, contractor(&pool, 2).await);

@@ -130,6 +130,11 @@ export function sourceRun(runs: Run[] | undefined, repeatId: string | null): Run
   return all.find((r) => r.id === repeatId) ?? all.find((r) => r.status === "paid") ?? all[0];
 }
 
+/** Forgets the draft kept in this tab, so the next Run payroll starts from a clean sheet. */
+export function clearStoredDraft(): void {
+  if (typeof window !== "undefined") window.sessionStorage.removeItem(STORAGE_KEY);
+}
+
 export function useDraft(contractors: Contractor[] | undefined, runs: Run[] | undefined, repeatId: string | null) {
   const [draft, setDraftState] = useState<Draft | null>(null);
   const started = useRef(false);
