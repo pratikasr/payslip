@@ -36,6 +36,10 @@ The first real payroll, on the hosted app at https://app.payslip.cash (Google si
 | --- | --- | ---: | --- |
 | Allocation, treasury to Biqtor's account | [4c0d68d2...](https://zecblock.com/tx/4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109) | 3,514,840 (04:56:13 UTC) | Ironwood pool, 2 actions, fee 0.0001 ZEC; no amount, no sender, no recipient |
 | Payment to Biqtor, $10.00 | [53f87ab5...](https://zecblock.com/tx/53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc) | 3,514,845 (05:00:48 UTC) | the same |
+| Second run `05cd3ddf-2622-450b-ae0f-6abd3243058c`, allocation | [60e47010...](https://zecblock.com/tx/60e470109f700989f08e34959615c1bdd64a4ed902c482124fe70240c9306b23) | 3,515,537 | the same |
+| Second run, payment to Arav Mehta, $10.00 | [62f215d8...](https://zecblock.com/tx/62f215d8f045648c45bc657ef87aa5d3bf93c034e7ba387c154284d72cc4ebac) | 3,515,541 | the same |
+
+The second run was recorded for the demo video the same evening: funded with 0.00857489 ZEC at $1,226.33 per ZEC (block 3,515,536), one contractor paid $10.00 (0.00815441 ZEC), run paid at 19:30 UTC; the contractor's balance was then returned to the owner's wallet in [42c30ca0...](https://zecblock.com/tx/42c30ca0ace9f63e4838fd12c2ab06ad1a2a1d944ba0f612d75b8db37287dbe2). The second contractor's viewing key is not in the published kit yet; the kit's two keys read the first run.
 
 What the viewing keys show for the same two transactions: the allocation and the $10.00 line (0.00750999 ZEC at $1,331.56), with the memo (run id, period 2026-10, invoice reference, USD basis). The mainnet judge kit with those two keys, the treasury's and Biqtor's, is [docs/judge/judge-kit-mainnet.json](docs/judge/judge-kit-mainnet.json); https://payslip.cash/books loads it with Load the judge kit. Biqtor's statement, the accountant's reconciliation (reconciled: funded $10.70, paid $10.00, the $0.70 explained by 0.0002 ZEC of fees and 0.00032581 ZEC unspent) and the single-payment proof, as a statements-only service read them back from the chain with the kit on 12 Oct 2026, are in [docs/proof/mainnet-dfdc9d29.json](docs/proof/mainnet-dfdc9d29.json).
 

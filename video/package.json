@@ -1,0 +1,23 @@
+{
+  "name": "payslip-video",
+  "private": true,
+  "version": "0.1.0",
+  "description": "The Payslip demo video, written as Remotion compositions in the product's own paper design.",
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "remotion render DemoSample out/demo-sample.mp4",
+    "still": "remotion still DemoSample out/frame.png"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.534",
+    "@remotion/google-fonts": "^4.0.534",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remotion": "^4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -22,8 +22,8 @@ These have no draft here; the owner types them into the form at https://colosseu
 - **Country.** The country the team leader lives in.
 - **Telegram.** The owner's Telegram handle.
 - **X.** The owner's X handle.
-- **Pitch video link.** VERIFY: the link from https://studio.youtube.com (Content) once the pitch video is uploaded as Unlisted or Public (RUN-DAY.md item 9).
-- **Demo video link.** VERIFY: the link from https://studio.youtube.com (Content) once the demo video is uploaded as Unlisted or Public (RUN-DAY.md item 9).
+- **Pitch video link.** https://youtu.be/sU6VdhTUpE4
+- **Demo video link.** https://youtu.be/SdRff7535hI
 
 ## Fields
 
@@ -57,9 +57,9 @@ Private to the world, transparent to your accountant.
 
 **Proof.** Mainnet run dfdc9d29-75a3-4197-8bb4-21b2f6175fea, paid on the hosted app on 12 Oct 2026: allocation 4c0d68d29664a08de2928363631327c91cac7c59ac8d62874d74b037e0515109 at height 3,514,840 and the payment 53f87ab55c51590a1ee38767ce1f45476ff0ee6347c005f00a1a6b48b838c8bc at 3,514,845, both shielded Ironwood transactions on https://zecblock.com. The mainnet judge kit (docs/judge/judge-kit-mainnet.json) reads them back: Books on https://payslip.cash reconciles the run (funded $10.70, paid $10.00, $0.70 explained by fees and unspent change), the portal shows Biqtor's payslip, and the kit's payment_proof opens at https://payslip.cash/verify#<token>. Read-back record: docs/proof/mainnet-dfdc9d29.json. Testnet runs with txids and heights are in the README and docs/DEMO.md.
 
-**Demo video.** VERIFY: the video's link from https://studio.youtube.com (Content) once the recording made per docs/DEMO.md, Demo video, is uploaded as Unlisted or Public.
+**Demo video.** https://youtu.be/SdRff7535hI (Unlisted): the owner's 3-minute recording of the live product on mainnet, narrated; made 13 Oct 2026.
 
-**Presentation video.** VERIFY: the video's link from https://studio.youtube.com (Content) once the recording of the docs/LAUNCH.md pitch script is uploaded as Unlisted or Public.
+**Presentation video.** https://youtu.be/sU6VdhTUpE4 (Unlisted): the 1:59 pitch rendered from the fourteen-slide deck in the paper design (video/ holds the tooling).
 
 **Go-to-market.** Start with DAOs and remote-first crypto teams that already pay contractors in stablecoins or ZEC and hand-assemble statements for tax: Zcash ecosystem grantees and teams, then teams paying through public-chain payroll tools today. Sign-in with roles, recorded approvals and an audit log are what a finance team asks for before it lets a tool move money. Pricing: 19 USD per active contractor per month hosted, plus 0.25% on the USDC to ZEC funding swap (collected through NEAR Intents app fees; funding with ZEC carries no swap fee); self-hosting is free under MIT; contractors and accountants never pay. Deel and Rise list 49 USD per contractor per month for contractor payroll, and payroll through them is still public on chain when paid in crypto. Distribution through the Zcash community (Zcash Community Grants recipients, Zodl users) and accountants who serve crypto teams, since the accountant's reconciliation is the feature that replaces their manual work.
 

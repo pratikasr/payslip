@@ -75,6 +75,14 @@ enum Command {
     },
     /// Testing helper: print a mainnet UFVK derived from an all-zero test seed (no funds).
     DevMainnetUfvk,
+    /// Development helper: create ZIP-32 account N of the payer seed scanning from a given height,
+    /// to recover funds received before the account existed in this wallet.
+    DevEnsureAccount {
+        #[arg(long)]
+        account: u32,
+        #[arg(long)]
+        birthday: u32,
+    },
     /// Sweep the demo contractor wallets back to the treasury (mainnet needs --allow-mainnet).
     DevSweep {
         #[arg(long, default_value_t = 6)]
@@ -208,6 +216,14 @@ async fn main() -> anyhow::Result<()> {
         Command::AccountAddress { account } => {
             let payer = Payer::open_any(&cfg).await?;
             println!("{}", payer.address(account).await?);
+            Ok(())
+        }
+        Command::DevEnsureAccount { account, birthday } => {
+            let payer = Payer::open(&cfg).await?;
+            let (ufvk, b) = payer
+                .ensure_account_from(account, format!("account-{account}"), birthday)
+                .await?;
+            println!("account {account} birthday {b}\n{ufvk}");
             Ok(())
         }
         Command::DevMainnetUfvk => {

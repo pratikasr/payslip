@@ -2,6 +2,13 @@
 
 Newest entry first. One entry per session: what moved, commit hashes, what is next, what is blocked and why.
 
+## 13 Oct 2026, the second run, the two videos, the deck
+
+- Second mainnet run `05cd3ddf`, recorded for the demo: funded with 0.00857489 ZEC at $1,226.33 (block 3,515,536), allocation 60e47010... at 3,515,537, payment to the demo contractor 62f215d8... at 3,515,541, run paid 19:30 UTC. The funding first stalled because two earlier drafts (Sep and Nov) claimed the treasury ahead of it; cancelling them freed it. To do after the deadline: the Fund step should say "another run claims X of the balance" instead of a silent shortfall. The contractor's ZEC was returned to the owner's wallet (42c30ca0...) with the new `dev-ensure-account` command, which creates a payer account scanning from a given height (service/src/main.rs, payer.rs).
+- Videos: the owner cut the demo himself (3:02.8, 4K); the narration was generated in ElevenLabs from a script timed to his screens, transcribed with whisper.cpp for word timestamps, cut at the silences between lines and placed at each screen's second (video/work/own, video/work/vo). The pitch is a fourteen-slide deck made with the Slides artifact type in the paper design, rendered to 4K frames with Playwright and to a 1:59 MP4 with half-second fades and the ElevenLabs voice placed per slide (video/work/pitch). Demo on YouTube: https://youtu.be/SdRff7535hI; pitch: https://youtu.be/sU6VdhTUpE4. The Remotion compositions (video/src) remain as the earlier draft route.
+- README: the second run in the Proof table and the refund transaction; SUBMISSION.md carries the demo link.
+- Next, the owner: upload the pitch, fill the form (team fields, media), make the repository public, submit before 11:59 PM PDT.
+
 ## 12 Oct 2026, the first mainnet payroll
 
 - Hosted on mainnet: the server at app.payslip.cash and payslip.cash (deploy/aws/attach-domain.sh, Cloudflare DNS-only records, ACM certificate), `ZCASH_NETWORK=mainnet`, `LIGHTWALLETD_URL=https://zec.rocks:443`, sign-in required with open membership as viewer, the basic-auth gate removed from the console distribution, no `PAYSLIP_SEED_PASSPHRASE`: the owner made the treasury key in the browser (ADR-030) and unlocks it for a run.

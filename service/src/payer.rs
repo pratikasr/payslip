@@ -349,6 +349,22 @@ impl Payer {
             .await?
     }
 
+    /// Creates account N scanning from a given height, for recovering funds a wallet received
+    /// before the account existed here (a development helper; the product creates accounts at the tip).
+    pub async fn ensure_account_from(&self, index: u32, name: String, birthday: u32) -> anyhow::Result<(String, u32)> {
+        self.wallet
+            .run(move |w| {
+                Box::pin(async move {
+                    let id = w
+                        .ensure_hd_account(index, &name, BlockHeight::from_u32(birthday))
+                        .await?;
+                    let ufvk = w.ufvk(id)?.encode(w.params());
+                    Ok((ufvk, u32::from(w.birthday(id)?)))
+                })
+            })
+            .await?
+    }
+
     pub async fn ufvk(&self, index: u32) -> anyhow::Result<String> {
         self.wallet
             .run(move |w| {
